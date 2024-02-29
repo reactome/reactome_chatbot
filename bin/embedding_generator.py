@@ -4,7 +4,7 @@ import argparse
 from langchain_openai import OpenAI
 from langchain_openai import ChatOpenAI
 from langchain.chains import RetrievalQA
-from langchain_community.document_loaders.csv_loader import CSVLoader
+from src.metadata_csvloader import MetaDataCSVLoader
 from langchain_openai import OpenAIEmbeddings
 from langchain.vectorstores.chroma import Chroma
 
@@ -16,7 +16,7 @@ from src.neo4j_connector import Neo4jConnector
 def upload_to_chromadb(file, directory_name):
     embeddings = OpenAIEmbeddings()
 
-    loader = CSVLoader(file_path=file)
+    loader = MetaDataCSVLoader(file_path = file, metadata_columns = ['Complex_ID','Complex_name', 'Component_ID', 'Component_name'])
     docs = loader.load()
 
     ### Initialize OpenAIEmbeddings for generating embeddings of documents.
