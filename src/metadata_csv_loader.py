@@ -38,8 +38,8 @@ class MetaDataCSVLoader(BaseLoader):
         self,
         file_path: str,
         source_column: Optional[str] = None,
-        metadata_columns: Optional[List[str]] = None,   
-        content_columns: Optional[List[str]] =None ,  
+        metadata_columns: Optional[List[str]] = None,
+        content_columns: Optional[List[str]] =None ,
         csv_args: Optional[Dict] = None,
         encoding: Optional[str] = None,
         autodetect_encoding: bool = False,
@@ -88,9 +88,8 @@ class MetaDataCSVLoader(BaseLoader):
             raise RuntimeError(f"Error loading {self.file_path}") from e
 
         return docs
-    
-    
-    
+
+
     def __read_file(self, csvfile: TextIOWrapper) -> List[Document]:
         docs = []
 
