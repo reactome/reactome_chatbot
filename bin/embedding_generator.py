@@ -1,29 +1,45 @@
 import os
 import sys
+import csv
 import argparse
 from langchain_openai import OpenAI
 from langchain_openai import ChatOpenAI
 from langchain.chains import RetrievalQA
-from src.metadata_csvloader import MetaDataCSVLoader
+
 from langchain_openai import OpenAIEmbeddings
 from langchain.vectorstores.chroma import Chroma
-
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
-from src.neo4j_connector import Neo4jConnector
+from csv_generators import generate_reactions_csv
+from csv_generators import generate_summations_csv
+from csv_generators import generate_complexes_csv
+from csv_generators import generate_ewas_csv
+
+from neo4j_connector import Neo4jConnector
+from metadata_csv_loader import MetaDataCSVLoader
 
 
-def upload_to_chromadb(file, directory_name):
+def get_csv_header(file_path):
+    with open(file_path, 'r', newline='') as csvfile:
+        reader = csv.reader(csvfile)
+        header = next(reader)
+    return header
+
+
+def upload_to_chromadb(file, embedding_table):
     embeddings = OpenAIEmbeddings()
 
-    loader = MetaDataCSVLoader(file_path = file, metadata_columns = ['Complex_ID','Complex_name', 'Component_ID', 'Component_name'])
+    header = get_csv_header(file)
+    metadata_columns = [str(column) for column in header]
+
+    loader = MetaDataCSVLoader(file_path=file, metadata_columns=metadata_columns)
     docs = loader.load()
 
     ### Initialize OpenAIEmbeddings for generating embeddings of documents.
     embeddings = OpenAIEmbeddings()
 
     ### Create a Chroma vector store from the documents and save to disk.
-    db = Chroma.from_documents(documents=docs, embedding=embeddings, persist_directory="embeddings/" + directory_name)
+    db = Chroma.from_documents(documents=docs, embedding=embeddings, persist_directory="embeddings/" + embedding_table )
     db.persist()
 
     return db
@@ -39,26 +55,23 @@ def main():
 
     os.environ['OPENAI_API_KEY'] = args.openai_key
 
-    connector = Neo4jConnector(uri=ars.neo4j_uri, user=args.neo4j_password, password=args.neo4j_username)
+    connector = Neo4jConnector(uri=args.neo4j_uri, user=args.neo4j_password, password=args.neo4j_username)
 
     reactions_csv = generate_reactions_csv(connector, args.force)
     summations_csv = generate_summations_csv(connector, args.force)
     complexes_csv = generate_complexes_csv(connector, args.force)
     ewas_csv = generate_ewas_csv(connector, args.force)
-    ewas_comments_csv = generate_ewas_comments_csv(connector, args.force)
 
     connector.close()
 
 
-    db = upload_to_cromadb(reactions_csv, directory_name)
+    db = upload_to_chromadb(reactions_csv, "reactions")
     print(db._collection.count())
-    db = upload_to_cromadb(summations_csv, directory_name)
+    db = upload_to_chromadb(summations_csv, "summations")
     print(db._collection.count())
-    db = upload_to_cromadb(complexes_csv, directory_name)
+    db = upload_to_chromadb(complexes_csv, "complexes")
     print(db._collection.count())
-    db = upload_to_cromadb(ewas_csv, directory_name)
-    print(db._collection.count())
-    db = upload_to_cromadb(ewas_comments_csv, directory_name)
+    db = upload_to_chromadb(ewas_csv, "ewas")
     print(db._collection.count())
 
 

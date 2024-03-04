@@ -2,7 +2,10 @@ from neo4j import GraphDatabase
 
 class Neo4jConnector:
     def __init__(self, uri, user, password):
-        self._driver = GraphDatabase.driver(uri, auth=(user, password))
+        if user is None or password is None:
+            self._driver = GraphDatabase.driver(uri)
+        else:
+            self._driver = GraphDatabase.driver(uri, auth=(user, password))
 
     def close(self):
         self._driver.close()
@@ -19,15 +22,15 @@ def get_reactions(connector):
     OPTIONAL MATCH (reaction)-[:input]->(input:PhysicalEntity)
     OPTIONAL MATCH (reaction)-[:output]->(output:PhysicalEntity)
     OPTIONAL MATCH (reaction)-[:catalystActivity]->(catalystActivity:CatalystActivity)-[:physicalEntity]->(catalyst:PhysicalEntity)
-    RETURN  pathway.stId AS pathway_ID,
+    RETURN  pathway.stId AS pathway_id,
      pathway.displayName AS pathway_name,
-     reaction.stId AS reaction_ID,
+     reaction.stId AS reaction_id,
      reaction.displayName AS reaction_name,
-     COLLECT(DISTINCT input.stId) AS input_ID,
+     COLLECT(DISTINCT input.stId) AS input_id,
      COLLECT(DISTINCT input.displayName) AS input,
-     COLLECT(DISTINCT output.stId) AS output_ID,
+     COLLECT(DISTINCT output.stId) AS output_id,
      COLLECT(DISTINCT output.displayName) AS output,
-     COLLECT(DISTINCT catalyst.stId) AS catalyst_ID,
+     COLLECT(DISTINCT catalyst.stId) AS catalyst_id,
      COLLECT (DISTINCT catalyst.displayName) AS catalyst
     """
     return connector.execute_query(query)
@@ -36,8 +39,8 @@ def get_summations(connector):
     query = """
     MATCH (e)-[:summation]->(summation:Summation)
     WHERE (e:Pathway OR e:ReactionLikeEvent) and e.speciesName = "Homo sapiens"
-    RETURN e.stId AS Pathway_ID,
-    e.displayName AS Pathway_name,
+    RETURN e.stId AS pathway_id,
+    e.displayName AS pathway_name,
     labels(e) AS labels,
     summation.text AS summation
     """
@@ -48,33 +51,22 @@ def get_complexes(connector):
     MATCH (complex:Complex)-[:hasComponent]->(component)
     WHERE complex.speciesName = "Homo sapiens"
     RETURN complex.speciesName,
-     complex.stId as Complex_ID,
-     complex.name AS Complex_name,
-     component.stId AS Component_ID,
-     component.name AS Component_name
+     complex.stId as complex_id,
+     complex.name AS complex_name,
+     component.stId AS component_id,
+     component.name AS component_name
     """
     return connector.execute_query(query)
 
 def get_ewas(connector):
     query = """
     MATCH q1 =(database:ReferenceDatabase)<-[:referenceDatabase]-(entity1:ReferenceEntity)<--(gene:ReferenceEntity)<-[:referenceEntity]-(protein:PhysicalEntity)
-    where database.displayName = "HGNC"
-    RETURN DISTINCT protein.stId AS entity_ID,
+     where database.displayName = "HGNC"
+    RETURN DISTINCT protein.stId AS entity_id,
      protein.displayName AS entity,
-     entity1.geneName AS canonical_geneName,
-     gene.geneName AS synonyms_geneName,
+     entity1.geneName AS canonical_gene_name,
+     gene.geneName AS synonyms_gene_name,
      gene.databaseName AS database,
-     gene.url AS Uniprot_link
-    """
-    return connector.execute_query(query)
-
-def get_ewas_comments(connector):
-    query = """
-    MATCH q1 =(database:ReferenceDatabase)<-[:referenceDatabase]-(entity1:ReferenceEntity)<--(gene:ReferenceEntity)<-[:referenceEntity]-(protein:PhysicalEntity)
-    where database.displayName = "HGNC"
-    RETURN DISTINCT protein.stId AS entity_ID,
-     protein.displayName AS entity, 
-     entity1.geneName AS canonical_geneName,
-     gene.comment AS Function
-    """
+     gene.url AS uniprot_link
+        """
     return connector.execute_query(query)
