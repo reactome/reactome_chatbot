@@ -60,13 +60,13 @@ def get_complexes(connector):
 
 def get_ewas(connector):
     query = """
-    MATCH q1 =(database:ReferenceDatabase)<-[:referenceDatabase]-(entity1:ReferenceEntity)<--(gene:ReferenceEntity)<-[:referenceEntity]-(protein:PhysicalEntity)
-     where database.displayName = "HGNC"
-    RETURN DISTINCT protein.stId AS entity_id,
-     protein.displayName AS entity,
-     entity1.geneName AS canonical_gene_name,
-     gene.geneName AS synonyms_gene_name,
-     gene.databaseName AS database,
-     gene.url AS uniprot_link
-        """
+     MATCH q1 =(database:ReferenceDatabase)<-[:referenceDatabase]-(entity1:ReferenceEntity)<--(gene:ReferenceEntity)<-[:referenceEntity]-(protein:PhysicalEntity)
+      where database.displayName = "HGNC"
+     RETURN DISTINCT protein.stId AS entity_id,
+      protein.displayName AS entity,
+      entity1.geneName AS canonical_gene_name,
+      gene.geneName AS synonyms_gene_name,
+      gene.url AS uniprot_link,
+      gene.comment AS function
+            """
     return connector.execute_query(query)
