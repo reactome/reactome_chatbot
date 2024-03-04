@@ -25,7 +25,7 @@ persist_directorys =''
 embedding = OpenAIEmbeddings()
 
 
-vectordb = Chroma (persist_directory = persist_directorys, 
+vectordb = Chroma (persist_directory = persist_directorys,
                   embedding_function = embedding
                   )
 
@@ -68,21 +68,21 @@ document_content_description = "a tabulated file containing biological complexes
 #retriever = SelfQueryRetriever.from_llm (llm = llm, vectorstore = vectordb, document_contents = document_content_description, metadata_field_info = field_info, search_kwargs={'k': 15})
 
 #### Initialize a ChatOpenAI model.
-llm = ChatOpenAI (temperature = 0.0, 
+llm = ChatOpenAI (temperature = 0.0,
                  model = "gpt-3.5-turbo-0125")
 
 ### Create a ConversationBufferMemory object. This is used to store and retrieve conversation history, enhancing context understanding in conversational models.
-memory = ConversationBufferMemory(memory_key="chat_history", 
+memory = ConversationBufferMemory(memory_key="chat_history",
                                   return_messages=True)
 
 ### Create a retriever object from the vector database for similarity-based search. This enables querying the database based on semantic similarity with a specified number of results (k=15).
-retriever = vectordb.as_retriever(search_type="similarity", 
+retriever = vectordb.as_retriever(search_type="similarity",
                                   search_kwargs={'k': 15})
 
 ### Initialize a ConversationalRetrievalChain object.
-qa = ConversationalRetrievalChain.from_llm(llm=llm, 
-                                           retriever = retriever, 
-                                           verbose = True, 
+qa = ConversationalRetrievalChain.from_llm(llm=llm,
+                                           retriever = retriever,
+                                           verbose = True,
                                            memory = memory )
 
 query = "Provide a comprehensive list of all entities (including their names and IDs) where GTP is a component."
@@ -92,5 +92,3 @@ print (retriever.invoke(query))
 
 # prints LLM outputs
 print (qa.invoke(query))
-
-

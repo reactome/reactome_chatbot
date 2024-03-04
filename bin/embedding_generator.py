@@ -19,20 +19,17 @@ from neo4j_connector import Neo4jConnector
 from metadata_csv_loader import MetaDataCSVLoader
 
 
-def get_csv_header(file_path):
-    with open(file_path, 'r', newline='') as csvfile:
-        reader = csv.reader(csvfile)
-        header = next(reader)
-    return header
-
-
 def upload_to_chromadb(file, embedding_table):
     embeddings = OpenAIEmbeddings()
 
-    header = get_csv_header(file)
-    metadata_columns = [str(column) for column in header]
+    metadata_columns = {
+            "reactions":["pathway_id","pathway_name", "reaction_id", "reaction_name", "input_id",
+                         "input_name", "output_id", "output_name", "catalyst_id", "catalyst_name"],
+            "summations":  ["pathway_id","pathway_name"],
+            "complexes": ["complex_id","complex_name", "component_id", "component_name"],
+            "ewas": ["entity_id","entity_name", "canonical_gene_name", "synonyms_gene_name", "uniprot_link"]}
 
-    loader = MetaDataCSVLoader(file_path=file, metadata_columns=metadata_columns)
+    loader = MetaDataCSVLoader(file_path=file, metadata_columns=metadata_columns[embedding_table])
     docs = loader.load()
 
     ### Initialize OpenAIEmbeddings for generating embeddings of documents.
