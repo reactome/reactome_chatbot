@@ -27,11 +27,11 @@ def get_reactions(connector):
      reaction.stId AS reaction_id,
      reaction.displayName AS reaction_name,
      COLLECT(DISTINCT input.stId) AS input_id,
-     COLLECT(DISTINCT input.displayName) AS input,
+     COLLECT(DISTINCT input.displayName) AS input_name,
      COLLECT(DISTINCT output.stId) AS output_id,
-     COLLECT(DISTINCT output.displayName) AS output,
+     COLLECT(DISTINCT output.displayName) AS output_name,
      COLLECT(DISTINCT catalyst.stId) AS catalyst_id,
-     COLLECT (DISTINCT catalyst.displayName) AS catalyst
+     COLLECT (DISTINCT catalyst.displayName) AS catalyst_name
     """
     return connector.execute_query(query)
 
@@ -63,7 +63,7 @@ def get_ewas(connector):
      MATCH q1 =(database:ReferenceDatabase)<-[:referenceDatabase]-(entity1:ReferenceEntity)<--(gene:ReferenceEntity)<-[:referenceEntity]-(protein:PhysicalEntity)
       where database.displayName = "HGNC"
      RETURN DISTINCT protein.stId AS entity_id,
-      protein.displayName AS entity,
+      protein.displayName AS entity_name,
       entity1.geneName AS canonical_gene_name,
       gene.geneName AS synonyms_gene_name,
       gene.url AS uniprot_link,
