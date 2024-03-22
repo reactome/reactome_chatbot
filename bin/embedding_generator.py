@@ -62,8 +62,8 @@ def main():
     connector.close()
 
 
-    db = upload_to_chromadb(reactions_csv, "reactions")
-    print(db._collection.count())
+    #db = upload_to_chromadb(reactions_csv, "reactions")
+    #print(db._collection.count())
     db = upload_to_chromadb(summations_csv, "summations")
     print(db._collection.count())
     db = upload_to_chromadb(complexes_csv, "complexes")
