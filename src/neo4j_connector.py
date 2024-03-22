@@ -66,7 +66,7 @@ def get_ewas(connector):
       protein.displayName AS entity_name,
       entity1.geneName AS canonical_gene_name,
       gene.geneName AS synonyms_gene_name,
-      gene.url AS uniprot_link,
-      gene.comment AS function
+      gene.url AS uniprot_link//,
+  //    gene.comment AS function
             """
     return connector.execute_query(query)
