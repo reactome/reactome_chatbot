@@ -21,6 +21,11 @@ from langchain.memory import ConversationBufferMemory
 from langchain.prompts import SystemMessagePromptTemplate, HumanMessagePromptTemplate, ChatPromptTemplate
 
 
+def list_subdirectories(directory):
+    subdirectories = [f.name for f in os.scandir(directory) if f.is_dir() and f.name != '.' and f.name != '..']
+    return subdirectories
+
+
 def main():
     parser = argparse.ArgumentParser(description="Reactome ChatBot")
     parser.add_argument("--openai-key", required=True, help="API key for OpenAI")
@@ -28,7 +33,7 @@ def main():
     args = parser.parse_args()
     os.environ['OPENAI_API_KEY'] = args.openai_key
 
-    persist_directory = 'embeddings'
+    embeddings_directory = 'embeddings'
 
     memory = ConversationBufferMemory(memory_key="chat_history",
                                       return_messages=True)
@@ -37,7 +42,7 @@ def main():
                      model="gpt-3.5-turbo-0125")
     descriptions = {
         "ewas": "Contains data on proteins and nucleic acids with known sequences. Includes entity names, IDs, canonical and synonymous gene names, and functions.",
-        "complex": "Catalogs biological complexes, listing complex names and IDs along with the names and IDs of their components. ",
+        "complexes": "Catalogs biological complexes, listing complex names and IDs along with the names and IDs of their components. ",
         "reactions": "Documents biological pathways and their constituent reactions, detailing pathway and reaction names and IDs. It includes information on the inputs, outputs, and catalysts for each reaction, emphasizing the interconnected nature of cellular processes. Inputs and outputs, critical to the initiation and conclusion of reactions, along with catalysts that facilitate these processes, are cataloged to highlight their roles across various reactions and pathways",
         "summations": "Enumerates biological reactions, accompanied by concise summaries ('summations') of each reaction. These summations encapsulate the essence and biochemical significance of the reactions, offering insights into their roles within cellular processes and pathways."}
     ### Define a list of AttributeInfo objects, each representing metadata about different fields in your dataset.
@@ -164,21 +169,16 @@ def main():
     ]
 
     retriever_list = []
-    for root, dirs, files in os.walk(persist_directory):
-        print(root)
-        print(dirs)
-        print(files)
+    for subdirectory in list_subdirectories(embeddings_directory):
         embedding = OpenAIEmbeddings()
-        vectordb = Chroma (persist_directory = root,
+        vectordb = Chroma (persist_directory = embeddings_directory + "/" + subdirectory,
                   embedding_function = embedding
                   )
         retriever = SelfQueryRetriever.from_llm(llm = llm,
                                                 vectorstore = vectordb,
-                                                document_contents = descriptions[root],
+                                                document_contents = descriptions[subdirectory],
                                                 metadata_field_info = field_info,
                                                 search_kwargs = {'k' : 15})
-
-
 
         retriever = vectordb.as_retriever(search_type="similarity", search_kwargs={'k': 15})
         retriever_list.append(retriever)
@@ -196,7 +196,6 @@ def main():
         print_results(qa, query)
 
 
-
 def interactive_mode(qa):
     while True:
         query = input("Enter your query (or press Enter to exit): ")
@@ -207,8 +206,6 @@ def interactive_mode(qa):
 def print_results(qa, query):
     # prints search VectorDB search results
     retriever_results = qa.retriever.invoke(query)
-    #print("VectorDB search results:")
-    #print(retriever_results)
 
     # prints LLM outputs
     qa_results = qa.invoke(query)

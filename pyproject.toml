@@ -17,6 +17,7 @@ langchain-openai = "^0.0.8"
 neo4j = "4.3.6"
 spacy = "^3.7.4"
 en-core-web-sm = {url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1.tar.gz"}
+lark = "^1.1.9"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.2.2"
