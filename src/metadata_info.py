@@ -1,10 +1,11 @@
 from langchain.chains.query_constructor.base import AttributeInfo
 
 descriptions_info = {
-        "ewas": "Contains data on proteins and nucleic acids with known sequences. Includes entity names, IDs, canonical and synonymous gene names, and functions.",
-        "complexes": "Catalogs biological complexes, listing complex names and IDs along with the names and IDs of their components. ",
-        "reactions": "Documents biological pathways and their constituent reactions, detailing pathway and reaction names and IDs. It includes information on the inputs, outputs, and catalysts for each reaction, emphasizing the interconnected nature of cellular processes. Inputs and outputs, critical to the initiation and conclusion of reactions, along with catalysts that facilitate these processes, are cataloged to highlight their roles across various reactions and pathways",
-        "summations": "Enumerates biological reactions, accompanied by concise summaries ('summations') of each reaction. These summations encapsulate the essence and biochemical significance of the reactions, offering insights into their roles within cellular processes and pathways."}
+    "ewas": "Contains data on proteins and nucleic acids with known sequences. Includes entity names, IDs, canonical and synonymous gene names, and functions.",
+    "complexes": "Catalogs biological complexes, listing complex names and IDs along with the names and IDs of their components. ",
+    "reactions": "Documents biological pathways and their constituent reactions, detailing pathway and reaction names and IDs. It includes information on the inputs, outputs, and catalysts for each reaction, emphasizing the interconnected nature of cellular processes. Inputs and outputs, critical to the initiation and conclusion of reactions, along with catalysts that facilitate these processes, are cataloged to highlight their roles across various reactions and pathways",
+    "summations": "Enumerates biological reactions, accompanied by concise summaries ('summations') of each reaction. These summations encapsulate the essence and biochemical significance of the reactions, offering insights into their roles within cellular processes and pathways.",
+}
 
 
 field_info = [
@@ -24,13 +25,13 @@ field_info = [
     ),
     AttributeInfo(
         name="reaction_id",
-        description = "The Reactome Identifier (ID) for each biological reaction, serving as a unique key.\
+        description="The Reactome Identifier (ID) for each biological reaction, serving as a unique key.\
             This ID allows for the specific identification and exploration of each reaction's details within the Reactome Database.",
         type="string",
     ),
     AttributeInfo(
         name="reaction_name",
-        description= "The name of the biological reaction, encapsulating the interaction between proteins or molecules.\
+        description="The name of the biological reaction, encapsulating the interaction between proteins or molecules.\
             Each reaction name is a unique entry, reflecting a specific biological process.\
             These names provide insight into the dynamic processes within cellular functions, highlighting the roles of various proteins and molecules in biological mechanisms",
         type="string",
@@ -54,7 +55,7 @@ field_info = [
         description=" A Reactome Identifier unique to each output of a reaction.\
             Given that a single input can be involved in various reactionss, this ID may repeat across multiple rows, each associated with a different reaction.\
             This ID allows for the specific identification and exploration of each output's details within the Reactome Database.",
-            type="string",
+        type="string",
     ),
     AttributeInfo(
         name="output_name",
@@ -124,6 +125,6 @@ field_info = [
         description="The name of the individual component associated with the complex in that row.\
               This reveals the specific protein or molecule constituting part of the complex, emphasizing the diversity of components within a single biological entity.",
         type="string",
-    )
+    ),
     # Additional AttributeInfo objects are defined here...
 ]
