@@ -1,12 +1,9 @@
 import os
-import spacy
-import pandas as pd
-import en_core_web_sm
 
-from neo4j_connector import get_reactions
-from neo4j_connector import get_summations
-from neo4j_connector import get_complexes
-from neo4j_connector import get_ewas
+import pandas as pd
+
+from neo4j_connector import (get_complexes, get_ewas, get_reactions,
+                             get_summations)
 
 
 def generate_reactions_csv(connector, force=False):

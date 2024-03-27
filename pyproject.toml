@@ -18,15 +18,18 @@ pandas = "^2.2.1"
 pyasn1 = "^0.5.1"
 langchain-openai = "^0.0.8"
 neo4j = "4.3.6"
-spacy = "^3.7.4"
-en-core-web-sm = {url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1.tar.gz"}
 lark = "^1.1.9"
 python-dotenv = "^1.0.1"
+black = "^24.3.0"
+isort = "^5.13.2"
+mypy = "^1.9.0"
+pandas-stubs = "^2.2.1.240316"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.2.2"
 pytest = "^8.0.2"
 mypy = "^1.8.0"
+pandas-stubs = "^2.2.1.240316"
 
 [build-system]
 requires = ["poetry-core"]

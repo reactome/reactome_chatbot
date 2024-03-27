@@ -1,5 +1,6 @@
 from neo4j import GraphDatabase
 
+
 class Neo4jConnector:
     def __init__(self, uri, user, password):
         if user is None or password is None:
@@ -14,6 +15,7 @@ class Neo4jConnector:
         with self._driver.session() as session:
             result = session.run(query)
             return result.data()
+
 
 def get_reactions(connector):
     query = """
@@ -35,6 +37,7 @@ def get_reactions(connector):
     """
     return connector.execute_query(query)
 
+
 def get_summations(connector):
     query = """
     MATCH (e)-[:summation]->(summation:Summation)
@@ -45,6 +48,7 @@ def get_summations(connector):
     summation.text AS summation
     """
     return connector.execute_query(query)
+
 
 def get_complexes(connector):
     query = """
@@ -57,6 +61,7 @@ def get_complexes(connector):
      component.name AS component_name
     """
     return connector.execute_query(query)
+
 
 def get_ewas(connector):
     query = """
