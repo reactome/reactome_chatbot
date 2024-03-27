@@ -1,0 +1,51 @@
+import os
+import openai
+
+from langchain_openai import ChatOpenAI
+from langchain_openai import OpenAIEmbeddings
+
+from langchain.vectorstores.chroma import Chroma
+
+from langchain.chains import ConversationalRetrievalChain
+
+from langchain.retrievers.self_query.base import SelfQueryRetriever
+from langchain.retrievers import MergerRetriever
+
+from langchain.memory import ConversationBufferMemory
+
+from src.metadata_info import field_info
+from src.metadata_info import descriptions_info
+
+
+def list_subdirectories(directory):
+    subdirectories = [f.name for f in os.scandir(directory) if f.is_dir() and f.name != '.' and f.name != '..']
+    return subdirectories
+
+def initialize_retrieval_chain(embeddings_directory, verbose):
+    memory = ConversationBufferMemory(memory_key="chat_history",
+                                      return_messages=True)
+
+    llm = ChatOpenAI(temperature=0.0,
+                     model="gpt-3.5-turbo-0125")
+    retriever_list = []
+    for subdirectory in list_subdirectories(embeddings_directory):
+        embedding = OpenAIEmbeddings()
+        vectordb = Chroma (persist_directory = embeddings_directory + "/" + subdirectory,
+                  embedding_function = embedding
+                  )
+        retriever = SelfQueryRetriever.from_llm(llm = llm,
+                                                vectorstore = vectordb,
+                                                document_contents = descriptions_info[subdirectory],
+                                                metadata_field_info = field_info,
+                                                search_kwargs = {'k' : 15})
+
+        retriever = vectordb.as_retriever(search_type="similarity", search_kwargs={'k': 15})
+        retriever_list.append(retriever)
+
+    lotr = MergerRetriever(retrievers=retriever_list)
+
+    qa = ConversationalRetrievalChain.from_llm(llm=llm,
+                                               retriever=lotr,
+                                               verbose=verbose,
+                                               memory=memory)
+    return qa

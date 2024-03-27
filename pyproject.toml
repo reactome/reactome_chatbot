@@ -5,6 +5,9 @@ description = "Chatbot for reactome's data portal"
 authors = ["Helia Mohammadi <hmohammadi@oicr.on.ca>"]
 license = "Apache2"
 readme = "README.md"
+packages = [
+    { include = "src", from = "." }
+]
 
 [tool.poetry.dependencies]
 python = "^3.9"
@@ -18,6 +21,7 @@ neo4j = "4.3.6"
 spacy = "^3.7.4"
 en-core-web-sm = {url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1.tar.gz"}
 lark = "^1.1.9"
+python-dotenv = "^1.0.1"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.2.2"
