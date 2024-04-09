@@ -22,7 +22,10 @@ def list_subdirectories(directory):
 def initialize_retrieval_chain(embeddings_directory, verbose):
     memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
-    llm = ChatOpenAI(temperature=0.0, model="gpt-3.5-turbo-0125")
+    llm = ChatOpenAI(temperature=0.0,
+                     streaming=True,
+                     verbose=verbose,
+                     model="gpt-3.5-turbo-0125")
     retriever_list = []
     for subdirectory in list_subdirectories(embeddings_directory):
         embedding = OpenAIEmbeddings()
