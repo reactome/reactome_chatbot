@@ -45,7 +45,10 @@ def get_summations(connector):
     RETURN e.stId AS pathway_id,
     e.displayName AS pathway_name,
     labels(e) AS labels,
-    summation.text AS summation
+    CASE
+        WHEN size(summation.text) > 10000 THEN LEFT(summation.text, 10000) + "..."
+        ELSE summation.text
+    END AS summation
     """
     return connector.execute_query(query)
 
