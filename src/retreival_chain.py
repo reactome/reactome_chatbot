@@ -7,6 +7,7 @@ from langchain.retrievers.self_query.base import SelfQueryRetriever
 from langchain.vectorstores.chroma import Chroma
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain.prompts import SystemMessagePromptTemplate, ChatPromptTemplate
+from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 
 from src.metadata_info import descriptions_info, field_info
 
@@ -18,6 +19,12 @@ def list_subdirectories(directory):
         if f.is_dir() and f.name != "." and f.name != ".."
     ]
     return subdirectories
+
+
+async def invoke(self, query):
+    async for qa_result in self.astream(query):
+        for message in qa_result.get("answer_stream", []):
+            yield message
 
 
 def initialize_retrieval_chain(embeddings_directory, verbose):
@@ -37,6 +44,9 @@ def initialize_retrieval_chain(embeddings_directory, verbose):
 
     llm = ChatOpenAI(temperature=0.0,
                      streaming=True,
+                     callbacks=[
+                         StreamingStdOutCallbackHandler()
+                     ],
                      verbose=verbose,
                      model="gpt-3.5-turbo-0125")
     retriever_list = []
@@ -61,6 +71,7 @@ def initialize_retrieval_chain(embeddings_directory, verbose):
 
     lotr = MergerRetriever(retrievers=retriever_list)
 
+    ConversationalRetrievalChain.invoke = invoke
     qa = ConversationalRetrievalChain.from_llm(
         llm=llm,
         retriever=lotr,
