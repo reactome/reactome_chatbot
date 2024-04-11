@@ -2,6 +2,7 @@ import argparse
 import random
 import os
 import pprint as pp
+import pyfiglet
 
 from dotenv import load_dotenv
 
@@ -13,12 +14,7 @@ async def main():
 
     parser = argparse.ArgumentParser(description="Reactome ChatBot")
     parser.add_argument("--openai-key", help="API key for OpenAI")
-    parser.add_argument(
-        "--interactive", action="store_true", help="Run in interactive mode"
-    )
-    parser.add_argument(
-        "--no-delay", action="store_true", help="No delay with outputing response"
-    )
+    parser.add_argument("--query", help="Query string to run")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose mode")
     args = parser.parse_args()
 
@@ -33,39 +29,27 @@ async def main():
 
     embeddings_directory = "embeddings"
     qa = initialize_retrieval_chain(embeddings_directory, args.verbose)
-    if args.interactive:
-        await interactive_mode(qa, args.verbose, args.no_delay)
+    if args.query:
+        await print_results(qa, args.query, args.verbose)
     else:
-        query = "Provide a comprehensive list of all entities (including their names and IDs) where GTP is a component."
-        await print_results(qa, query, args.verbose, args.no_delay)
+        await interactive_mode(qa, args.verbose)
 
-
-async def interactive_mode(qa, verbose, no_delay):
+async def interactive_mode(qa, verbose):
+    reactome_figlet = pyfiglet.figlet_format("Reactome Chatbot")
+    print(reactome_figlet)
+    print("Reactome Chatbot instructions: After each response you will have an opportunity to ask another questions. If you are done type enter instead of a question to exit.")
     while True:
-        query = input("Enter your query (or press Enter to exit): ")
+        query = input("\n\nUser Query:")
         if not query:
             break
-        await print_results(qa, query, verbose, no_delay)
-
-
-async def print_results(qa, query, verbose, no_delay):
-    async for qa_results in qa.astream(query):
         print("\nResponse:")
-        answer = qa_results["answer"]
-        answer = answer.strip("('").rstrip("')")
-        answer = answer.replace("\\n", "\n")
+        await print_results(qa, query, verbose)
 
-        words = answer.split()
-        for word in words:
-            print(word, end=' ', flush=True)
-            if not no_delay:
-                delay_time = random.uniform(0, 0.1)
-                await asyncio.sleep(delay_time)
 
-        print("\n")
-        if verbose:
-            print("Chat History")
-            pp.pprint(qa_results["chat_history"])
+async def print_results(qa, query, verbose):
+    async for qa_result in qa.invoke(query):
+        async for message in qa_result["answer_stream"]:
+            print(message, end='', flush=True)
 
 
 if __name__ == "__main__":
