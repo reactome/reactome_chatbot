@@ -42,6 +42,11 @@ optional arguments:
   --verbose             Enable verbose mode
 
 ### Generating Embeddings
+
+#### Dependencies
+
+Reactome Dockerized Graph database form DockerHub: https://hub.docker.com/r/reactome/graphdb
+
 To generate embeddings using the embedding generator script, use the following command:
 
 ```bash
