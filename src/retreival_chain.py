@@ -22,18 +22,19 @@ def list_subdirectories(directory):
 
 
 async def invoke(self, query):
-    async for qa_result in self.astream(query):
-        for message in qa_result.get("answer_stream", []):
-            yield message
+    async for message in self.astream(query):
+        yield message
 
 
-def initialize_retrieval_chain(embeddings_directory, verbose):
-    memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+def initialize_retrieval_chain(embeddings_directory, commandline, verbose):
+    memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True, input_key="question", output_key="answer")
 
-    new_prompt = r"""Use the following pieces of context to answer the question at the end. Please follow the following rules:
-    1. If you don't know the answer, just say that you don't know, don't try to make up an answer.
-    2. If you find the answer, answer the question and add the list of the sources that are **directly** used to derive the answer. Exclude the sources that are irrelevant to the final answer.
-    3. Format the citations like this: https://reactome.org/content/detail/*Source_ID*
+    new_prompt = r"""Use the following pieces of context to answer the question at the end. Please follow the following rules
+    1.  As a Reactome curator with extensive knowledge in biological pathways, answer the user's question as comprehensively as possible.
+    2. If you don't know the answer, or if the answer is not provided in the context, just say that you don't know, don't try to make up an answer.
+    3. If you find the answer in the context provided, answer the question only based on the context, and add the list of the sources that are **directly** used to derive the answer.
+    4. Format the citations like this: https://reactome.org/content/detail/*Source_ID*.
+    5. Make sure to always provide the citation for the information you provide if they are from the Reactome Knowledgebase (they are from the context).
     {context}
     Question: {question}
     Helpful Answer:
@@ -41,12 +42,12 @@ def initialize_retrieval_chain(embeddings_directory, verbose):
     messages = [SystemMessagePromptTemplate.from_template(new_prompt)]
     qa_prompt = ChatPromptTemplate.from_messages(messages)
 
-
+    callbacks = []
+    #if commandline:
+    callbacks = [StreamingStdOutCallbackHandler()]
     llm = ChatOpenAI(temperature=0.0,
-                     streaming=True,
-                     callbacks=[
-                         StreamingStdOutCallbackHandler()
-                     ],
+                     streaming=commandline,
+                     callbacks=callbacks,
                      verbose=verbose,
                      model="gpt-3.5-turbo-0125")
     retriever_list = []
@@ -77,6 +78,8 @@ def initialize_retrieval_chain(embeddings_directory, verbose):
         retriever=lotr,
         verbose=verbose,
         memory=memory,
+        return_source_documents=True,
         combine_docs_chain_kwargs={'prompt': qa_prompt}
     )
+
     return qa

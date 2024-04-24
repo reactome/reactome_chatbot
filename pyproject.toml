@@ -25,6 +25,7 @@ isort = "^5.13.2"
 mypy = "^1.9.0"
 pandas-stubs = "^2.2.1.240316"
 pyfiglet = "^1.0.2"
+chainlit = "^1.0.504"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.2.2"

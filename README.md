@@ -76,5 +76,12 @@ export OPENAI_API_KEY=your_openai_api_key
 ```
 
 You can also use a .env file to set the environment variable for the chatbot.
+
+
+## To Run the UI run the following command
+
+```bash
+poetry run chainlit run bin/app.py -w
+```
 ###Contributing
 Contributions to the Reactome ChatBot project are welcome! If you encounter any issues or have suggestions for improvements, feel free to open an issue or submit a pull request.
