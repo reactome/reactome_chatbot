@@ -24,18 +24,17 @@ async def main():
             "OPENAI_API_KEY not set. Please provide the API key using --openai-key or in a .env file."
         )
 
-    # Set the OPENAI_API_KEY environment variable
     os.environ["OPENAI_API_KEY"] = openai_key
 
     embeddings_directory = "embeddings"
-    qa = initialize_retrieval_chain(embeddings_directory, args.verbose)
+    qa = initialize_retrieval_chain(embeddings_directory, True, args.verbose)
     if args.query:
         await print_results(qa, args.query, args.verbose)
     else:
         await interactive_mode(qa, args.verbose)
 
 async def interactive_mode(qa, verbose):
-    reactome_figlet = pyfiglet.figlet_format("Reactome Chatbot")
+    reactome_figlet = pyfiglet.figlet_format("React-to-me")
     print(reactome_figlet)
     print("Reactome Chatbot instructions: After each response you will have an opportunity to ask another questions. If you are done type enter instead of a question to exit.")
     while True:
@@ -48,8 +47,7 @@ async def interactive_mode(qa, verbose):
 
 async def print_results(qa, query, verbose):
     async for qa_result in qa.invoke(query):
-        async for message in qa_result["answer_stream"]:
-            print(message, end='', flush=True)
+        pass
 
 
 if __name__ == "__main__":
