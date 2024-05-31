@@ -28,6 +28,17 @@ cd reactome_chatbot
 ```bash
 poetry install
 ```
+
+### Docker Compose Setup:
+
+The project uses Docker Compose to manage the PostgreSQL database. The configuration for the database is stored in the docker-compose.yml file, and the environment variables are stored in the .env file.
+
+To start the PostgreSQL database, run the following command:
+
+```bash
+docker-compose up -d
+```
+
 ## Usage
 
 usage: chat.py [-h] [--openai-key OPENAI_KEY] [--query QUERY] [--verbose]
