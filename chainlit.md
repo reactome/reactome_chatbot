@@ -1,30 +1,22 @@
 # React-to-me
 
-Welcome to Reactome Chatbot, your interactive chatbot for exploring Reactome!
+Welcome to React-to-me, your interactive chatbot for exploring Reactome!
 
 ## About
 
-Reactome Chat is your go-to assistant for discovering a wealth of information on various biological entities, complexes, pathways, and more within Reactome.
-
+React-to-me is a specialized chatbot designed to provide fast and reliable answers about biological pathways and processes from the Reactome knowledgebase. Whether you're a researcher, student, or just curious about biology, React-to-me can help you access and understand complex biological information quickly and efficiently.
 ## Features
 
 With Reactome Chatbot, you can:
-- Search for specific biological entities, complexes, pathways, and more.
-- Browse through Reactome's extensive collection of pathways and related content.
-- Receive recommendations for pathways based on your interests and queries.
+- Ask questions about biological pathways and get responses in real-time.
+- Browse through Reactome's extensive collection of pathways and related content. 
+- Access information in multiple languages, allowing you to ask questions and receive information in your preferred language.
 
 ## How to Use
 
-Ask the chatbot any question you have about Reactome content, and it will provide you with relevant information along with links to the corresponding pages within the Reactome portal.
+Simply type your question about any Reactome content directly into the chat window, and the chatbot will provide you with detailed answers accompanied by links to relevant pages within the Reactome portal.
 
-Simply type your question or query directly into the chat window. For example:
-
-What is the process of DNA replication?
-
-
-Reactome Chat will then respond with detailed information about DNA replication, including links to relevant pages on the Reactome portal.
-
-Feel free to ask any question you have about Reactome content, and the chatbot will do its best to provide you with accurate and helpful responses!
+Feel free to explore any topic within Reactome's database. Whether your questions are broad or highly specific, the chatbot will do its best to provide you with accurate and helpful responses!
 
 
 ## Pathway Recommendations
@@ -41,5 +33,5 @@ Explore pathways such as:
 - [Reactome GitHub Repository](https://github.com/reactome)
 - [Reactome Twitter](https://twitter.com/reactome)
 
-Happy exploring with Reactome Chatbot!
+Happy exploring with React-to-me!
 
