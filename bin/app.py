@@ -9,7 +9,7 @@ async def quey_llm():
     cl.user_session.set("llm_chain", llm_chain)
 
     initial_message = """Welcome to React-to-me your interactive chatbot for exploring Reactome!
-   Ask me about biological pathways and processes """
+   Ask me about biological pathways and processes"""
     await cl.Message(content=initial_message).send()
 
 @cl.on_message
