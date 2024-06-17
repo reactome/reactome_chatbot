@@ -8,12 +8,8 @@ async def quey_llm():
     llm_chain = initialize_retrieval_chain(embeddings_directory, False, False)
     cl.user_session.set("llm_chain", llm_chain)
 
-    #system_message_template = SystemMessagePromptTemplate.from_template("""Welcome to React-to-me your interactive chatbot for exploring Reactome!
-    #Ask me about biological pathways and processes.""")
-    #chat_template = ChatPromptTemplate.from_messages([system_message_template])
-    #initial_message = chat_template.format_messages()
     initial_message = """Welcome to React-to-me your interactive chatbot for exploring Reactome!
-   Ask me about biological pathways and processes """
+   Ask me about biological pathways and processes"""
     await cl.Message(content=initial_message).send()
 
 @cl.on_message
