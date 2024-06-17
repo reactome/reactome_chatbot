@@ -3,7 +3,7 @@ from src.retreival_chain import initialize_retrieval_chain
 from langchain.prompts import SystemMessagePromptTemplate, ChatPromptTemplate
 
 @cl.on_chat_start
-def quey_llm():
+async def quey_llm():
     embeddings_directory = "embeddings"
     llm_chain = initialize_retrieval_chain(embeddings_directory, False, False)
     cl.user_session.set("llm_chain", llm_chain)
