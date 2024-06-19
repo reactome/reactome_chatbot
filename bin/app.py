@@ -1,5 +1,7 @@
 import chainlit as cl
+
 from src.retrieval_chain import initialize_retrieval_chain
+
 
 @cl.on_chat_start
 async def quey_llm() -> None:
@@ -10,6 +12,7 @@ async def quey_llm() -> None:
     initial_message: str = """Welcome to React-to-me your interactive chatbot for exploring Reactome!
    Ask me about biological pathways and processes"""
     await cl.Message(content=initial_message).send()
+
 
 @cl.on_message
 async def query_llm(message: cl.Message) -> None:
