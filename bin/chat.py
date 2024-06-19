@@ -1,9 +1,7 @@
 import argparse
-import random
 import os
-import pprint as pp
-import pyfiglet
 
+import pyfiglet
 from dotenv import load_dotenv
 
 from src.retreival_chain import initialize_retrieval_chain
@@ -33,10 +31,13 @@ async def main():
     else:
         await interactive_mode(qa, args.verbose)
 
+
 async def interactive_mode(qa, verbose):
     reactome_figlet = pyfiglet.figlet_format("React-to-me")
     print(reactome_figlet)
-    print("Reactome Chatbot instructions: After each response you will have an opportunity to ask another questions. If you are done type enter instead of a question to exit.")
+    print(
+        "Reactome Chatbot instructions: After each response you will have an opportunity to ask another questions. If you are done type enter instead of a question to exit."
+    )
     while True:
         query = input("\n\nUser Query:")
         if not query:
@@ -52,4 +53,5 @@ async def print_results(qa, query, verbose):
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(main())

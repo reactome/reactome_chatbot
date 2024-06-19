@@ -75,6 +75,12 @@ poetry run python bin/embedding_generator.py --openai-key=<your-key>
 ```
 This command will generate embeddings using the specified OpenAI API key.
 
+To generate embeddings inside docker run:
+```bash
+mkdir embeddings;
+docker run --net=host -v $(pwd)/embeddings:/apt/embeddings/ --rm reactome-chatbot bash -c "python /app/bin/embedding_generator.py --openai-key=TOKEN;
+```
+
 
 ## Configuration
 
@@ -95,6 +101,26 @@ To run the UI, use the following command:
 
 ```bash
 poetry run chainlit run bin/app.py -w
+```
+
+## Code Quality
+
+To do main consistency checks
+```bash
+poetry run ruff check .
+```
+
+To make style consistent
+
+```bash
+poetry run black .
+```
+
+To make sure imports are organized
+
+
+```bash
+poetry run iosort . 
 ```
 
 ## Contributing

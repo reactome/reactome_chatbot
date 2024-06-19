@@ -5,8 +5,8 @@ FROM python:3.9-slim
 WORKDIR /app
 
 # Set PYTHONPATH environment variable to include the src directory
-ENV PYTHONPATH="/app/src:/app:$PYTHONPATH"
-
+#ENV PYTHONPATH="/app/src:/app:$PYTHONPATH"
+ENV PYTHONPATH="/app/src:/app/.venv/lib/python3.9/site-packages:$PYTHONPATH"
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
@@ -15,12 +15,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy the requirements file into the container
 COPY pyproject.toml poetry.lock ./
 
-# Install Poetry
-RUN pip install poetry
+# Install specific versions of filelock, virtualenv, and poetry
+RUN pip install filelock==3.0.0 virtualenv==20.8.0 poetry
 
-# Install dependencies
+# Set poetry to create virtual environment in the project directory
 RUN poetry config virtualenvs.in-project true
-RUN poetry install --no-root
+
+# Install dependencies without dev dependencies
+RUN poetry install --no-root --no-dev
 
 # Copy the rest of the application code into the container
 COPY . .

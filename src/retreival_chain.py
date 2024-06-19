@@ -1,13 +1,13 @@
 import os
 
+from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory
+from langchain.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
 from langchain.retrievers import MergerRetriever
 from langchain.retrievers.self_query.base import SelfQueryRetriever
 from langchain.vectorstores.chroma import Chroma
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain.prompts import SystemMessagePromptTemplate, ChatPromptTemplate
-from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 
 from src.metadata_info import descriptions_info, field_info
 
@@ -27,7 +27,12 @@ async def invoke(self, query):
 
 
 def initialize_retrieval_chain(embeddings_directory, commandline, verbose):
-    memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True, input_key="question", output_key="answer")
+    memory = ConversationBufferMemory(
+        memory_key="chat_history",
+        return_messages=True,
+        input_key="question",
+        output_key="answer",
+    )
 
     new_prompt = r"""Use the following pieces of context to answer the question at the end. Please follow the following rules
     1.  As a Reactome curator with extensive knowledge in biological pathways, answer the user's question as comprehensively as possible.
@@ -43,13 +48,15 @@ def initialize_retrieval_chain(embeddings_directory, commandline, verbose):
     qa_prompt = ChatPromptTemplate.from_messages(messages)
 
     callbacks = []
-    #if commandline:
+    # if commandline:
     callbacks = [StreamingStdOutCallbackHandler()]
-    llm = ChatOpenAI(temperature=0.0,
-                     streaming=commandline,
-                     callbacks=callbacks,
-                     verbose=verbose,
-                     model="gpt-3.5-turbo-0125")
+    llm = ChatOpenAI(
+        temperature=0.0,
+        streaming=commandline,
+        callbacks=callbacks,
+        verbose=verbose,
+        model="gpt-3.5-turbo-0125",
+    )
     retriever_list = []
     for subdirectory in list_subdirectories(embeddings_directory):
         embedding = OpenAIEmbeddings()
@@ -79,7 +86,7 @@ def initialize_retrieval_chain(embeddings_directory, commandline, verbose):
         verbose=verbose,
         memory=memory,
         return_source_documents=True,
-        combine_docs_chain_kwargs={'prompt': qa_prompt}
+        combine_docs_chain_kwargs={"prompt": qa_prompt},
     )
 
     return qa
