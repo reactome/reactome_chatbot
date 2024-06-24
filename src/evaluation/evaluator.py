@@ -1,7 +1,7 @@
 import argparse
 import json
 
-from datasets import Dataset, load_dataset
+from datasets import Dataset
 from langchain_openai import ChatOpenAI
 from ragas import evaluate
 
@@ -57,6 +57,8 @@ def main():
 
     questions = [item["question"] for item in testset]
     ground_truths = [item["ground_truth"] for item in testset]
+
+    embeddings_directory = "embeddings"
 
     qa_system = initialize_retrieval_chain(embeddings_directory, True)
 
