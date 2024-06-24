@@ -3,20 +3,17 @@ import os
 import sys
 from typing import Dict
 
-from langchain_community.vectorstores.chroma import Chroma
+from langchain_community.vectorstores import Chroma
 from langchain_openai import OpenAIEmbeddings
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-from csv_generators import (generate_complexes_csv, generate_ewas_csv,
-                            generate_reactions_csv, generate_summations_csv)
+from csv_generators import generate_all_csvs
 from metadata_csv_loader import MetaDataCSVLoader
 from neo4j_connector import Neo4jConnector
 
 
 def upload_to_chromadb(file: str, embedding_table: str) -> Chroma:
-    embeddings = OpenAIEmbeddings()
-
     metadata_columns: Dict[str, list] = {
         "reactions": [
             "pathway_id",
@@ -42,7 +39,7 @@ def upload_to_chromadb(file: str, embedding_table: str) -> Chroma:
     }
 
     loader = MetaDataCSVLoader(
-        file_path=file, metadata_columns=metadata_columns[embedding_table]
+        file_path=file, metadata_columns=metadata_columns[embedding_table], encoding='utf-8'
     )
     docs = loader.load()
 
@@ -89,10 +86,9 @@ def main() -> None:
         uri=args.neo4j_uri, user=args.neo4j_password, password=args.neo4j_username
     )
 
-    reactions_csv: str = generate_reactions_csv(connector, args.force)
-    summations_csv: str = generate_summations_csv(connector, args.force)
-    complexes_csv: str = generate_complexes_csv(connector, args.force)
-    ewas_csv: str = generate_ewas_csv(connector, args.force)
+    (
+        reactions_csv, summations_csv, complexes_csv, ewas_csv
+    ) = generate_all_csvs(connector, args.force)
 
     connector.close()
 
