@@ -1,8 +1,9 @@
 import argparse
 import os
 import sys
+from typing import Dict
 
-from langchain.vectorstores.chroma import Chroma
+from langchain_community.vectorstores.chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
@@ -13,10 +14,10 @@ from metadata_csv_loader import MetaDataCSVLoader
 from neo4j_connector import Neo4jConnector
 
 
-def upload_to_chromadb(file, embedding_table):
+def upload_to_chromadb(file: str, embedding_table: str) -> Chroma:
     embeddings = OpenAIEmbeddings()
 
-    metadata_columns = {
+    metadata_columns: Dict[str, list] = {
         "reactions": [
             "pathway_id",
             "pathway_name",
@@ -45,10 +46,8 @@ def upload_to_chromadb(file, embedding_table):
     )
     docs = loader.load()
 
-    ### Initialize OpenAIEmbeddings for generating embeddings of documents.
     embeddings = OpenAIEmbeddings()
 
-    ### Create a Chroma vector store from the documents and save to disk.
     db = Chroma.from_documents(
         documents=docs,
         embedding=embeddings,
@@ -59,7 +58,7 @@ def upload_to_chromadb(file, embedding_table):
     return db
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate and load CSV files from Reactome Neo4j for the LangChain application"
     )
@@ -90,10 +89,10 @@ def main():
         uri=args.neo4j_uri, user=args.neo4j_password, password=args.neo4j_username
     )
 
-    reactions_csv = generate_reactions_csv(connector, args.force)
-    summations_csv = generate_summations_csv(connector, args.force)
-    complexes_csv = generate_complexes_csv(connector, args.force)
-    ewas_csv = generate_ewas_csv(connector, args.force)
+    reactions_csv: str = generate_reactions_csv(connector, args.force)
+    summations_csv: str = generate_summations_csv(connector, args.force)
+    complexes_csv: str = generate_complexes_csv(connector, args.force)
+    ewas_csv: str = generate_ewas_csv(connector, args.force)
 
     connector.close()
 
