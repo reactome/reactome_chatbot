@@ -78,7 +78,7 @@ This command will generate embeddings using the specified OpenAI API key.
 To generate embeddings inside docker run:
 ```bash
 mkdir embeddings;
-docker run --net=host -v $(pwd)/embeddings:/apt/embeddings/ --rm reactome-chatbot bash -c "python /app/bin/embedding_generator.py --openai-key=TOKEN;
+docker run --net=host -v $(pwd)/embeddings/:/apt/embeddings/ --rm reactome-chatbot bash -c "python /app/bin/embedding_generator.py --openai-key=TOKEN;
 ```
 
 
