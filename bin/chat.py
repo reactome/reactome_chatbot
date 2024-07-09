@@ -15,18 +15,34 @@ async def main() -> None:
     parser.add_argument("--openai-key", help="API key for OpenAI")
     parser.add_argument("--query", help="Query string to run")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose mode")
+    parser.add_argument(
+        "--ollama-model",
+        help="Ollama language model to use (alternative to OpenAI)"
+    )
+    parser.add_argument(
+        "--ollama-url",
+        default="http://localhost:11434",
+        help="Ollama host url"
+    )
+    parser.add_argument(
+        "--hf-model",
+        help="HuggingFace sentence_transformers model (alternative to OpenAI)"
+    )
+    parser.add_argument(
+        "--device",
+        default="cpu",
+        help="PyTorch device to use when running HuggingFace embeddings locally [cpu/cuda]"
+    )
     args = parser.parse_args()
 
-    openai_key = os.getenv("OPENAI_API_KEY") or args.openai_key
-    if not openai_key:
-        raise ValueError(
-            "OPENAI_API_KEY not set. Please provide the API key using --openai-key or in a .env file."
-        )
-
-    os.environ["OPENAI_API_KEY"] = openai_key
+    if args.openai_key:
+        os.environ["OPENAI_API_KEY"] = args.openai_key
 
     embeddings_directory = "embeddings"
-    qa = initialize_retrieval_chain(embeddings_directory, True, args.verbose)
+    qa = initialize_retrieval_chain(
+        embeddings_directory, True, args.verbose,
+        args.ollama_model, args.ollama_url, args.hf_model, args.device
+    )
     if args.query:
         await print_results(qa, args.query, args.verbose)
     else:
