@@ -3,7 +3,7 @@ import os
 
 import pyfiglet
 from dotenv import load_dotenv
-from typings import Any
+from typing import Any
 
 from src.retreival_chain import initialize_retrieval_chain
 

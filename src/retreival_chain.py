@@ -1,5 +1,5 @@
 import os
-from typing import List, Union
+from typing import AsyncGenerator, Callable, List
 
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.chains import ConversationalRetrievalChain
@@ -7,7 +7,7 @@ from langchain.memory import ConversationBufferMemory
 from langchain.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
 from langchain.retrievers import MergerRetriever
 from langchain.retrievers.self_query.base import SelfQueryRetriever
-from langchain.vectorstores.chroma import Chroma
+from langchain_community.vectorstores import Chroma
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from src.metadata_info import descriptions_info, field_info
@@ -22,7 +22,7 @@ def list_subdirectories(directory: str) -> List[str]:
     return subdirectories
 
 
-async def invoke(self, query: str) -> Union[str, None]:
+async def invoke(self, query: str) -> AsyncGenerator[str, None]:
     async for message in self.astream(query):
         yield message
 

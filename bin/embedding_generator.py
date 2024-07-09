@@ -50,7 +50,6 @@ def upload_to_chromadb(file: str, embedding_table: str) -> Chroma:
         embedding=embeddings,
         persist_directory="embeddings/" + embedding_table,
     )
-    db.persist()
 
     return db
 
