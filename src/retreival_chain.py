@@ -62,8 +62,8 @@ def initialize_retrieval_chain(
   2. If the answer cannot be derived from the provided context, do not ever provide a response, state that the information is not currently available in Reactome.
   3. If the user's question isn't a question or not related to Reactome, explain that you are an interactive chatbot designed to enhance their experience with Reactome.
   4. keep track of all the sources that are directly used to derive the final answer. 
-  5. Always format the sources following this format: <a href="https://reactome.org/content/detail/*Source_ID*">*Source_Name*, Where the Source_Name is the name of the retrieved document. 
-  5. Always provide the sources as citations in the format requested, in point-form at the end of the response paragraph.
+  5. Always keep track of all the sources that are directly used to derive the final answer, and return them along with the protien name according to the following format: < source_name >: < citation > as citations, where source_name is the name of the retrieved document. 
+  6. Always provide the citations in the format requested, in point-form at the end of the response paragraph.
 
   Ensure your responses are detailed and informative, enhancing the user's understanding of biological pathways.
     """
