@@ -26,6 +26,8 @@ asyncpg = "^0.29.0"
 sqlalchemy = "^2.0.30"
 langchain-community = "^0.2.5"
 langchain-core = "^0.2.7"
+langchain-huggingface = "^0.0.3"
+einops = "^0.8.0"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.2.2"

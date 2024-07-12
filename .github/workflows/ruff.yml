@@ -22,7 +22,7 @@ jobs:
 
     - name: Run ruff
       run: |
-        ruff src/ bin/
+        ruff check src/ bin/
 
     - name: Run ruff formatter
       run: |
