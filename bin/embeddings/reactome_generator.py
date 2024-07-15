@@ -3,25 +3,27 @@ import os
 import sys
 from typing import Dict
 
+import torch
 from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_openai import OpenAIEmbeddings
-import torch
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-from csv_generators import generate_all_csvs
-from metadata_csv_loader import MetaDataCSVLoader
-from neo4j_connector import Neo4jConnector
+from src.metadata_csv_loader import MetaDataCSVLoader
+from src.reactome.csv_generators import generate_all_csvs
+from src.reactome.neo4j_connector import Neo4jConnector
 
 
-def upload_to_chromadb(file: str, embedding_table: str, hf_model:str=None, device:str="cpu") -> None:
+def upload_to_chromadb(
+    file: str, embedding_table: str, hf_model: str = None, device: str = "cpu"
+) -> None:
     metadata_columns: Dict[str, list] = {
         "reactions": [
+            "st_id",
+            "display_name",
             "pathway_id",
             "pathway_name",
-            "reaction_id",
-            "reaction_name",
             "input_id",
             "input_name",
             "output_id",
@@ -29,11 +31,11 @@ def upload_to_chromadb(file: str, embedding_table: str, hf_model:str=None, devic
             "catalyst_id",
             "catalyst_name",
         ],
-        "summations": ["pathway_id", "pathway_name"],
-        "complexes": ["complex_id", "complex_name", "component_id", "component_name"],
+        "summations": ["st_id", "display_name", "summation"],
+        "complexes": ["st_id", "display_name", "component_id", "component_name"],
         "ewas": [
-            "entity_id",
-            "entity_name",
+            "st_id",
+            "display_name",
             "canonical_gene_name",
             "synonyms_gene_name",
             "uniprot_link",
@@ -41,7 +43,9 @@ def upload_to_chromadb(file: str, embedding_table: str, hf_model:str=None, devic
     }
 
     loader = MetaDataCSVLoader(
-        file_path=file, metadata_columns=metadata_columns[embedding_table], encoding='utf-8'
+        file_path=file,
+        metadata_columns=metadata_columns[embedding_table],
+        encoding="utf-8",
     )
     docs = loader.load()
 
@@ -54,13 +58,13 @@ def upload_to_chromadb(file: str, embedding_table: str, hf_model:str=None, devic
         embeddings = HuggingFaceEmbeddings(
             model_name=hf_model,
             model_kwargs={"device": device, "trust_remote_code": True},
-            encode_kwargs={"batch_size": 12, "normalize_embeddings": False}
+            encode_kwargs={"batch_size": 12, "normalize_embeddings": False},
         )
 
     db = Chroma.from_documents(
         documents=docs,
         embedding=embeddings,
-        persist_directory="embeddings/" + embedding_table,
+        persist_directory="embeddings/reactome/" + embedding_table,
     )
 
     return db
@@ -91,12 +95,12 @@ def main() -> None:
     )
     parser.add_argument(
         "--hf-model",
-        help="HuggingFace sentence_transformers model (alternative to OpenAI)"
+        help="HuggingFace sentence_transformers model (alternative to OpenAI)",
     )
     parser.add_argument(
         "--device",
         default="cpu",
-        help="PyTorch device to use when running HuggingFace model locally [cpu/cuda]"
+        help="PyTorch device to use when running HuggingFace model locally [cpu/cuda]",
     )
     args = parser.parse_args()
 
@@ -107,10 +111,9 @@ def main() -> None:
         uri=args.neo4j_uri, user=args.neo4j_password, password=args.neo4j_username
     )
 
-    (
-        reactions_csv, summations_csv, complexes_csv, ewas_csv
-    ) = generate_all_csvs(connector, args.force)
-
+    (reactions_csv, summations_csv, complexes_csv, ewas_csv) = generate_all_csvs(
+        connector, args.force
+    )
     connector.close()
 
     db = upload_to_chromadb(reactions_csv, "reactions", args.hf_model, args.device)
