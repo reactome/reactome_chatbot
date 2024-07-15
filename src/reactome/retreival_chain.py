@@ -7,9 +7,9 @@ from langchain.memory import ConversationBufferMemory
 from langchain.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
 from langchain.retrievers import MergerRetriever
 from langchain.retrievers.self_query.base import SelfQueryRetriever
-from langchain_core.embeddings import Embeddings
-from langchain_community.vectorstores import Chroma
 from langchain_community.chat_models import ChatOllama
+from langchain_community.vectorstores import Chroma
+from langchain_core.embeddings import Embeddings
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 

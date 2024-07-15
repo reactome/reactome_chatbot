@@ -3,7 +3,9 @@ from typing import Any, Callable, Dict, Tuple
 
 import pandas as pd
 
-from src.reactome.neo4j_connector import Neo4jConnector, get_complexes, get_ewas, get_reactions, get_summations
+from src.reactome.neo4j_connector import (Neo4jConnector, get_complexes,
+                                          get_ewas, get_reactions,
+                                          get_summations)
 
 BASE_CSV_PATH = "csv_files/reactome"
 
@@ -14,11 +16,12 @@ CSV_GENERATION_MAP: Dict[str, Callable[[Neo4jConnector], Any]] = {
     "ewas.csv": get_ewas,
 }
 
+
 def generate_csv(
     connector: Neo4jConnector,
     data_fetch_func: Callable[[Neo4jConnector], Any],
     file_name: str,
-    force: bool = False
+    force: bool = False,
 ) -> str:
     csv_file_path = Path(BASE_CSV_PATH) / file_name
     if not force and csv_file_path.exists():
@@ -31,7 +34,10 @@ def generate_csv(
     df.to_csv(csv_file_path, index=False)
     return str(csv_file_path)
 
-def generate_all_csvs(connector: Neo4jConnector, force: bool = False) -> Tuple[str, str, str, str]:
+
+def generate_all_csvs(
+    connector: Neo4jConnector, force: bool = False
+) -> Tuple[str, str, str, str]:
     Path(BASE_CSV_PATH).mkdir(parents=True, exist_ok=True)
 
     csv_paths = []
@@ -39,4 +45,3 @@ def generate_all_csvs(connector: Neo4jConnector, force: bool = False) -> Tuple[s
         csv_path = generate_csv(connector, data_fetch_func, file_name, force)
         csv_paths.append(csv_path)
     return tuple(csv_paths)
-

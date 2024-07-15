@@ -3,10 +3,10 @@ import os
 import sys
 from typing import Dict
 
+import torch
 from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_openai import OpenAIEmbeddings
-import torch
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
@@ -116,10 +116,10 @@ def main() -> None:
     )
     connector.close()
 
-  #  db = upload_to_chromadb(reactions_csv, "reactions", args.hf_model, args.device)
-  #  print(db._collection.count())
-  #  db = upload_to_chromadb(summations_csv, "summations", args.hf_model, args.device)
-  #  print(db._collection.count())
+    db = upload_to_chromadb(reactions_csv, "reactions", args.hf_model, args.device)
+    print(db._collection.count())
+    db = upload_to_chromadb(summations_csv, "summations", args.hf_model, args.device)
+    print(db._collection.count())
     db = upload_to_chromadb(complexes_csv, "complexes", args.hf_model, args.device)
     print(db._collection.count())
     db = upload_to_chromadb(ewas_csv, "ewas", args.hf_model, args.device)

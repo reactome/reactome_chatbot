@@ -1,9 +1,9 @@
 import argparse
 import os
+from typing import Any
 
 import pyfiglet
 from dotenv import load_dotenv
-from typing import Any
 
 from src.reactome.retreival_chain import initialize_retrieval_chain
 

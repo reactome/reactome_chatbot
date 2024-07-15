@@ -1,10 +1,11 @@
-from typing import List
+from typing import Dict, List
 
 from langchain.chains.query_constructor.base import AttributeInfo
 
-
-pathway_id_description = "A Reactome Identifier unique to each pathway. A pathway name may appear multiple times in the dataset\
+pathway_id_description = (
+    "A Reactome Identifier unique to each pathway. A pathway name may appear multiple times in the dataset\
     This ID allows for the specific identification and exploration of each pathway's details within the Reactome Database.",
+)
 pathway_name_description = "The name of the biological pathway, indicating a specific series of interactions or processes within a cell.\
                 A pathway name may appear multiple times in the dataset, reflecting the fact that several reactions (identified by 'reaction_name') contribute to a single pathway.\
                 The relationship between 'reaction_name' and 'pathway_name' is foundational, with each reaction serving as a step or component within the overarching pathway, contributing to its completion and functional outcome.\
@@ -18,22 +19,19 @@ descriptions_info: dict[str, str] = {
 }
 
 
-field_info: Dict[str: List[AttributeInfo]] = {
-    "summations":
+field_info: Dict[str : List[AttributeInfo]] = {
+    "summations": [
         AttributeInfo(
             name="st_id",
-            description=pathway_id_description
+            description=pathway_id_description,
             type="string",
         ),
         AttributeInfo(
             name="display_name",
-            description=pathway_name_desciption,
+            description=pathway_name_description,
             type="string",
         ),
-        AttributeInfo(
-            name="summation",
-            description="The descriptions of the pathway"
-        )
+        AttributeInfo(name="summation", description="The descriptions of the pathway"),
     ],
     "reactions": [
         AttributeInfo(
@@ -100,7 +98,7 @@ field_info: Dict[str: List[AttributeInfo]] = {
                 Catalysts are crucial for modulating reaction rates and guiding the direction of the reaction, ensuring the efficient progression of biological pathways.\
                 Catalysts can be proteins, enzymes, or molecular compounds, underscoring their vital role in cellular operations.",
             type="string",
-        )
+        ),
     ],
     "complexes": [
         AttributeInfo(
@@ -126,7 +124,7 @@ field_info: Dict[str: List[AttributeInfo]] = {
             description="The name of the individual component associated with the complex in that row.\
                   This reveals the specific protein or molecule constituting part of the complex, emphasizing the diversity of components within a single biological entity.",
             type="string",
-        )
+        ),
     ],
     "ewas": [
         AttributeInfo(
@@ -152,6 +150,6 @@ field_info: Dict[str: List[AttributeInfo]] = {
             description="The name of the individual component associated with the complex in that row.\
                   This reveals the specific protein or molecule constituting part of the complex, emphasizing the diversity of components within a single biological entity.",
             type="string",
-        )
-    ]
-]
+        ),
+    ],
+}
