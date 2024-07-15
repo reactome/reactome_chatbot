@@ -5,7 +5,7 @@ from src.retrieval_chain import initialize_retrieval_chain
 
 @cl.on_chat_start
 async def quey_llm() -> None:
-    embeddings_directory: str = "embeddings"
+    embeddings_directory: str = "embeddings/reactome"
     llm_chain = initialize_retrieval_chain(embeddings_directory, False, False)
     cl.user_session.set("llm_chain", llm_chain)
 

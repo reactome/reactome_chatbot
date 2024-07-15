@@ -13,7 +13,7 @@ from langchain_community.chat_models import ChatOllama
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-from src.metadata_info import descriptions_info, field_info
+from src.reactome.metadata_info import descriptions_info, field_info
 
 
 def list_subdirectories(directory: str) -> List[str]:
@@ -30,13 +30,15 @@ async def invoke(self, query: str) -> AsyncGenerator[str, None]:
         yield message
 
 
-def get_embedding(hf_model:str=None, device:str="cpu") -> Callable[[],Embeddings]:
+def get_embedding(
+    hf_model: str = None, device: str = "cpu"
+) -> Callable[[], Embeddings]:
     if hf_model is None:
         return OpenAIEmbeddings
     return lambda: HuggingFaceEmbeddings(
         model_name=hf_model,
         model_kwargs={"device": device, "trust_remote_code": True},
-        encode_kwargs={"batch_size": 12, "normalize_embeddings": False}
+        encode_kwargs={"batch_size": 12, "normalize_embeddings": False},
     )
 
 
@@ -47,7 +49,7 @@ def initialize_retrieval_chain(
     ollama_model: str = None,
     ollama_url: str = "http://localhost:11434",
     hf_model: str = None,
-    device: str = "cpu"
+    device: str = "cpu",
 ) -> ConversationalRetrievalChain:
     memory = ConversationBufferMemory(
         memory_key="chat_history",
@@ -56,13 +58,13 @@ def initialize_retrieval_chain(
         output_key="answer",
     )
 
-    system_prompt = r"""As a Reactome Curator with extensive knowledge in biological pathways, answer users' questions as comprehensively and accurately as possible based on the provided context. Provide any useful background information required to help users better understand the significance of the results based on the context provided. 
+    system_prompt = r"""As a Reactome Curator with extensive knowledge in biological pathways, answer users' questions as comprehensively and accurately as possible based on the provided context. Provide any useful background information required to help users better understand the significance of the results based on the context provided.
     When providing answers, please adhere to the following guidelines:
   1. Given the user question and the provided context only, answer the question as comprehensively and accurately as possible and provide any useful background information to the user's question.
   2. If the answer cannot be derived from the provided context, do not ever provide a response, state that the information is not currently available in Reactome.
   3. If the user's question isn't a question or not related to Reactome, explain that you are an interactive chatbot designed to enhance their experience with Reactome.
-  4. keep track of all the sources that are directly used to derive the final answer. 
-  5. Always keep track of all the sources that are directly used to derive the final answer, and return them along with the protien name according to the following format: < source_name >: < citation > as citations, where source_name is the name of the retrieved document. 
+  4. keep track of all the sources that are directly used to derive the final answer.
+  5. Always keep track of all the sources that are directly used to derive the final answer, and return them along with the protien name according to the following format: <a href="url">display_name</a> as citations.
   6. Always provide the citations in the format requested, in point-form at the end of the response paragraph.
 
   Ensure your responses are detailed and informative, enhancing the user's understanding of biological pathways.
@@ -83,7 +85,6 @@ def initialize_retrieval_chain(
     if commandline:
         callbacks = [StreamingStdOutCallbackHandler()]
 
-
     if ollama_model is None:  # Use OpenAI when Ollama not specified
         llm = ChatOpenAI(
             temperature=0.0,
@@ -99,7 +100,7 @@ def initialize_retrieval_chain(
             verbose=verbose,
             model=ollama_model,
             base_url=ollama_url,
-            system=system_prompt
+            system=system_prompt,
         )
 
     # Get OpenAIEmbeddings (or HuggingFaceEmbeddings model if specified)
@@ -117,7 +118,7 @@ def initialize_retrieval_chain(
             llm=llm,
             vectorstore=vectordb,
             document_contents=descriptions_info[subdirectory],
-            metadata_field_info=field_info,
+            metadata_field_info=field_info[subdirectory],
             search_kwargs={"k": 15},
         )
 

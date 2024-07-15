@@ -26,10 +26,11 @@ def get_reactions(connector: Neo4jConnector) -> List[Dict[str, Union[str, List[s
     OPTIONAL MATCH (reaction)-[:input]->(input:PhysicalEntity)
     OPTIONAL MATCH (reaction)-[:output]->(output:PhysicalEntity)
     OPTIONAL MATCH (reaction)-[:catalystActivity]->(catalystActivity:CatalystActivity)-[:physicalEntity]->(catalyst:PhysicalEntity)
-    RETURN  pathway.stId AS pathway_id,
+    RETURN
+     reaction.stId AS st_id,
+     reaction.displayName AS display_name,
+     pathway.stId AS pathway_id,
      pathway.displayName AS pathway_name,
-     reaction.stId AS reaction_id,
-     reaction.displayName AS reaction_name,
      COLLECT(DISTINCT input.stId) AS input_id,
      COLLECT(DISTINCT input.displayName) AS input_name,
      COLLECT(DISTINCT output.stId) AS output_id,
@@ -44,8 +45,8 @@ def get_summations(connector: Neo4jConnector) -> List[Dict[str, Union[str, List[
     query = """
     MATCH (e)-[:summation]->(summation:Summation)
     WHERE (e:Pathway OR e:ReactionLikeEvent) and e.speciesName = "Homo sapiens"
-    RETURN e.stId AS pathway_id,
-    e.displayName AS pathway_name,
+    RETURN e.stId AS st_id,
+    e.displayName AS display_name,
     labels(e) AS labels,
     CASE
         WHEN size(summation.text) > 10000 THEN LEFT(summation.text, 10000) + "..."
@@ -59,9 +60,9 @@ def get_complexes(connector: Neo4jConnector) -> List[Dict[str, Union[str, List[s
     query = """
     MATCH (complex:Complex)-[:hasComponent]->(component)
     WHERE complex.speciesName = "Homo sapiens"
-    RETURN complex.speciesName,
-     complex.stId as complex_id,
-     complex.name AS complex_name,
+    RETURN complex.speciesName as species,
+     complex.stId as st_id,
+     complex.name AS display_name,
      component.stId AS component_id,
      component.name AS component_name
     """
@@ -72,8 +73,8 @@ def get_ewas(connector: Neo4jConnector) -> List[Dict[str, Union[str, List[str]]]
     query = """
      MATCH q1 =(database:ReferenceDatabase)<-[:referenceDatabase]-(entity1:ReferenceEntity)<--(gene:ReferenceEntity)<-[:referenceEntity]-(protein:PhysicalEntity)
       where database.displayName = "HGNC"
-     RETURN DISTINCT protein.stId AS entity_id,
-      protein.displayName AS entity_name,
+     RETURN DISTINCT protein.stId AS st_id,
+      protein.displayName AS display_name,
       entity1.geneName AS canonical_gene_name,
       gene.geneName AS synonyms_gene_name,
       gene.url AS uniprot_link
