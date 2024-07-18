@@ -5,7 +5,7 @@ from typing import Dict
 
 import torch
 from langchain_community.vectorstores import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
 from langchain_openai import OpenAIEmbeddings
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
@@ -45,6 +45,11 @@ def upload_to_chromadb(
 
     if hf_model is None:  # Use OpenAI
         embeddings = OpenAIEmbeddings()
+    elif "HUGGINGFACEHUB_API_TOKEN" in os.environ:
+        embeddings = HuggingFaceEndpointEmbeddings(
+            huggingfacehub_api_token=os.environ["HUGGINGFACEHUB_API_TOKEN"],
+            model=hf_model,
+        )
     else:
         embeddings = HuggingFaceEmbeddings(
             model_name=hf_model,
@@ -89,14 +94,21 @@ def main() -> None:
         help="HuggingFace sentence_transformers model (alternative to OpenAI)",
     )
     parser.add_argument(
+        "--hf-key",
+        help="API key for HuggingFaceHub",
+    )
+    parser.add_argument(
         "--device",
         default="cpu",
         help="PyTorch device to use when running HuggingFace model locally [cpu/cuda]",
     )
     args = parser.parse_args()
 
-    if args.openai_key is not None:
+    if args.openai_key:
         os.environ["OPENAI_API_KEY"] = args.openai_key
+
+    if args.hf_key:
+        os.environ["HUGGINGFACEHUB_API_TOKEN"] = args.hf_key
 
     connector = Neo4jConnector(
         uri=args.neo4j_uri, user=args.neo4j_password, password=args.neo4j_username

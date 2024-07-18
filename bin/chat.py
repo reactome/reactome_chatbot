@@ -26,6 +26,10 @@ async def main() -> None:
         help="HuggingFace sentence_transformers model (alternative to OpenAI)",
     )
     parser.add_argument(
+        "--hf-key",
+        help="API key for HuggingFaceHub",
+    )
+    parser.add_argument(
         "--device",
         default="cpu",
         help="PyTorch device to use when running HuggingFace embeddings locally [cpu/cuda]",
@@ -34,6 +38,9 @@ async def main() -> None:
 
     if args.openai_key:
         os.environ["OPENAI_API_KEY"] = args.openai_key
+
+    if args.hf_key:
+        os.environ["HUGGINGFACEHUB_API_TOKEN"] = args.hf_key
 
     embeddings_directory = "embeddings"
     qa = initialize_retrieval_chain(
