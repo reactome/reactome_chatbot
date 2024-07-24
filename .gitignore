@@ -161,3 +161,4 @@ cython_debug/
 
 csv_files/*
 embeddings/*
+.embeddings/*
