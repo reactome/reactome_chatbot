@@ -1,14 +1,18 @@
 from argparse import ArgumentParser
+from glob import iglob
 import os
 from pathlib import Path
 import re
+from shutil import rmtree
 from typing import NamedTuple
 from zipfile import ZipFile, ZIP_DEFLATED
 
-import localstack_client.session as boto3
+import boto3
 
 
 REPO_ROOT = Path(__file__).parent.parent
+EM_ARCHIVE = REPO_ROOT / ".embeddings"
+EM_ACTIVE = REPO_ROOT / "embeddings"
 S3_BUCKET = "embeddings"
 
 
@@ -24,7 +28,7 @@ class EmbeddingSelection(NamedTuple):
         return self.model.startswith("openai/text-embedding-")
 
     def path(self, check_exists:bool=True) -> Path:
-        path = REPO_ROOT / ".embeddings" / str(self)
+        path = EM_ARCHIVE / str(self)
         if check_exists and not path.is_dir():
             exit(f"Embedding does not exist at {path}")
         return path
@@ -40,7 +44,7 @@ class EmbeddingSelection(NamedTuple):
 
 def pull(embedding: EmbeddingSelection):
     embedding_path:Path = embedding.path(check_exists=False)
-    zip_tmpfile:Path = REPO_ROOT / ".embeddings/tmp.zip"
+    zip_tmpfile:Path = EM_ARCHIVE / "tmp.zip"
     try:
         s3 = boto3.client("s3")
         print("Downloading...")
@@ -54,10 +58,10 @@ def pull(embedding: EmbeddingSelection):
 
 
 def use(embedding: EmbeddingSelection):
-    (REPO_ROOT / "embeddings").mkdir(exist_ok=True)
+    EM_ACTIVE.mkdir(exist_ok=True)
     embedding_path:Path = embedding.path()
-    (REPO_ROOT / "embeddings" / embedding.db).unlink(missing_ok=True)
-    (REPO_ROOT / "embeddings" / embedding.db).symlink_to(embedding_path)
+    (EM_ACTIVE / embedding.db).unlink(missing_ok=True)
+    (EM_ACTIVE / embedding.db).symlink_to(embedding_path)
     which()
 
 
@@ -104,11 +108,29 @@ def push(embedding: EmbeddingSelection):
     print("Pushed to S3.")
 
 
+def rm(embedding: EmbeddingSelection):
+    embedding_path:Path = embedding.path()
+    rmtree(embedding_path)
+
+
+def ls():
+    for embedding_str in iglob(str(EM_ARCHIVE / "*/*/*/*")):
+        print(Path(embedding_str).relative_to(EM_ARCHIVE))
+
+
+def ls_remote():
+    s3 = boto3.client("s3")
+    response = s3.list_objects_v2(Bucket=S3_BUCKET)
+    if "Contents" in response:
+        for file_info in response["Contents"]:
+            print(file_info["Key"])
+
+
 def which():
-    for subdir in (REPO_ROOT / "embeddings").iterdir():
+    for subdir in EM_ACTIVE.iterdir():
         abs_path = subdir.resolve()
         try:
-            display_path = abs_path.relative_to(REPO_ROOT / ".embeddings")
+            display_path = abs_path.relative_to(EM_ARCHIVE)
         except ValueError:
             display_path = abs_path
         print(f"{subdir.name}:\t{display_path}")
@@ -162,14 +184,17 @@ if __name__ == "__main__":
         parents=[selection_parser],
         help="Remove specified embedding (locally)",
     )
+    rm_parser.set_defaults(func=rm)
     ls_parser = subparsers.add_parser(
         "ls",
         help="List locally installed embeddings",
     )
+    ls_parser.set_defaults(func=ls)
     ls_remote_parser = subparsers.add_parser(
         "ls-remote",
         help="List available embeddings on S3",
     )
+    ls_remote_parser.set_defaults(func=ls_remote)
     which_parser = subparsers.add_parser(
         "which",
         help="Reveal the current embeddings in use",
