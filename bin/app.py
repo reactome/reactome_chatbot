@@ -1,6 +1,6 @@
 import chainlit as cl
 
-from src.retrieval_chain import initialize_retrieval_chain
+from src.reactome.retreival_chain import initialize_retrieval_chain
 
 
 @cl.on_chat_start
