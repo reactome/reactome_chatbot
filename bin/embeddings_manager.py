@@ -1,7 +1,7 @@
 from argparse import ArgumentParser
 from glob import iglob
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 from shutil import rmtree
 from typing import NamedTuple
@@ -13,7 +13,8 @@ import boto3
 REPO_ROOT = Path(__file__).parent.parent
 EM_ARCHIVE = REPO_ROOT / ".embeddings"
 EM_ACTIVE = REPO_ROOT / "embeddings"
-S3_BUCKET = "embeddings"
+S3_BUCKET = "download.reactome.org"
+S3_PREFIX = PurePosixPath("react-to-me/embeddings")
 
 
 class EmbeddingSelection(NamedTuple):
@@ -45,10 +46,12 @@ class EmbeddingSelection(NamedTuple):
 def pull(embedding: EmbeddingSelection):
     embedding_path:Path = embedding.path(check_exists=False)
     zip_tmpfile:Path = EM_ARCHIVE / "tmp.zip"
+    s3 = boto3.resource("s3")
+    s3_bucket = s3.Bucket(S3_BUCKET)
+    s3_key = str(S3_PREFIX / str(embedding))
+    print("Downloading...")
     try:
-        s3 = boto3.client("s3")
-        print("Downloading...")
-        s3.download_file(S3_BUCKET, str(embedding), zip_tmpfile)
+        s3_bucket.download_file(s3_key, zip_tmpfile)
         print("Decompressing...")
         with ZipFile(zip_tmpfile, "r") as zipf:
             zipf.extractall(embedding_path)
@@ -92,17 +95,19 @@ def make(
 def push(embedding: EmbeddingSelection):
     embedding_path:Path = embedding.path()
     zip_tmpfile:Path = REPO_ROOT / ".embeddings/tmp.zip"
+    s3 = boto3.resource("s3")
+    s3_bucket = s3.Bucket(S3_BUCKET)
+    s3_key = str(S3_PREFIX / str(embedding))
+    print("Compressing...")
     try:
-        print("Compressing...")
         with ZipFile(zip_tmpfile, "w", ZIP_DEFLATED) as zipf:
             for root, _, filenames in os.walk(embedding_path):
                 for filename in filenames:
                     file_path = Path(root) / filename
                     arc_name = file_path.relative_to(embedding_path)
                     zipf.write(file_path, arc_name)
-        s3 = boto3.client("s3")
         print("Uploading...")
-        s3.upload_file(zip_tmpfile, S3_BUCKET, str(embedding))
+        s3_bucket.upload_file(zip_tmpfile, s3_key)
     finally:
         zip_tmpfile.unlink()
     print("Pushed to S3.")
@@ -119,11 +124,10 @@ def ls():
 
 
 def ls_remote():
-    s3 = boto3.client("s3")
-    response = s3.list_objects_v2(Bucket=S3_BUCKET)
-    if "Contents" in response:
-        for file_info in response["Contents"]:
-            print(file_info["Key"])
+    s3 = boto3.resource("s3")
+    s3_bucket = s3.Bucket(S3_BUCKET)
+    for obj in s3_bucket.objects.filter(Prefix=str(S3_PREFIX)):
+        print(PurePosixPath(obj.key).relative_to(S3_PREFIX))
 
 
 def which():

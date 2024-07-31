@@ -42,7 +42,7 @@ async def main() -> None:
     if args.hf_key:
         os.environ["HUGGINGFACEHUB_API_TOKEN"] = args.hf_key
 
-    embeddings_directory = "embeddings"
+    embeddings_directory = "embeddings/reactome"
     qa = initialize_retrieval_chain(
         embeddings_directory,
         True,
