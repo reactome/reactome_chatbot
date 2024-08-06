@@ -9,10 +9,8 @@ from zipfile import ZipFile, ZIP_DEFLATED
 
 import boto3
 
+from src.util.embedding_environment import EM_ARCHIVE, EmbeddingEnvironment
 
-REPO_ROOT = Path(__file__).parent.parent
-EM_ARCHIVE = REPO_ROOT / ".embeddings"
-EM_ACTIVE = REPO_ROOT / "embeddings"
 S3_BUCKET = "download.reactome.org"
 S3_PREFIX = PurePosixPath("react-to-me/embeddings")
 
@@ -61,10 +59,7 @@ def pull(embedding: EmbeddingSelection):
 
 
 def use(embedding: EmbeddingSelection):
-    EM_ACTIVE.mkdir(exist_ok=True)
-    embedding_path:Path = embedding.path()
-    (EM_ACTIVE / embedding.db).unlink(missing_ok=True)
-    (EM_ACTIVE / embedding.db).symlink_to(embedding_path)
+    EmbeddingEnvironment.set_one(embedding.path().relative_to(EM_ARCHIVE))
     which()
 
 
@@ -94,7 +89,7 @@ def make(
 
 def push(embedding: EmbeddingSelection):
     embedding_path:Path = embedding.path()
-    zip_tmpfile:Path = REPO_ROOT / ".embeddings/tmp.zip"
+    zip_tmpfile:Path = EM_ARCHIVE / "tmp.zip"
     s3 = boto3.resource("s3")
     s3_bucket = s3.Bucket(S3_BUCKET)
     s3_key = str(S3_PREFIX / str(embedding))
@@ -131,13 +126,8 @@ def ls_remote():
 
 
 def which():
-    for subdir in EM_ACTIVE.iterdir():
-        abs_path = subdir.resolve()
-        try:
-            display_path = abs_path.relative_to(EM_ARCHIVE)
-        except ValueError:
-            display_path = abs_path
-        print(f"{subdir.name}:\t{display_path}")
+    for db_name, display_path in EmbeddingEnvironment.get_dict().items():
+        print(f"{db_name}:\t{display_path}")
 
 
 if __name__ == "__main__":
