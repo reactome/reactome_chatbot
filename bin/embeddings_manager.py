@@ -122,7 +122,9 @@ def ls_remote():
     s3 = boto3.resource("s3")
     s3_bucket = s3.Bucket(S3_BUCKET)
     for obj in s3_bucket.objects.filter(Prefix=str(S3_PREFIX)):
-        print(PurePosixPath(obj.key).relative_to(S3_PREFIX))
+        relative_path = PurePosixPath(obj.key).relative_to(S3_PREFIX)
+        if len(relative_path.parts) == 4:
+            print(relative_path)
 
 
 def which():
