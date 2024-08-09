@@ -62,7 +62,9 @@ poetry run python bin/chat.py --query "What is TP53 involved in?"
 ```
 This will execute the ChatBot with the provided query and print the response.
 
-### Generating Embeddings
+### Getting Embeddings
+
+Please refer to the [Embeddings Manager documentation](docs/embeddings_manager.md) for updated steps for either downloading or generating embeddings.
 
 #### Dependencies
 
@@ -71,7 +73,7 @@ Reactome Dockerized Graph database from DockerHub: [reactome/graphdb](https://hu
 To generate embeddings using the embedding generator script, use the following command:
 
 ```bash
-poetry run python bin/embedding_generator.py --openai-key=<your-key>
+python bin/embeddings_manager.py make openai/text-embedding-ada-002/reactome/Release89 --openai-key=<your-key>
 ```
 This command will generate embeddings using the specified OpenAI API key.
 
@@ -120,7 +122,7 @@ To make sure imports are organized
 
 
 ```bash
-poetry run iosort . 
+poetry run iosort .
 ```
 
 ## Contributing
