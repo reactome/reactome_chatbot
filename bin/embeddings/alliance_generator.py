@@ -1,5 +1,6 @@
 import argparse
 import os
+
 import requests
 import sys
 from typing import Dict
@@ -12,6 +13,7 @@ from langchain_openai import OpenAIEmbeddings
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from src.metadata_csv_loader import MetaDataCSVLoader
+
 from src.alliance.csv_generators import generate_all_csvs
 
 def get_release_version() -> str:
