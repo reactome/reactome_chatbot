@@ -28,6 +28,7 @@ langchain-community = "^0.2.5"
 langchain-core = "^0.2.7"
 langchain-huggingface = "^0.0.3"
 einops = "^0.8.0"
+boto3 = "^1.34.148"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.2.2"
