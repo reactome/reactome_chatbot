@@ -1,4 +1,5 @@
 import os
+import requests
 import sys
 from typing import Dict
 
@@ -10,8 +11,21 @@ from langchain_openai import OpenAIEmbeddings
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from src.metadata_csv_loader import MetaDataCSVLoader
-from src.reactome.csv_generators import generate_all_csvs
-from src.reactome.neo4j_connector import Neo4jConnector
+
+from src.alliance.csv_generators import generate_all_csvs
+
+def get_release_version() -> str:
+    url: str = "https://www.alliancegenome.org/api/releaseInfo"
+    response = requests.get(url)
+    if response.status_code == 200:
+        response_json = response.json()
+        release_version = response_json.get('releaseVersion')
+        if release_version:
+            return release_version
+        else:
+            raise ValueError('Release version not found in the response.')
+    else:
+        raise ConnectionError(f'Failed to get the response. Status code: {response.status_code}')
 
 
 def upload_to_chromadb(
@@ -72,27 +86,23 @@ def upload_to_chromadb(
 
 def main(
     embeddings_dir: str,
-    neo4j_uri: str = "bolt://localhost:7687",
-    neo4j_username: str = None,
-    neo4j_password: str = None,
     force: bool = False,
     hf_model: str = None,
     device: str = None,
+    **kwargs
 ) -> None:
-    connector = Neo4jConnector(
-        uri=neo4j_uri, user=neo4j_username, password=neo4j_password
+    release_version = get_release_version()
+    print(f'Release Version: {release_version}')
+
+    (gene_csv) = generate_all_csvs(
+        release_version, force
     )
 
-    (reactions_csv, summations_csv, complexes_csv, ewas_csv) = generate_all_csvs(
-        connector, force
-    )
-    connector.close()
-
-    db = upload_to_chromadb(embeddings_dir, reactions_csv, "reactions", hf_model, device)
-    print(db._collection.count())
-    db = upload_to_chromadb(embeddings_dir, summations_csv, "summations", hf_model, device)
-    print(db._collection.count())
-    db = upload_to_chromadb(embeddings_dir, complexes_csv, "complexes", hf_model, device)
-    print(db._collection.count())
-    db = upload_to_chromadb(embeddings_dir, ewas_csv, "ewas", hf_model, device)
-    print(db._collection.count())
+    #db = upload_to_chromadb(reactions_csv, "reactions", args.hf_model, args.device)
+    #print(db._collection.count())
+    #db = upload_to_chromadb(summations_csv, "summations", args.hf_model, args.device)
+    #print(db._collection.count())
+    #db = upload_to_chromadb(complexes_csv, "complexes", args.hf_model, args.device)
+    #print(db._collection.count())
+    #db = upload_to_chromadb(ewas_csv, "ewas", args.hf_model, args.device)
+    #print(db._collection.count())

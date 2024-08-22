@@ -82,6 +82,9 @@ def make(
     if embedding.db == "reactome":
         from embeddings.reactome_generator import main
         main(str(embedding_path), hf_model=embedding.model, **kwargs)
+    elif embedding.db == "alliance":
+        from embeddings.alliance_generator import main
+        main(str(embedding_path), hf_model=embedding.model, **kwargs)
     else:
         raise NotImplementedError(f"db: {embedding.db}")
     use(embedding)
