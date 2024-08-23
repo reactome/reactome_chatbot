@@ -38,8 +38,6 @@ For HuggingFace models, `<modelorg>/<model>` simply matches the HuggingFace mode
 
 ## Downloading Embeddings from S3
 
-Requires S3 read access.
-
 ### List embeddings available to download: `ls-remote`
 ```sh
 python bin/embeddings_manager.py ls-remote

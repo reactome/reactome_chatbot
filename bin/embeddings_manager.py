@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 from glob import iglob
 import os
+import sys
 from pathlib import Path, PurePosixPath
 import re
 from shutil import rmtree
@@ -11,7 +12,9 @@ from botocore import UNSIGNED
 from botocore.client import Config
 import boto3
 
-from src.util.embedding_environment import EM_ARCHIVE, EmbeddingEnvironment
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__),  "..", "src")))
+
+from util.embedding_environment import EM_ARCHIVE, EmbeddingEnvironment
 
 S3_BUCKET = "download.reactome.org"
 S3_PREFIX = PurePosixPath("react-to-me/embeddings")

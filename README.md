@@ -32,6 +32,28 @@ poetry install
 
 ### Docker Setup
 
+
+#### Build Docker image
+
+```bash
+docker build -t reactome-chatbot .
+```
+
+##### Pull embeddings
+
+list embeddings available
+
+```bash
+docker run -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "python bin/embeddings_manager.py ls-remote"
+```
+
+and pull the one you want
+
+```bash
+docker run -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "python bin/embeddings_manager.py pull <the-embedding-from-ls-remote>"
+```
+
+
 The project uses Docker Compose to manage the PostgreSQL database. The configuration for the database is stored in the `docker-compose.yml` file, and the environment variables are stored in the `.env` file.
 
 To start the PostgreSQL database, run the following command:
