@@ -7,6 +7,8 @@ from shutil import rmtree
 from typing import NamedTuple
 from zipfile import ZipFile, ZIP_DEFLATED
 
+from botocore import UNSIGNED
+from botocore.client import Config
 import boto3
 
 from src.util.embedding_environment import EM_ARCHIVE, EmbeddingEnvironment
@@ -44,7 +46,7 @@ class EmbeddingSelection(NamedTuple):
 def pull(embedding: EmbeddingSelection):
     embedding_path:Path = embedding.path(check_exists=False)
     zip_tmpfile:Path = EM_ARCHIVE / "tmp.zip"
-    s3 = boto3.resource("s3")
+    s3 = boto3.resource("s3", config=Config(signature_version=UNSIGNED))
     s3_bucket = s3.Bucket(S3_BUCKET)
     s3_key = str(S3_PREFIX / str(embedding))
     print("Downloading...")
@@ -122,7 +124,7 @@ def ls():
 
 
 def ls_remote():
-    s3 = boto3.resource("s3")
+    s3 = boto3.resource("s3", config=Config(signature_version=UNSIGNED))
     s3_bucket = s3.Bucket(S3_BUCKET)
     for obj in s3_bucket.objects.filter(Prefix=str(S3_PREFIX)):
         relative_path = PurePosixPath(obj.key).relative_to(S3_PREFIX)
