@@ -5,8 +5,8 @@ from typing import Any
 import pyfiglet
 from dotenv import load_dotenv
 
-from src.reactome.retreival_chain import initialize_retrieval_chain
-from src.util.embedding_environment import EM_ARCHIVE, EmbeddingEnvironment
+from reactome.retreival_chain import initialize_retrieval_chain
+from util.embedding_environment import EM_ARCHIVE, EmbeddingEnvironment
 
 
 async def main() -> None:

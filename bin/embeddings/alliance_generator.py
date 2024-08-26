@@ -1,6 +1,5 @@
 import os
 import requests
-import sys
 from typing import Dict
 
 import torch
@@ -8,11 +7,9 @@ from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
 from langchain_openai import OpenAIEmbeddings
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+from metadata_csv_loader import MetaDataCSVLoader
 
-from src.metadata_csv_loader import MetaDataCSVLoader
-
-from src.alliance.csv_generators import generate_all_csvs
+from alliance.csv_generators import generate_all_csvs
 
 def get_release_version() -> str:
     url: str = "https://www.alliancegenome.org/api/releaseInfo"
