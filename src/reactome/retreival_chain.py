@@ -35,6 +35,8 @@ def get_embedding(
 ) -> Callable[[], Embeddings]:
     if hf_model is None:
         return OpenAIEmbeddings
+    elif hf_model.startswith("openai/text-embedding-"):
+        return lambda: OpenAIEmbeddings(model=hf_model[len("openai/"):])
     elif "HUGGINGFACEHUB_API_TOKEN" in os.environ:
         return lambda: HuggingFaceEndpointEmbeddings(
             huggingfacehub_api_token=os.environ["HUGGINGFACEHUB_API_TOKEN"],
