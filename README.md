@@ -50,7 +50,7 @@ docker run -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "
 and pull the one you want
 
 ```bash
-docker run -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "python bin/embeddings_manager.py pull <the-embedding-from-ls-remote>"
+docker run -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "python bin/embeddings_manager.py install <the-embedding-from-ls-remote>"
 ```
 
 

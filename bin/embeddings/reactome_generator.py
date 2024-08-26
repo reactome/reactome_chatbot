@@ -1,5 +1,4 @@
 import os
-import sys
 from typing import Dict
 
 import torch
@@ -7,11 +6,9 @@ from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
 from langchain_openai import OpenAIEmbeddings
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__),  "..", "..", "src")))
-
-from src.metadata_csv_loader import MetaDataCSVLoader
-from src.reactome.csv_generators import generate_all_csvs
-from src.reactome.neo4j_connector import Neo4jConnector
+from metadata_csv_loader import MetaDataCSVLoader
+from reactome.csv_generators import generate_all_csvs
+from reactome.neo4j_connector import Neo4jConnector
 
 
 def upload_to_chromadb(

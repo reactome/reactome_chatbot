@@ -13,7 +13,7 @@ from langchain_core.embeddings import Embeddings
 from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-from src.reactome.metadata_info import descriptions_info, field_info
+from reactome.metadata_info import descriptions_info, field_info
 
 
 def list_subdirectories(directory: str) -> List[str]:
