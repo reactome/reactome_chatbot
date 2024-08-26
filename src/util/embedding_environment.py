@@ -28,6 +28,10 @@ class EmbeddingEnvironment:
         return cls._get().embeddings
 
     @classmethod
+    def get_model(cls, key) -> str:
+        return str(cls._get().embeddings[key].parent.parent)
+
+    @classmethod
     def set_one(cls, embedding_path:Path) -> None:
         db = embedding_path.parent.name
         embeddings_dict = cls.get_dict()
