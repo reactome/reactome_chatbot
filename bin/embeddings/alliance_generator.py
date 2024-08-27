@@ -1,20 +1,15 @@
-import argparse
 import os
-
 import requests
-import sys
 from typing import Dict
 
 import torch
 from langchain_community.vectorstores import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
 from langchain_openai import OpenAIEmbeddings
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+from metadata_csv_loader import MetaDataCSVLoader
 
-from src.metadata_csv_loader import MetaDataCSVLoader
-
-from src.alliance.csv_generators import generate_all_csvs
+from alliance.csv_generators import generate_all_csvs
 
 def get_release_version() -> str:
     url: str = "https://www.alliancegenome.org/api/releaseInfo"
@@ -31,7 +26,11 @@ def get_release_version() -> str:
 
 
 def upload_to_chromadb(
-    file: str, embedding_table: str, hf_model: str = None, device: str = "cpu"
+    embeddings_dir: str,
+    file: str,
+    embedding_table: str,
+    hf_model: str = None,
+    device: str = None,
 ) -> None:
     metadata_columns: Dict[str, list] = {
         "genes": [
@@ -55,12 +54,18 @@ def upload_to_chromadb(
     )
     docs = loader.load()
 
-    if device == "cuda":
-        torch.cuda.empty_cache()
-
     if hf_model is None:  # Use OpenAI
         embeddings = OpenAIEmbeddings()
+    elif hf_model.startswith("openai/text-embedding-"):
+        embeddings = OpenAIEmbeddings(model=hf_model[len("openai/"):])
+    elif "HUGGINGFACEHUB_API_TOKEN" in os.environ:
+        embeddings = HuggingFaceEndpointEmbeddings(
+            huggingfacehub_api_token=os.environ["HUGGINGFACEHUB_API_TOKEN"],
+            model=hf_model,
+        )
     else:
+        if device == "cuda":
+            torch.cuda.empty_cache()
         embeddings = HuggingFaceEmbeddings(
             model_name=hf_model,
             model_kwargs={"device": device, "trust_remote_code": True},
@@ -70,40 +75,24 @@ def upload_to_chromadb(
     db = Chroma.from_documents(
         documents=docs,
         embedding=embeddings,
-        persist_directory="embeddings/" + embedding_table,
+        persist_directory=os.path.join(embeddings_dir, embedding_table),
     )
 
     return db
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Generate and load CSV files from Reactome Neo4j for the LangChain application"
-    )
-    parser.add_argument("--openai-key", help="API key for OpenAI")
-    parser.add_argument(
-        "--force", action="store_true", help="Force regeneration of CSV files"
-    )
-    parser.add_argument(
-        "--hf-model",
-        help="HuggingFace sentence_transformers model (alternative to OpenAI)",
-    )
-    parser.add_argument(
-        "--device",
-        default="cpu",
-        help="PyTorch device to use when running HuggingFace model locally [cpu/cuda]",
-    )
-    args = parser.parse_args()
-
-    if args.openai_key is not None:
-        os.environ["OPENAI_API_KEY"] = args.openai_key
-
+def main(
+    embeddings_dir: str,
+    force: bool = False,
+    hf_model: str = None,
+    device: str = None,
+    **kwargs
+) -> None:
     release_version = get_release_version()
     print(f'Release Version: {release_version}')
 
-
     (gene_csv) = generate_all_csvs(
-        release_version, args.force
+        release_version, force
     )
 
     #db = upload_to_chromadb(reactions_csv, "reactions", args.hf_model, args.device)
@@ -114,7 +103,3 @@ def main() -> None:
     #print(db._collection.count())
     #db = upload_to_chromadb(ewas_csv, "ewas", args.hf_model, args.device)
     #print(db._collection.count())
-
-
-if __name__ == "__main__":
-    main()

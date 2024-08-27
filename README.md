@@ -32,6 +32,28 @@ poetry install
 
 ### Docker Setup
 
+
+#### Build Docker image
+
+```bash
+docker build -t reactome-chatbot .
+```
+
+##### Pull embeddings
+
+list embeddings available
+
+```bash
+docker run -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "python bin/embeddings_manager.py ls-remote"
+```
+
+and pull the one you want
+
+```bash
+docker run -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "python bin/embeddings_manager.py install <the-embedding-from-ls-remote>"
+```
+
+
 The project uses Docker Compose to manage the PostgreSQL database. The configuration for the database is stored in the `docker-compose.yml` file, and the environment variables are stored in the `.env` file.
 
 To start the PostgreSQL database, run the following command:
@@ -62,7 +84,9 @@ poetry run python bin/chat.py --query "What is TP53 involved in?"
 ```
 This will execute the ChatBot with the provided query and print the response.
 
-### Generating Embeddings
+### Getting Embeddings
+
+Please refer to the [Embeddings Manager documentation](docs/embeddings_manager.md) for updated steps for either downloading or generating embeddings.
 
 #### Dependencies
 
@@ -71,7 +95,7 @@ Reactome Dockerized Graph database from DockerHub: [reactome/graphdb](https://hu
 To generate embeddings using the embedding generator script, use the following command:
 
 ```bash
-poetry run python bin/embedding_generator.py --openai-key=<your-key>
+python bin/embeddings_manager.py make openai/text-embedding-ada-002/reactome/Release89 --openai-key=<your-key>
 ```
 This command will generate embeddings using the specified OpenAI API key.
 
@@ -120,7 +144,7 @@ To make sure imports are organized
 
 
 ```bash
-poetry run iosort . 
+poetry run iosort .
 ```
 
 ## Contributing

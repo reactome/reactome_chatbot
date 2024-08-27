@@ -1,0 +1,5 @@
+embeddings/
+embeddings_bak/
+csv_files/
+.venv/
+.env

@@ -5,7 +5,8 @@ from typing import Any
 import pyfiglet
 from dotenv import load_dotenv
 
-from src.reactome.retreival_chain import initialize_retrieval_chain
+from reactome.retreival_chain import initialize_retrieval_chain
+from util.embedding_environment import EM_ARCHIVE, EmbeddingEnvironment
 
 
 async def main() -> None:
@@ -26,6 +27,10 @@ async def main() -> None:
         help="HuggingFace sentence_transformers model (alternative to OpenAI)",
     )
     parser.add_argument(
+        "--hf-key",
+        help="API key for HuggingFaceHub",
+    )
+    parser.add_argument(
         "--device",
         default="cpu",
         help="PyTorch device to use when running HuggingFace embeddings locally [cpu/cuda]",
@@ -35,7 +40,10 @@ async def main() -> None:
     if args.openai_key:
         os.environ["OPENAI_API_KEY"] = args.openai_key
 
-    embeddings_directory = "embeddings"
+    if args.hf_key:
+        os.environ["HUGGINGFACEHUB_API_TOKEN"] = args.hf_key
+
+    embeddings_directory = EM_ARCHIVE / EmbeddingEnvironment.get_dict()["reactome"]
     qa = initialize_retrieval_chain(
         embeddings_directory,
         True,

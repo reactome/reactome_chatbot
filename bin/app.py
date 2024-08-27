@@ -1,16 +1,17 @@
 import chainlit as cl
 
-from src.reactome.retreival_chain import initialize_retrieval_chain
+from reactome.retreival_chain import initialize_retrieval_chain
+from util.embedding_environment import EM_ARCHIVE, EmbeddingEnvironment
 
 
 @cl.on_chat_start
 async def quey_llm() -> None:
-    embeddings_directory: str = "embeddings/reactome"
-    llm_chain = initialize_retrieval_chain(embeddings_directory, False, False)
+    embeddings_directory = EM_ARCHIVE / EmbeddingEnvironment.get_dict()["reactome"]
+    llm_chain = initialize_retrieval_chain(embeddings_directory, False, False, hf_model=EmbeddingEnvironment.get_model("reactome"))
     cl.user_session.set("llm_chain", llm_chain)
 
     initial_message: str = """Welcome to React-to-me your interactive chatbot for exploring Reactome!
-   Ask me about biological pathways and processes"""
+        Ask me about biological pathways and processes"""
     await cl.Message(content=initial_message).send()
 
 

@@ -10,10 +10,10 @@ from langchain.retrievers.self_query.base import SelfQueryRetriever
 from langchain_community.chat_models import ChatOllama
 from langchain_community.vectorstores import Chroma
 from langchain_core.embeddings import Embeddings
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-from src.reactome.metadata_info import descriptions_info, field_info
+from reactome.metadata_info import descriptions_info, field_info
 
 
 def list_subdirectories(directory: str) -> List[str]:
@@ -35,11 +35,19 @@ def get_embedding(
 ) -> Callable[[], Embeddings]:
     if hf_model is None:
         return OpenAIEmbeddings
-    return lambda: HuggingFaceEmbeddings(
-        model_name=hf_model,
-        model_kwargs={"device": device, "trust_remote_code": True},
-        encode_kwargs={"batch_size": 12, "normalize_embeddings": False},
-    )
+    elif hf_model.startswith("openai/text-embedding-"):
+        return lambda: OpenAIEmbeddings(model=hf_model[len("openai/"):])
+    elif "HUGGINGFACEHUB_API_TOKEN" in os.environ:
+        return lambda: HuggingFaceEndpointEmbeddings(
+            huggingfacehub_api_token=os.environ["HUGGINGFACEHUB_API_TOKEN"],
+            model=hf_model,
+        )
+    else:
+        return lambda: HuggingFaceEmbeddings(
+            model_name=hf_model,
+            model_kwargs={"device": device, "trust_remote_code": True},
+            encode_kwargs={"batch_size": 12, "normalize_embeddings": False},
+        )
 
 
 def initialize_retrieval_chain(
