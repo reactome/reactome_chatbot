@@ -1,21 +1,20 @@
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).parent.parent.parent
 EM_ARCHIVE = REPO_ROOT / "embeddings"
 EM_CURRENT = EM_ARCHIVE / "current"
 
 
 class EmbeddingEnvironment:
-    def __init__(self, env_path:str):
-        self.embeddings:dict[str, Path] = dict()
+    def __init__(self, env_path: str):
+        self.embeddings: dict[str, Path] = dict()
         if env_path != "":
             for embedding_path in map(Path, env_path.split(":")):
                 db = embedding_path.parent.name
                 self.embeddings[db] = embedding_path
 
     @classmethod
-    def _get(cls): # -> Self
+    def _get(cls):  # -> Self
         if EM_CURRENT.exists():
             with EM_CURRENT.open("r") as current_fp:
                 env_path = current_fp.read()
@@ -32,7 +31,7 @@ class EmbeddingEnvironment:
         return str(cls._get().embeddings[key].parent.parent)
 
     @classmethod
-    def set_one(cls, embedding_path:Path) -> None:
+    def set_one(cls, embedding_path: Path) -> None:
         db = embedding_path.parent.name
         embeddings_dict = cls.get_dict()
         embeddings_dict[db] = embedding_path

@@ -4,6 +4,9 @@ FROM python:3.9-slim
 # Set the working directory in the container
 WORKDIR /app
 
+# Set environment variables for the virtual environment path
+ENV VENV_PATH="/app/.venv"
+
 # Set PYTHONPATH environment variable to include the src directory
 ENV PYTHONPATH="/app/src:/app/.venv/lib/python3.9/site-packages"
 # Install system dependencies
@@ -21,7 +24,10 @@ RUN pip install filelock==3.15.4 virtualenv==20.26.3 poetry==1.8.3
 RUN poetry config virtualenvs.in-project true
 
 # Install dependencies without dev dependencies
-RUN poetry install --no-root --no-dev
+RUN poetry install --no-root --with dev
+
+# Adjust PATH to include the virtual environment's bin directory
+ENV PATH="${VENV_PATH}/bin:${PATH}"
 
 # Copy the rest of the application code into the container
 COPY . .
@@ -29,5 +35,8 @@ COPY . .
 # Ensure the virtual environment is activated in the shell
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Specify the command to run on container start
-CMD ["chainlit", "run", "bin/app.py", "-w"]
+# Make all files in the bin directory executable
+RUN chmod +x bin/*
+
+# Ensure the virtual environment is used for the CMD
+CMD ["chainlit", "run", "./bin/chat-chainlit", "-w"]

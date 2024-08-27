@@ -1,7 +1,35 @@
+#!/usr/bin/env python
+
+import logging
+import logging.config
+
 import chainlit as cl
 
 from reactome.retreival_chain import initialize_retrieval_chain
 from util.embedding_environment import EM_ARCHIVE, EmbeddingEnvironment
+
+LOGGING_CONFIG = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'default': {
+            'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'default',
+            'level': 'WARNING',  # Change to WARNING, ERROR, or CRITICAL
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'WARNING',  # Set the default log level for all loggers
+    },
+}
+
+logging.config.dictConfig(LOGGING_CONFIG)
 
 
 @cl.on_chat_start

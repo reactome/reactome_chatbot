@@ -44,13 +44,13 @@ docker build -t reactome-chatbot .
 list embeddings available
 
 ```bash
-docker run -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "python bin/embeddings_manager.py ls-remote"
+docker run -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "./bin/embeddings_manager ls-remote"
 ```
 
 and pull the one you want
 
 ```bash
-docker run -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "python bin/embeddings_manager.py install <the-embedding-from-ls-remote>"
+docker run -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "./bin/embeddings_manager install <the-embedding-from-ls-remote>"
 ```
 
 
@@ -70,7 +70,7 @@ docker-compose up -d
 To run the ChatBot interactively, execute the following command:
 
 ```bash
-poetry run python bin/chat.py
+poetry run bin/chat-repl
 ```
 This will start the ChatBot in interactive mode, allowing users to input queries and receive responses in real-time.
 
@@ -80,7 +80,7 @@ You can also provide queries non-interactively by passing them as command-line a
 For example:
 
 ```bash
-poetry run python bin/chat.py --query "What is TP53 involved in?"
+poetry run bin/chat-repl --query "What is TP53 involved in?"
 ```
 This will execute the ChatBot with the provided query and print the response.
 
@@ -102,7 +102,7 @@ This command will generate embeddings using the specified OpenAI API key.
 To generate embeddings inside docker run:
 ```bash
 mkdir embeddings;
-docker run --net=host -v $(pwd)/embeddings/:/apt/embeddings/ --rm reactome-chatbot bash -c "python /app/bin/embedding_generator.py --openai-key=TOKEN;
+docker run --net=host -v $(pwd)/embeddings/:/apt/embeddings/ --rm reactome-chatbot bash -c "/app/bin/embedding_generator --openai-key=TOKEN;
 ```
 
 
@@ -124,7 +124,7 @@ You can also use a `.env` file to set the environment variable for the chatbot.
 To run the UI, use the following command:
 
 ```bash
-poetry run chainlit run bin/app.py -w
+poetry run chainlit run bin/chat-chainlit -w
 ```
 
 ## Code Quality
@@ -145,6 +145,11 @@ To make sure imports are organized
 
 ```bash
 poetry run iosort .
+```
+
+To run these inside of docker run a command like
+```bash
+docker build -t reactome-chatbot .; docker run -v $(pwd)/bin:/app/bin -v$(pwd)/src:/app/src --user $(id -u):$(id -g) reactome-chatbot /bin/bash -c "poetry run ruff ."
 ```
 
 ## Contributing

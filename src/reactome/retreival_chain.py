@@ -10,7 +10,8 @@ from langchain.retrievers.self_query.base import SelfQueryRetriever
 from langchain_community.chat_models import ChatOllama
 from langchain_community.vectorstores import Chroma
 from langchain_core.embeddings import Embeddings
-from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
+from langchain_huggingface import (HuggingFaceEmbeddings,
+                                   HuggingFaceEndpointEmbeddings)
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from reactome.metadata_info import descriptions_info, field_info
@@ -36,7 +37,7 @@ def get_embedding(
     if hf_model is None:
         return OpenAIEmbeddings
     elif hf_model.startswith("openai/text-embedding-"):
-        return lambda: OpenAIEmbeddings(model=hf_model[len("openai/"):])
+        return lambda: OpenAIEmbeddings(model=hf_model[len("openai/") :])
     elif "HUGGINGFACEHUB_API_TOKEN" in os.environ:
         return lambda: HuggingFaceEndpointEmbeddings(
             huggingfacehub_api_token=os.environ["HUGGINGFACEHUB_API_TOKEN"],

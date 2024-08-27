@@ -1,28 +1,15 @@
 import os
-import requests
 from typing import Dict
 
 import torch
 from langchain_community.vectorstores import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
+from langchain_huggingface import (HuggingFaceEmbeddings,
+                                   HuggingFaceEndpointEmbeddings)
 from langchain_openai import OpenAIEmbeddings
 
+from csv_generator.reactome_generator import generate_all_csvs
 from metadata_csv_loader import MetaDataCSVLoader
-
-from alliance.csv_generators import generate_all_csvs
-
-def get_release_version() -> str:
-    url: str = "https://www.alliancegenome.org/api/releaseInfo"
-    response = requests.get(url)
-    if response.status_code == 200:
-        response_json = response.json()
-        release_version = response_json.get('releaseVersion')
-        if release_version:
-            return release_version
-        else:
-            raise ValueError('Release version not found in the response.')
-    else:
-        raise ConnectionError(f'Failed to get the response. Status code: {response.status_code}')
+from reactome.neo4j_connector import Neo4jConnector
 
 
 def upload_to_chromadb(
@@ -33,7 +20,7 @@ def upload_to_chromadb(
     device: str = None,
 ) -> None:
     metadata_columns: Dict[str, list] = {
-        "genes": [
+        "reactions": [
             "st_id",
             "display_name",
             "pathway_id",
@@ -44,7 +31,16 @@ def upload_to_chromadb(
             "output_name",
             "catalyst_id",
             "catalyst_name",
-        ]
+        ],
+        "summations": ["st_id", "display_name", "summation"],
+        "complexes": ["st_id", "display_name", "component_id", "component_name"],
+        "ewas": [
+            "st_id",
+            "display_name",
+            "canonical_gene_name",
+            "synonyms_gene_name",
+            "uniprot_link",
+        ],
     }
 
     loader = MetaDataCSVLoader(
@@ -57,7 +53,7 @@ def upload_to_chromadb(
     if hf_model is None:  # Use OpenAI
         embeddings = OpenAIEmbeddings()
     elif hf_model.startswith("openai/text-embedding-"):
-        embeddings = OpenAIEmbeddings(model=hf_model[len("openai/"):])
+        embeddings = OpenAIEmbeddings(model=hf_model[len("openai/") :])
     elif "HUGGINGFACEHUB_API_TOKEN" in os.environ:
         embeddings = HuggingFaceEndpointEmbeddings(
             huggingfacehub_api_token=os.environ["HUGGINGFACEHUB_API_TOKEN"],
@@ -81,25 +77,35 @@ def upload_to_chromadb(
     return db
 
 
-def main(
+def generate_reactome_embeddings(
     embeddings_dir: str,
+    neo4j_uri: str = "bolt://localhost:7687",
+    neo4j_username: str = None,
+    neo4j_password: str = None,
     force: bool = False,
     hf_model: str = None,
     device: str = None,
-    **kwargs
 ) -> None:
-    release_version = get_release_version()
-    print(f'Release Version: {release_version}')
-
-    (gene_csv) = generate_all_csvs(
-        release_version, force
+    connector = Neo4jConnector(
+        uri=neo4j_uri, user=neo4j_username, password=neo4j_password
     )
 
-    #db = upload_to_chromadb(reactions_csv, "reactions", args.hf_model, args.device)
-    #print(db._collection.count())
-    #db = upload_to_chromadb(summations_csv, "summations", args.hf_model, args.device)
-    #print(db._collection.count())
-    #db = upload_to_chromadb(complexes_csv, "complexes", args.hf_model, args.device)
-    #print(db._collection.count())
-    #db = upload_to_chromadb(ewas_csv, "ewas", args.hf_model, args.device)
-    #print(db._collection.count())
+    (reactions_csv, summations_csv, complexes_csv, ewas_csv) = generate_all_csvs(
+        connector, force
+    )
+    connector.close()
+
+    db = upload_to_chromadb(
+        embeddings_dir, reactions_csv, "reactions", hf_model, device
+    )
+    print(db._collection.count())
+    db = upload_to_chromadb(
+        embeddings_dir, summations_csv, "summations", hf_model, device
+    )
+    print(db._collection.count())
+    db = upload_to_chromadb(
+        embeddings_dir, complexes_csv, "complexes", hf_model, device
+    )
+    print(db._collection.count())
+    db = upload_to_chromadb(embeddings_dir, ewas_csv, "ewas", hf_model, device)
+    print(db._collection.count())
