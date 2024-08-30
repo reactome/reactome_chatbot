@@ -1,5 +1,7 @@
+LOG_INFO=info
 OPENAI_API_KEY=
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=postgres
 POSTGRES_DB=chatbio
 PYTHON_PATH=/app/src:/app:
+CHAT_ENV=reactome

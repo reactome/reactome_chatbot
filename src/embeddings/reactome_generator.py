@@ -49,7 +49,6 @@ def upload_to_chromadb(
         encoding="utf-8",
     )
     docs = loader.load()
-
     if hf_model is None:  # Use OpenAI
         embeddings = OpenAIEmbeddings()
     elif hf_model.startswith("openai/text-embedding-"):

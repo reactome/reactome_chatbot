@@ -44,13 +44,13 @@ docker build -t reactome-chatbot .
 list embeddings available
 
 ```bash
-docker run -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "./bin/embeddings_manager ls-remote"
+docker run --env-file .env -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "./bin/embeddings_manager ls-remote"
 ```
 
 and pull the one you want
 
 ```bash
-docker run -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "./bin/embeddings_manager install <the-embedding-from-ls-remote>"
+docker run --env-file .env -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "./bin/embeddings_manager install <the-embedding-from-ls-remote>"
 ```
 
 
@@ -102,7 +102,7 @@ This command will generate embeddings using the specified OpenAI API key.
 To generate embeddings inside docker run:
 ```bash
 mkdir embeddings;
-docker run --net=host -v $(pwd)/embeddings/:/apt/embeddings/ --rm reactome-chatbot bash -c "/app/bin/embedding_generator --openai-key=TOKEN;
+docker run --env-file .env --net=host -v $(pwd)/embeddings/:/apt/embeddings/ --rm reactome-chatbot bash -c "/app/bin/embedding_generator;
 ```
 
 
@@ -124,7 +124,7 @@ You can also use a `.env` file to set the environment variable for the chatbot.
 To run the UI, use the following command:
 
 ```bash
-poetry run chainlit run bin/chat-chainlit -w
+poetry run chainlit run bin/chat-chainlit.py -w
 ```
 
 ## Code Quality
@@ -149,7 +149,8 @@ poetry run iosort .
 
 To run these inside of docker run a command like
 ```bash
-docker build -t reactome-chatbot .; docker run -v $(pwd)/bin:/app/bin -v$(pwd)/src:/app/src --user $(id -u):$(id -g) reactome-chatbot /bin/bash -c "poetry run ruff ."
+docker build -t reactome-chatbot .; docker run -v $(pwd)/bin:/app/bin -v$(pwd)/src:/app/src reactome-chatbot /bin/bash -c "poetry run ruff ."
+chown $(id -u):$(id -g) -R
 ```
 
 ## Contributing

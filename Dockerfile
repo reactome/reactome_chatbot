@@ -39,4 +39,4 @@ ENV PATH="/app/.venv/bin:$PATH"
 RUN chmod +x bin/*
 
 # Ensure the virtual environment is used for the CMD
-CMD ["chainlit", "run", "./bin/chat-chainlit", "-w"]
+CMD ["chainlit", "run", "bin/chat-chainlit.py", "-w"]
