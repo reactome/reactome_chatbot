@@ -1,17 +1,20 @@
+#!/usr/bin/env python
+
+import os
+import re
 from argparse import ArgumentParser
 from glob import iglob
-import os
-
 from pathlib import Path, PurePosixPath
-import re
 from shutil import rmtree
 from typing import NamedTuple
-from zipfile import ZipFile, ZIP_DEFLATED
+from zipfile import ZIP_DEFLATED, ZipFile
 
+import boto3
 from botocore import UNSIGNED
 from botocore.client import Config
-import boto3
 
+from embeddings.alliance_generator import generate_alliance_embeddings
+from embeddings.reactome_generator import generate_reactome_embeddings
 from util.embedding_environment import EM_ARCHIVE, EmbeddingEnvironment
 
 S3_BUCKET = "download.reactome.org"
@@ -83,11 +86,9 @@ def make(
     if hf_key:
         os.environ["HUGGINGFACEHUB_API_TOKEN"] = hf_key
     if embedding.db == "reactome":
-        from embeddings.reactome_generator import main
-        main(str(embedding_path), hf_model=embedding.model, **kwargs)
+        generate_reactome_embeddings(str(embedding_path), hf_model=embedding.model, **kwargs)
     elif embedding.db == "alliance":
-        from embeddings.alliance_generator import main
-        main(str(embedding_path), hf_model=embedding.model, **kwargs)
+        generate_alliance_embeddings(str(embedding_path), hf_model=embedding.model, **kwargs)
     else:
         raise NotImplementedError(f"db: {embedding.db}")
     use(embedding)

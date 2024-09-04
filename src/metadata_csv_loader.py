@@ -88,7 +88,10 @@ class MetaDataCSVLoader(BaseLoader):
         """Read CSV file and return a list of Document objects."""
         docs: List[Document] = []
 
-        csv_reader = csv.DictReader(csvfile, **self.csv_args)
+        # Skip lines starting with '#'
+        valid_lines = (line for line in csvfile if not line.startswith("#"))
+
+        csv_reader = csv.DictReader(valid_lines, **self.csv_args)
         for i, row in enumerate(csv_reader):
             try:
                 source = (
@@ -125,6 +128,8 @@ class MetaDataCSVLoader(BaseLoader):
                         )
 
             doc = Document(page_content=content, metadata=metadata)
+            if i > 1000 :
+                break
             docs.append(doc)
 
         return docs

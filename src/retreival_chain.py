@@ -10,7 +10,8 @@ from langchain.retrievers.self_query.base import SelfQueryRetriever
 from langchain_community.chat_models import ChatOllama
 from langchain_community.vectorstores import Chroma
 from langchain_core.embeddings import Embeddings
-from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
+from langchain_huggingface import (HuggingFaceEmbeddings,
+                                   HuggingFaceEndpointEmbeddings)
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from reactome.metadata_info import descriptions_info, field_info
@@ -36,7 +37,7 @@ def get_embedding(
     if hf_model is None:
         return OpenAIEmbeddings
     elif hf_model.startswith("openai/text-embedding-"):
-        return lambda: OpenAIEmbeddings(model=hf_model[len("openai/"):])
+        return lambda: OpenAIEmbeddings(model=hf_model[len("openai/") :])
     elif "HUGGINGFACEHUB_API_TOKEN" in os.environ:
         return lambda: HuggingFaceEndpointEmbeddings(
             huggingfacehub_api_token=os.environ["HUGGINGFACEHUB_API_TOKEN"],
@@ -51,6 +52,7 @@ def get_embedding(
 
 
 def initialize_retrieval_chain(
+    env: str,
     embeddings_directory: str,
     commandline: bool,
     verbose: bool,
@@ -66,17 +68,10 @@ def initialize_retrieval_chain(
         output_key="answer",
     )
 
-    system_prompt = r"""As a Reactome Curator with extensive knowledge in biological pathways, answer users' questions as comprehensively and accurately as possible based on the provided context. Provide any useful background information required to help users better understand the significance of the results based on the context provided.
-    When providing answers, please adhere to the following guidelines:
-  1. Given the user question and the provided context only, answer the question as comprehensively and accurately as possible and provide any useful background information to the user's question.
-  2. If the answer cannot be derived from the provided context, do not ever provide a response, state that the information is not currently available in Reactome.
-  3. If the user's question isn't a question or not related to Reactome, explain that you are an interactive chatbot designed to enhance their experience with Reactome.
-  4. keep track of all the sources that are directly used to derive the final answer.
-  5. Always keep track of all the sources that are directly used to derive the final answer, and return them along with the protien name according to the following format: <a href="url">display_name</a> as citations.
-  6. Always provide the citations in the format requested, in point-form at the end of the response paragraph.
+    system_prompt_path = os.path.join("system_prompt", env +"_prompt.txt")
+    with open(system_prompt_path, "r") as file:
+        system_prompt = file.read()
 
-  Ensure your responses are detailed and informative, enhancing the user's understanding of biological pathways.
-    """
     new_prompt = r"""context: {context}
     Question: {question}
     Helpful Answer:
