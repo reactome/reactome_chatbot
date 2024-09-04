@@ -1,6 +1,7 @@
 import os
-import requests
+from typing import Dict
 
+import requests
 import torch
 from langchain_community.vectorstores import Chroma
 from langchain_huggingface import (HuggingFaceEmbeddings,
@@ -265,7 +266,7 @@ def upload_to_chromadb(
                 embedding=embeddings,
                 persist_directory=os.path.join(embeddings_dir, filetype),
             )
-
+            print(db)
         print("filetype")
         print(filetype)
 

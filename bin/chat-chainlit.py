@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
-import os
 import logging
 import logging.config
+import os
 
 import chainlit as cl
 

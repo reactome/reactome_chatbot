@@ -144,13 +144,13 @@ To make sure imports are organized
 
 
 ```bash
-poetry run iosort .
+poetry run isort .
 ```
 
 To run these inside of docker run a command like
 ```bash
 docker build -t reactome-chatbot .; docker run -v $(pwd)/bin:/app/bin -v$(pwd)/src:/app/src reactome-chatbot /bin/bash -c "poetry run ruff ."
-chown $(id -u):$(id -g) -R
+sudo chown $(id -u):$(id -g) * -R
 ```
 
 ## Contributing
