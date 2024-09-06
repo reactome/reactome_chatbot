@@ -5,7 +5,7 @@ from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory
 from langchain.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
-from langchain.retrievers import MergerRetriever
+from langchain.retrievers import EnsembleRetriever
 from langchain.retrievers.self_query.base import SelfQueryRetriever
 from langchain_community.chat_models import ChatOllama
 from langchain_community.vectorstores import Chroma
@@ -122,21 +122,18 @@ def initialize_retrieval_chain(
             vectorstore=vectordb,
             document_contents=descriptions_info[subdirectory],
             metadata_field_info=field_info[subdirectory],
-            search_kwargs={"k": 15},
+            search_kwargs={"k": 10},
         )
-
-        retriever = vectordb.as_retriever(
-            search_type="similarity", search_kwargs={"k": 15}
-        )
-
         retriever_list.append(retriever)
 
-    lotr = MergerRetriever(retrievers=retriever_list)
+    reactome_retriever =  EnsembleRetriever(retrievers=retriever_list, weights=[0.25, 0.25, 0.25, 0.25]) 
+
+
 
     ConversationalRetrievalChain.invoke = invoke
     qa = ConversationalRetrievalChain.from_llm(
         llm=llm,
-        retriever=lotr,
+        retriever=reactome_retriever,
         verbose=verbose,
         memory=memory,
         return_source_documents=True,
