@@ -10,8 +10,7 @@ from langchain.retrievers.self_query.base import SelfQueryRetriever
 from langchain_community.chat_models import ChatOllama
 from langchain_community.vectorstores import Chroma
 from langchain_core.embeddings import Embeddings
-from langchain_huggingface import (HuggingFaceEmbeddings,
-                                   HuggingFaceEndpointEmbeddings)
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from reactome.metadata_info import descriptions_info, field_info
@@ -68,7 +67,7 @@ def initialize_retrieval_chain(
         output_key="answer",
     )
 
-    system_prompt_path = os.path.join("system_prompt", env +"_prompt.txt")
+    system_prompt_path = os.path.join("system_prompt", env + "_prompt.txt")
     with open(system_prompt_path, "r") as file:
         system_prompt = file.read()
 
@@ -126,9 +125,9 @@ def initialize_retrieval_chain(
         )
         retriever_list.append(retriever)
 
-    reactome_retriever =  EnsembleRetriever(retrievers=retriever_list, weights=[0.25, 0.25, 0.25, 0.25]) 
-
-
+    reactome_retriever = EnsembleRetriever(
+        retrievers=retriever_list, weights=[0.25, 0.25, 0.25, 0.25]
+    )
 
     ConversationalRetrievalChain.invoke = invoke
     qa = ConversationalRetrievalChain.from_llm(
