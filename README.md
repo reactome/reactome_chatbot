@@ -44,7 +44,7 @@ docker build -t reactome-chatbot .
 list embeddings available
 
 ```bash
-docker run --env-file .env -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "./bin/embeddings_manager ls-remote"
+docker run --env-file .env -p 8000:8000 -v $(pwd)/embeddings:/app/embeddings reactome-chatbot /bin/bash -c "chainlit run bin/chat-chainlit.py -w"
 ```
 
 and pull the one you want
@@ -126,7 +126,11 @@ To run the UI, use the following command:
 ```bash
 poetry run chainlit run bin/chat-chainlit.py -w
 ```
+or with docker
 
+```bash
+docker run -v $(pwd)/bin:/app/bin -v$(pwd)/src:/app/src reactome-chatbot /bin/bash -c "chainlit run bin/chat-chainlit.py -w"
+```
 ## Code Quality
 
 To do main consistency checks
