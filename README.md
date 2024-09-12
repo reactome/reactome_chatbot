@@ -44,7 +44,7 @@ docker build -t reactome-chatbot .
 list embeddings available
 
 ```bash
-docker run --env-file .env -p 8000:8000 -v $(pwd)/embeddings:/app/embeddings reactome-chatbot /bin/bash -c "chainlit run bin/chat-chainlit.py -w"
+docker run --env-file .env -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "./bin/embeddings_manager ls-remote"
 ```
 
 and pull the one you want
@@ -63,6 +63,12 @@ docker-compose up -d
 ```
 
 This will run the app through bin/chat-fastapi.py where the user will need to fill in an hcaptcha to access the chat interfaces. This should be used in production. 
+
+if you want to run chainlir directly run:
+
+```bash
+docker run --env-file .env -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "./bin/embeddings_manager ls-remote"
+```
 
 ## Usage
 
