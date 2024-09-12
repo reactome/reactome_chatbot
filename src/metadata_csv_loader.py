@@ -128,8 +128,6 @@ class MetaDataCSVLoader(BaseLoader):
                         )
 
             doc = Document(page_content=content, metadata=metadata)
-            if i > 1000 :
-                break
             docs.append(doc)
 
         return docs

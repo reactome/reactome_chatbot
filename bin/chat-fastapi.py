@@ -1,28 +1,32 @@
 import os
-import requests
 
-from dotenv import load_dotenv
-from fastapi import FastAPI, Request, HTTPException, Response
-from fastapi.responses import RedirectResponse
+import requests
 from chainlit.utils import mount_chainlit
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
 
 load_dotenv()
 
 app = FastAPI()
 
-HCAPTCHA_SECRET_KEY = os.getenv('HCAPTCHA_SECRET_KEY')
-HCAPTCHA_SITE_KEY = os.getenv('HCAPTCHA_SITE_KEY')
+HCAPTCHA_SECRET_KEY = os.getenv("HCAPTCHA_SECRET_KEY")
+HCAPTCHA_SITE_KEY = os.getenv("HCAPTCHA_SITE_KEY")
 
 
 @app.middleware("http")
 async def verify_captcha_middleware(request: Request, call_next):
     # Allow access to CAPTCHA pages and static files
-    if request.url.path in ["/verify_captcha", "/verify_captcha_page", "/static"] or request.url.path.startswith("/static"):
+    if (
+        request.url.path in ["/verify_captcha", "/verify_captcha_page", "/static"]
+        or request.url.path.startswith("/static")
+        or not HCAPTCHA_SECRET_KEY
+    ):
         response = await call_next(request)
         return response
 
     # Check if the user has completed the CAPTCHA verification
-    captcha_verified = request.cookies.get('captcha_verified')
+    captcha_verified = request.cookies.get("captcha_verified")
 
     # If CAPTCHA is not verified, block access
     if not captcha_verified:
@@ -55,17 +59,14 @@ async def captcha_page():
 @app.post("/verify_captcha")
 async def verify_captcha(request: Request):
     form_data = await request.form()
-    h_captcha_response = form_data.get('h-captcha-response')
-    
+    h_captcha_response = form_data.get("h-captcha-response")
+
     if not h_captcha_response:
         raise HTTPException(status_code=400, detail="CAPTCHA response is missing")
 
     # Send the CAPTCHA response to hCaptcha
     url = "https://hcaptcha.com/siteverify"
-    data = {
-        'secret': HCAPTCHA_SECRET_KEY,
-        'response': h_captcha_response
-    }
+    data = {"secret": HCAPTCHA_SECRET_KEY, "response": h_captcha_response}
 
     # Perform request to hCaptcha's verification endpoint
     response = requests.post(url, data=data)
@@ -77,10 +78,11 @@ async def verify_captcha(request: Request):
 
     # Set cookie to mark CAPTCHA as verified
     redirect_response = RedirectResponse(url="/chainlit", status_code=303)
-    redirect_response.set_cookie(key='captcha_verified', value='true', max_age=3600)  # Cookie expires in 1 hour
+    redirect_response.set_cookie(
+        key="captcha_verified", value="true", max_age=3600
+    )  # Cookie expires in 1 hour
 
     return redirect_response
 
 
 mount_chainlit(app=app, target="bin/chat-chainlit.py", path="/chainlit")
-

@@ -3,8 +3,13 @@ from typing import Any, Callable, Dict, Tuple
 
 import pandas as pd
 
-from reactome.neo4j_connector import (Neo4jConnector, get_complexes, get_ewas,
-                                      get_reactions, get_summations)
+from reactome.neo4j_connector import (
+    Neo4jConnector,
+    get_complexes,
+    get_ewas,
+    get_reactions,
+    get_summations,
+)
 
 BASE_CSV_PATH = "csv_files/reactome"
 

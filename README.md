@@ -62,6 +62,8 @@ To start the PostgreSQL database, run the following command:
 docker-compose up -d
 ```
 
+This will run the app through bin/chat-fastapi.py where the user will need to fill in an hcaptcha to access the chat interfaces. This should be used in production. 
+
 ## Usage
 
 ### Running the ChatBot
