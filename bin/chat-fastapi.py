@@ -18,7 +18,7 @@ HCAPTCHA_SITE_KEY = os.getenv("HCAPTCHA_SITE_KEY")
 async def verify_captcha_middleware(request: Request, call_next):
     # Allow access to CAPTCHA pages and static files
     if (
-        request.url.path in ["/verify_captcha", "/verify_captcha_page", "/static"]
+        request.url.path in ["/chat/verify_captcha", "/chat/verify_captcha_page", "/chat/static"]
         or request.url.path.startswith("/static")
         or not HCAPTCHA_SECRET_KEY
     ):
@@ -30,14 +30,14 @@ async def verify_captcha_middleware(request: Request, call_next):
 
     # If CAPTCHA is not verified, block access
     if not captcha_verified:
-        return RedirectResponse(url="/verify_captcha_page")
+        return RedirectResponse(url="/chat/verify_captcha_page")
 
     response = await call_next(request)
     return response
 
 
 # Serve the CAPTCHA verification page (basic HTML form)
-@app.get("/verify_captcha_page")
+@app.get("/chat/verify_captcha_page")
 async def captcha_page():
     html_content = f"""
     <html>
@@ -45,7 +45,7 @@ async def captcha_page():
             <script src="https://hcaptcha.com/1/api.js" async defer></script>
         </head>
         <body>
-            <form action="/verify_captcha" method="post">
+            <form action="/chat/verify_captcha" method="post">
                 <div class="h-captcha" data-sitekey=\"{HCAPTCHA_SITE_KEY}\"></div>
                 <br/>
                 <button type="submit">Submit</button>
@@ -56,7 +56,7 @@ async def captcha_page():
     return Response(content=html_content, media_type="text/html")
 
 
-@app.post("/verify_captcha")
+@app.post("/chat/verify_captcha")
 async def verify_captcha(request: Request):
     form_data = await request.form()
     h_captcha_response = form_data.get("h-captcha-response")
@@ -77,7 +77,7 @@ async def verify_captcha(request: Request):
         raise HTTPException(status_code=400, detail="CAPTCHA verification failed")
 
     # Set cookie to mark CAPTCHA as verified
-    redirect_response = RedirectResponse(url="/chainlit", status_code=303)
+    redirect_response = RedirectResponse(url="/chat", status_code=303)
     redirect_response.set_cookie(
         key="captcha_verified", value="true", max_age=3600
     )  # Cookie expires in 1 hour
@@ -85,4 +85,4 @@ async def verify_captcha(request: Request):
     return redirect_response
 
 
-mount_chainlit(app=app, target="bin/chat-chainlit.py", path="/chainlit")
+mount_chainlit(app=app, target="bin/chat-chainlit.py", path="/chat")
