@@ -1,10 +1,12 @@
+import hashlib
+import hmac
 import os
 
-import requests
 from chainlit.utils import mount_chainlit
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
+import requests
 
 load_dotenv()
 
@@ -13,6 +15,25 @@ app = FastAPI()
 HCAPTCHA_SECRET_KEY = os.getenv("HCAPTCHA_SECRET_KEY")
 HCAPTCHA_SITE_KEY = os.getenv("HCAPTCHA_SITE_KEY")
 
+
+def make_signature(value:str) -> str:
+    return hmac.new(
+        HCAPTCHA_SECRET_KEY.encode(),
+        value.encode(),
+        hashlib.sha256
+    ).hexdigest()
+
+def create_secure_cookie(value:str) -> str:
+    signature = make_signature(value)
+    return f"{value}|{signature}"
+
+def verify_secure_cookie(cookie_value: str) -> bool:
+    try:
+        value, signature = cookie_value.split("|", 1)
+        expected_signature = make_signature(value)
+        return hmac.compare_digest(signature, expected_signature)
+    except Exception:
+        return False
 
 @app.middleware("http")
 async def verify_captcha_middleware(request: Request, call_next):
@@ -29,7 +50,7 @@ async def verify_captcha_middleware(request: Request, call_next):
     captcha_verified = request.cookies.get("captcha_verified")
 
     # If CAPTCHA is not verified, block access
-    if not captcha_verified:
+    if (not captcha_verified) or (not verify_secure_cookie(captcha_verified)):
         return RedirectResponse(url="/chat/verify_captcha_page")
 
     response = await call_next(request)
@@ -76,11 +97,16 @@ async def verify_captcha(request: Request):
     if not result.get("success"):
         raise HTTPException(status_code=400, detail="CAPTCHA verification failed")
 
-    # Set cookie to mark CAPTCHA as verified
+    # Set a signed cookie to mark CAPTCHA as verified
+    cookie_value = create_secure_cookie(h_captcha_response)
     redirect_response = RedirectResponse(url="/chat", status_code=303)
     redirect_response.set_cookie(
-        key="captcha_verified", value="true", max_age=3600
-    )  # Cookie expires in 1 hour
+        key="captcha_verified",
+        value=cookie_value,
+        max_age=3600,  # Cookie expires in 1 hour
+        secure=True,   # HTTPS only
+        httponly=True  # inaccessible to client side JS
+    )
 
     return redirect_response
 
