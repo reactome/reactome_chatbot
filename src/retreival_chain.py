@@ -10,8 +10,7 @@ from langchain.retrievers.self_query.base import SelfQueryRetriever
 from langchain_community.chat_models import ChatOllama
 from langchain_community.vectorstores import Chroma
 from langchain_core.embeddings import Embeddings
-from langchain_huggingface import (HuggingFaceEmbeddings,
-                                   HuggingFaceEndpointEmbeddings)
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 
@@ -65,8 +64,9 @@ def initialize_retrieval_chain(
     ollama_url: str = "http://localhost:11434",
     hf_model: str = None,
     device: str = "cpu",
+
 )-> RAGChainWithMemory:
-    memory = ChatHistoryMemory():
+    memory = ChatHistoryMemory()
 
     callbacks: List[StreamingStdOutCallbackHandler] = []
     if commandline:

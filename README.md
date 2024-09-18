@@ -53,13 +53,20 @@ and pull the one you want
 docker run --env-file .env -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "./bin/embeddings_manager install <the-embedding-from-ls-remote>"
 ```
 
-
 The project uses Docker Compose to manage the PostgreSQL database. The configuration for the database is stored in the `docker-compose.yml` file, and the environment variables are stored in the `.env` file.
 
 To start the PostgreSQL database, run the following command:
 
 ```bash
 docker-compose up -d
+```
+
+This will run the app through bin/chat-fastapi.py where the user will need to fill in an hcaptcha to access the chat interfaces. This should be used in production. 
+
+if you want to run chainlit directly run:
+
+```bash
+docker run --env-file .env -p 8000:8000 -v $(pwd)/embeddings:/app/embeddings reactome-chatbot /bin/bash -c "chainlit run bin/chat-chainlit.py -w"
 ```
 
 ## Usage
@@ -126,7 +133,11 @@ To run the UI, use the following command:
 ```bash
 poetry run chainlit run bin/chat-chainlit.py -w
 ```
+or with docker
 
+```bash
+docker run -v $(pwd)/bin:/app/bin -v$(pwd)/src:/app/src reactome-chatbot /bin/bash -c "chainlit run bin/chat-chainlit.py -w"
+```
 ## Code Quality
 
 To do main consistency checks

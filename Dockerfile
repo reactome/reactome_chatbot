@@ -38,5 +38,4 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Make all files in the bin directory executable
 RUN chmod +x bin/*
 
-# Ensure the virtual environment is used for the CMD
-CMD ["chainlit", "run", "bin/chat-chainlit.py", "-w"]
+CMD ["uvicorn", "bin.chat-fastapi:app", "--host", "0.0.0.0", "--port", "8000"]
