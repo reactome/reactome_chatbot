@@ -2,9 +2,6 @@ import os
 from typing import AsyncGenerator, Callable, List
 
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.chains import ConversationalRetrievalChain
-from langchain.memory import ConversationBufferMemory
-from langchain.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
 from langchain.retrievers import EnsembleRetriever
 from langchain.retrievers.self_query.base import SelfQueryRetriever
 from langchain_community.chat_models import ChatOllama
@@ -13,7 +10,12 @@ from langchain_core.embeddings import Embeddings
 from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
+
 from reactome.metadata_info import descriptions_info, field_info
+
+from src.converesational_chain.memory import ChatHistoryMemory
+from src.converesational_chain.chain import RAGChainWithMemory
+from system_prompt.reactome_prompt import qa_prompt
 
 
 def list_subdirectories(directory: str) -> List[str]:
@@ -59,29 +61,9 @@ def initialize_retrieval_chain(
     ollama_url: str = "http://localhost:11434",
     hf_model: str = None,
     device: str = "cpu",
-) -> ConversationalRetrievalChain:
-    memory = ConversationBufferMemory(
-        memory_key="chat_history",
-        return_messages=True,
-        input_key="question",
-        output_key="answer",
-    )
 
-    system_prompt_path = os.path.join("system_prompt", env + "_prompt.txt")
-    with open(system_prompt_path, "r") as file:
-        system_prompt = file.read()
-
-    new_prompt = r"""context: {context}
-    Question: {question}
-    Helpful Answer:
-    """
-
-    # Combine system prompt for OpenAI
-    if ollama_model is None:  # Use OpenAI when Ollama not specified
-        new_prompt = system_prompt + new_prompt
-
-    messages = [SystemMessagePromptTemplate.from_template(new_prompt)]
-    qa_prompt = ChatPromptTemplate.from_messages(messages)
+)-> RAGChainWithMemory:
+    memory = ChatHistoryMemory()
 
     callbacks: List[StreamingStdOutCallbackHandler] = []
     if commandline:
@@ -93,7 +75,7 @@ def initialize_retrieval_chain(
             streaming=commandline,
             callbacks=callbacks,
             verbose=verbose,
-            model="gpt-3.5-turbo-0125",
+            model="gpt-4o-mini",
         )
     else:  # Otherwise use Ollama
         llm = ChatOllama(
@@ -102,7 +84,7 @@ def initialize_retrieval_chain(
             verbose=verbose,
             model=ollama_model,
             base_url=ollama_url,
-            system=system_prompt,
+            system=qa_prompt,
         )
 
     # Get OpenAIEmbeddings (or HuggingFaceEmbeddings model if specified)
@@ -125,18 +107,13 @@ def initialize_retrieval_chain(
         )
         retriever_list.append(retriever)
 
-    reactome_retriever = EnsembleRetriever(
-        retrievers=retriever_list, weights=[0.25, 0.25, 0.25, 0.25]
-    )
+    reactome_retriever =  EnsembleRetriever(retrievers=retriever_list, weights=[0.25, 0.25, 0.25, 0.25]) 
 
-    ConversationalRetrievalChain.invoke = invoke
-    qa = ConversationalRetrievalChain.from_llm(
-        llm=llm,
-        retriever=reactome_retriever,
-        verbose=verbose,
+    RAGChainWithMemory.invoke = invoke
+    qa = RAGChainWithMemory(
         memory=memory,
-        return_source_documents=True,
-        combine_docs_chain_kwargs={"prompt": qa_prompt},
+        retriever=reactome_retriever,
+        llm=llm,
     )
 
     return qa

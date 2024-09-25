@@ -64,8 +64,7 @@ async def query_llm(message: cl.Message) -> None:
     cb.answer_reached = True
 
     res = await llm_chain.ainvoke(message.content, callbacks=[cb])
-    answer: str = res["answer"]
     if cb.has_streamed_final_answer:
         await cb.final_stream.update()
     else:
-        await cl.Message(content=answer).send()
+        await cl.Message(content=res).send()
