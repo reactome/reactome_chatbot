@@ -1,6 +1,5 @@
 from langchain.chains import create_history_aware_retriever, create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain.output_parsers.openai_tools import JsonOutputKeyToolsParser
 from system_prompt.reactome_prompt import qa_prompt, contextualize_q_prompt
 
 class RAGChainWithMemory:

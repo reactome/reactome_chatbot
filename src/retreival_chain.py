@@ -2,9 +2,6 @@ import os
 from typing import AsyncGenerator, Callable, List
 
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.chains import ConversationalRetrievalChain
-from langchain.memory import ConversationBufferMemory
-from langchain.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
 from langchain.retrievers import EnsembleRetriever
 from langchain.retrievers.self_query.base import SelfQueryRetriever
 from langchain_community.chat_models import ChatOllama
@@ -18,7 +15,7 @@ from reactome.metadata_info import descriptions_info, field_info
 
 from src.converesational_chain.memory import ChatHistoryMemory
 from src.converesational_chain.chain import RAGChainWithMemory
-from system_prompt.reactome_prompt import qa_prompt, contextualize_q_prompt
+from system_prompt.reactome_prompt import qa_prompt
 
 
 def list_subdirectories(directory: str) -> List[str]:
