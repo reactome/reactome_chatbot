@@ -6,8 +6,11 @@ import os
 
 import chainlit as cl
 
+from dotenv import load_dotenv
 from retreival_chain import initialize_retrieval_chain
 from util.embedding_environment import EM_ARCHIVE, EmbeddingEnvironment
+
+load_dotenv()
 
 default_log_level = os.getenv("LOG_LEVEL", "INFO").upper()
 
