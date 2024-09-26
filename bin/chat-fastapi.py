@@ -68,10 +68,21 @@ async def captcha_page():
         </head>
         <body>
             <form id="captcha-form" action="/chat/verify_captcha" method="post">
-                <div class="cf-turnstile" data-sitekey="{os.getenv('CLOUDFLARE_SITE_KEY')}"></div>
-                <br/>
-                <button type="submit">Submit</button>
+                <div class="cf-turnstile" data-sitekey="{os.getenv('CLOUDFLARE_SITE_KEY')}" data-callback="onSubmit"></div>
             </form>
+            <script>
+                // Function called when CAPTCHA is completed
+                function onSubmit(token) {{
+                    document.getElementById('captcha-form').submit();  // Auto-submit form once CAPTCHA is validated
+                }}
+
+                // Optional: Automatically trigger Turnstile verification when the page loads
+                window.onload = function() {{
+                    setTimeout(function() {{
+                        turnstile.execute();
+                    }}, 1000);  // Trigger after 1 second (adjust as needed)
+                }};
+            </script>
         </body>
     </html>
     """
