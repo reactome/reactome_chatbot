@@ -38,4 +38,4 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Make all files in the bin directory executable
 RUN chmod +x bin/*
 
-CMD ["uvicorn", "bin.chat-fastapi:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "bin.chat-fastapi:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "error"]
