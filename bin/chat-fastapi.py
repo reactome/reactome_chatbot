@@ -12,13 +12,13 @@ load_dotenv()
 
 app = FastAPI()
 
-HCAPTCHA_SECRET_KEY = os.getenv("HCAPTCHA_SECRET_KEY")
-HCAPTCHA_SITE_KEY = os.getenv("HCAPTCHA_SITE_KEY")
+CLOUDFLARE_SECRET_KEY = os.getenv("CLOUDFLARE_SECRET_KEY")
+CLOUDFLARE_SITE_KEY = os.getenv("CLOUDFLARE_SITE_KEY")
 
 
 def make_signature(value:str) -> str:
     return hmac.new(
-        HCAPTCHA_SECRET_KEY.encode(),
+        CLOUDFLARE_SECRET_KEY.encode(),
         value.encode(),
         hashlib.sha256
     ).hexdigest()
@@ -35,13 +35,14 @@ def verify_secure_cookie(cookie_value: str) -> bool:
     except Exception:
         return False
 
+
 @app.middleware("http")
 async def verify_captcha_middleware(request: Request, call_next):
     # Allow access to CAPTCHA pages and static files
     if (
         request.url.path in ["/chat/verify_captcha", "/chat/verify_captcha_page", "/chat/static"]
         or request.url.path.startswith("/static")
-        or not HCAPTCHA_SECRET_KEY
+        or not os.getenv("CLOUDFLARE_SECRET_KEY")
     ):
         response = await call_next(request)
         return response
@@ -50,7 +51,7 @@ async def verify_captcha_middleware(request: Request, call_next):
     captcha_verified = request.cookies.get("captcha_verified")
 
     # If CAPTCHA is not verified, block access
-    if (not captcha_verified) or (not verify_secure_cookie(captcha_verified)):
+    if not captcha_verified or not verify_secure_cookie(captcha_verified):
         return RedirectResponse(url="/chat/verify_captcha_page")
 
     response = await call_next(request)
@@ -63,11 +64,11 @@ async def captcha_page():
     html_content = f"""
     <html>
         <head>
-            <script src="https://hcaptcha.com/1/api.js" async defer></script>
+            <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
         </head>
         <body>
-            <form action="/chat/verify_captcha" method="post">
-                <div class="h-captcha" data-sitekey=\"{HCAPTCHA_SITE_KEY}\"></div>
+            <form id="captcha-form" action="/chat/verify_captcha" method="post">
+                <div class="cf-turnstile" data-sitekey="{os.getenv('CLOUDFLARE_SITE_KEY')}"></div>
                 <br/>
                 <button type="submit">Submit</button>
             </form>
@@ -80,16 +81,20 @@ async def captcha_page():
 @app.post("/chat/verify_captcha")
 async def verify_captcha(request: Request):
     form_data = await request.form()
-    h_captcha_response = form_data.get("h-captcha-response")
+    cf_turnstile_response = form_data.get("cf-turnstile-response")
 
-    if not h_captcha_response:
+    if not cf_turnstile_response:
         raise HTTPException(status_code=400, detail="CAPTCHA response is missing")
 
-    # Send the CAPTCHA response to hCaptcha
-    url = "https://hcaptcha.com/siteverify"
-    data = {"secret": HCAPTCHA_SECRET_KEY, "response": h_captcha_response}
+    # Verify the CAPTCHA with Cloudflare
+    url = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+    data = {
+        "secret": os.getenv("CLOUDFLARE_SECRET_KEY"),
+        "response": cf_turnstile_response,
+        "remoteip": request.client.host
+    }
 
-    # Perform request to hCaptcha's verification endpoint
+    # Perform request to Cloudflare Turnstile verification endpoint
     response = requests.post(url, data=data)
     result = response.json()
 
@@ -98,7 +103,7 @@ async def verify_captcha(request: Request):
         raise HTTPException(status_code=400, detail="CAPTCHA verification failed")
 
     # Set a signed cookie to mark CAPTCHA as verified
-    cookie_value = create_secure_cookie(h_captcha_response)
+    cookie_value = create_secure_cookie(cf_turnstile_response)
     redirect_response = RedirectResponse(url="/chat", status_code=303)
     redirect_response.set_cookie(
         key="captcha_verified",
