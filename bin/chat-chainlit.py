@@ -8,7 +8,7 @@ import chainlit as cl
 
 from dotenv import load_dotenv
 from retreival_chain import initialize_retrieval_chain
-from util.embedding_environment import EM_ARCHIVE, EmbeddingEnvironment
+from util.embedding_environment import EmbeddingEnvironment
 
 load_dotenv()
 
@@ -43,13 +43,13 @@ env = os.getenv("CHAT_ENV", "reactome")
 
 @cl.on_chat_start
 async def quey_llm() -> None:
-    embeddings_directory = EM_ARCHIVE / EmbeddingEnvironment.get_dict()[env]
+    embeddings_directory = EmbeddingEnvironment.get_dir(env)
     llm_chain = initialize_retrieval_chain(
         env,
         embeddings_directory,
         False,
         False,
-        hf_model=EmbeddingEnvironment.get_model("reactome"),
+        hf_model=EmbeddingEnvironment.get_model(env),
     )
     cl.user_session.set("llm_chain", llm_chain)
 

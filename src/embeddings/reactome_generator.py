@@ -89,7 +89,7 @@ def generate_reactome_embeddings(
     )
 
     (reactions_csv, summations_csv, complexes_csv, ewas_csv) = generate_all_csvs(
-        connector, force
+        connector, embeddings_dir, force
     )
     connector.close()
 

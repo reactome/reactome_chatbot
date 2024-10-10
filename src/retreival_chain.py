@@ -1,5 +1,6 @@
 import os
-from typing import AsyncGenerator, Callable, List
+from pathlib import Path
+from typing import AsyncGenerator, Callable
 
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.retrievers import EnsembleRetriever
@@ -13,17 +14,16 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from reactome.metadata_info import descriptions_info, field_info
 
-from src.converesational_chain.memory import ChatHistoryMemory
-from src.converesational_chain.chain import RAGChainWithMemory
+from src.conversational_chain.memory import ChatHistoryMemory
+from src.conversational_chain.chain import RAGChainWithMemory
 from system_prompt.reactome_prompt import qa_prompt
 
 
-def list_subdirectories(directory: str) -> List[str]:
-    subdirectories = [
-        f.name
-        for f in os.scandir(directory)
-        if f.is_dir() and f.name != "." and f.name != ".."
-    ]
+def list_chroma_subdirectories(directory: Path) -> list[str]:
+    subdirectories = list(
+        chroma_file.parent.name
+        for chroma_file in directory.glob('*/chroma.sqlite3')
+    )
     return subdirectories
 
 
@@ -54,7 +54,7 @@ def get_embedding(
 
 def initialize_retrieval_chain(
     env: str,
-    embeddings_directory: str,
+    embeddings_directory: Path,
     commandline: bool,
     verbose: bool,
     ollama_model: str = None,
@@ -65,7 +65,7 @@ def initialize_retrieval_chain(
 )-> RAGChainWithMemory:
     memory = ChatHistoryMemory()
 
-    callbacks: List[StreamingStdOutCallbackHandler] = []
+    callbacks: list[StreamingStdOutCallbackHandler] = []
     if commandline:
         callbacks = [StreamingStdOutCallbackHandler()]
 
@@ -90,11 +90,11 @@ def initialize_retrieval_chain(
     # Get OpenAIEmbeddings (or HuggingFaceEmbeddings model if specified)
     embedding_callable = get_embedding(hf_model, device)
 
-    retriever_list: List[SelfQueryRetriever] = []
-    for subdirectory in list_subdirectories(embeddings_directory):
+    retriever_list: list[SelfQueryRetriever] = []
+    for subdirectory in list_chroma_subdirectories(embeddings_directory):
         embedding = embedding_callable()
         vectordb = Chroma(
-            persist_directory=os.path.join(embeddings_directory, subdirectory),
+            persist_directory=str(embeddings_directory / subdirectory),
             embedding_function=embedding,
         )
 
@@ -107,7 +107,7 @@ def initialize_retrieval_chain(
         )
         retriever_list.append(retriever)
 
-    reactome_retriever =  EnsembleRetriever(retrievers=retriever_list, weights=[0.25, 0.25, 0.25, 0.25]) 
+    reactome_retriever =  EnsembleRetriever(retrievers=retriever_list, weights=[0.25, 0.25, 0.25, 0.25])
 
     RAGChainWithMemory.invoke = invoke
     qa = RAGChainWithMemory(

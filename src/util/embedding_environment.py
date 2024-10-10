@@ -27,7 +27,11 @@ class EmbeddingEnvironment:
         return cls._get().embeddings
 
     @classmethod
-    def get_model(cls, key) -> str:
+    def get_dir(cls, key: str) -> Path:
+        return EM_ARCHIVE / cls._get().embeddings[key]
+
+    @classmethod
+    def get_model(cls, key: str) -> str:
         return str(cls._get().embeddings[key].parent.parent)
 
     @classmethod
