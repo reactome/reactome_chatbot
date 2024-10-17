@@ -16,7 +16,7 @@ from reactome.metadata_info import descriptions_info, field_info
 
 from src.conversational_chain.memory import ChatHistoryMemory
 from src.conversational_chain.chain import RAGChainWithMemory
-from system_prompt.reactome_prompt import qa_prompt
+from system_prompt.reactome_prompt import qa_system_prompt
 
 
 def list_chroma_subdirectories(directory: Path) -> list[str]:
@@ -84,7 +84,7 @@ def initialize_retrieval_chain(
             verbose=verbose,
             model=ollama_model,
             base_url=ollama_url,
-            system=qa_prompt,
+            system=qa_system_prompt,
         )
 
     # Get OpenAIEmbeddings (or HuggingFaceEmbeddings model if specified)
