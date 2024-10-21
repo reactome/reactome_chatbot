@@ -3,7 +3,6 @@
 import os
 import re
 from argparse import ArgumentParser
-from glob import iglob
 from pathlib import Path, PurePosixPath
 from shutil import rmtree
 from typing import NamedTuple
@@ -121,8 +120,8 @@ def rm(embedding: EmbeddingSelection):
 
 
 def ls():
-    for embedding_str in iglob(str(EM_ARCHIVE / "*/*/*/*")):
-        print(Path(embedding_str).relative_to(EM_ARCHIVE))
+    for embedding_str in EM_ARCHIVE.glob("*/*/*/*"):
+        print(embedding_str.relative_to(EM_ARCHIVE))
 
 
 def ls_remote():

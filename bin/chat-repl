@@ -8,7 +8,7 @@ import pyfiglet
 from dotenv import load_dotenv
 
 from retreival_chain import initialize_retrieval_chain
-from util.embedding_environment import EM_ARCHIVE, EmbeddingEnvironment
+from util.embedding_environment import EmbeddingEnvironment
 
 
 async def main() -> None:
@@ -46,10 +46,10 @@ async def main() -> None:
         os.environ["HUGGINGFACEHUB_API_TOKEN"] = args.hf_key
 
     env = os.getenv("CHAT_ENV", "reactome")
-    embeddings_directory = EM_ARCHIVE / EmbeddingEnvironment.get_dict()[env]
+    embeddings_directory = EmbeddingEnvironment.get_dir(env)
 
     qa = initialize_retrieval_chain(
-        env
+        env,
         embeddings_directory,
         True,
         args.verbose,
