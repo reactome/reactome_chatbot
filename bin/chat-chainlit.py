@@ -41,8 +41,20 @@ logging.info(f"Selected environment: {selected_env}")
 env = os.getenv("CHAT_ENV", "reactome")
 
 
+@cl.set_chat_profiles
+async def chat_profile():
+    return [
+        cl.ChatProfile(
+            name="React-to-me",
+            markdown_description="An AI assistant specialized in exploring **Reactome** biological pathways and processes.",
+            icon="https://reactome.org/templates/favourite/favicon.ico"
+        )
+    ]
+
+
 @cl.on_chat_start
 async def quey_llm() -> None:
+    chat_profile = cl.user_session.get("chat_profile")
     embeddings_directory = EmbeddingEnvironment.get_dir(env)
     llm_chain = initialize_retrieval_chain(
         env,
@@ -53,7 +65,7 @@ async def quey_llm() -> None:
     )
     cl.user_session.set("llm_chain", llm_chain)
 
-    initial_message: str = """Welcome to React-to-me your interactive chatbot for exploring Reactome!
+    initial_message: str = f"""Welcome to {chat_profile} your interactive chatbot for exploring Reactome!
         Ask me about biological pathways and processes"""
     await cl.Message(content=initial_message).send()
 
