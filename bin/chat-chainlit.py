@@ -3,6 +3,7 @@
 import logging
 import logging.config
 import os
+from typing import Dict, Optional
 
 import chainlit as cl
 
@@ -39,6 +40,16 @@ selected_env = os.getenv("CHAT_ENV", "reactome")
 logging.info(f"Selected environment: {selected_env}")
 
 env = os.getenv("CHAT_ENV", "reactome")
+
+
+@cl.oauth_callback
+def oauth_callback(
+  provider_id: str,
+  token: str,
+  raw_user_data: Dict[str, str],
+  default_user: cl.User,
+) -> Optional[cl.User]:
+  return default_user
 
 
 @cl.set_chat_profiles
