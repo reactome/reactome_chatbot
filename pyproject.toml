@@ -2,7 +2,9 @@
 name = "reactome-chatbot"
 version = "0.1.0"
 description = "Chatbot for reactome's data portal"
-authors = ["Helia Mohammadi <hmohammadi@oicr.on.ca>"]
+authors = ["Helia Mohammadi <hmohammadi@oicr.on.ca>",
+           "Adam Wright <awright@oicr.on.ca>",
+           "Greg Hogue <ghogue@oicr.on.ca>"]
 license = "Apache2"
 readme = "README.md"
 packages = [
