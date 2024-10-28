@@ -3,13 +3,8 @@ from typing import Any, Callable, Dict, Tuple
 
 import pandas as pd
 
-from reactome.neo4j_connector import (
-    Neo4jConnector,
-    get_complexes,
-    get_ewas,
-    get_reactions,
-    get_summations,
-)
+from reactome.neo4j_connector import (Neo4jConnector, get_complexes, get_ewas,
+                                      get_reactions, get_summations)
 
 CSV_GENERATION_MAP: Dict[str, Callable[[Neo4jConnector], Any]] = {
     "reactions.csv": get_reactions,

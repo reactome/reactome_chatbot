@@ -5,17 +5,16 @@ from typing import AsyncGenerator, Callable
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.retrievers import EnsembleRetriever
 from langchain.retrievers.self_query.base import SelfQueryRetriever
-from langchain_community.chat_models import ChatOllama
-from langchain_community.vectorstores import Chroma
+from langchain_chroma.vectorstores import Chroma
 from langchain_core.embeddings import Embeddings
-from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
+from langchain_huggingface import (HuggingFaceEmbeddings,
+                                   HuggingFaceEndpointEmbeddings)
+from langchain_ollama.chat_models import ChatOllama
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-
+from conversational_chain.chain import RAGChainWithMemory
+from conversational_chain.memory import ChatHistoryMemory
 from reactome.metadata_info import descriptions_info, field_info
-
-from src.conversational_chain.memory import ChatHistoryMemory
-from src.conversational_chain.chain import RAGChainWithMemory
 from system_prompt.reactome_prompt import qa_system_prompt
 
 

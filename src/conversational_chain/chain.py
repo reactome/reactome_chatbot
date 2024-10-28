@@ -1,6 +1,9 @@
-from langchain.chains import create_history_aware_retriever, create_retrieval_chain
+from langchain.chains import (create_history_aware_retriever,
+                              create_retrieval_chain)
 from langchain.chains.combine_documents import create_stuff_documents_chain
-from system_prompt.reactome_prompt import qa_prompt, contextualize_q_prompt
+
+from system_prompt.reactome_prompt import contextualize_q_prompt, qa_prompt
+
 
 class RAGChainWithMemory:
     def __init__(self, memory, retriever, llm):

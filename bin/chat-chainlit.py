@@ -5,8 +5,8 @@ import logging.config
 import os
 
 import chainlit as cl
-
 from dotenv import load_dotenv
+
 from retreival_chain import initialize_retrieval_chain
 from util.embedding_environment import EmbeddingEnvironment
 
@@ -53,8 +53,9 @@ async def chat_profile():
 
 
 @cl.on_chat_start
-async def quey_llm() -> None:
+async def start() -> None:
     chat_profile = cl.user_session.get("chat_profile")
+
     embeddings_directory = EmbeddingEnvironment.get_dir(env)
     llm_chain = initialize_retrieval_chain(
         env,
@@ -71,7 +72,7 @@ async def quey_llm() -> None:
 
 
 @cl.on_message
-async def query_llm(message: cl.Message) -> None:
+async def main(message: cl.Message) -> None:
     llm_chain = cl.user_session.get("llm_chain")
     cb = cl.AsyncLangchainCallbackHandler(
         stream_final_answer=True, answer_prefix_tokens=["FINAL", "ANSWER"]
@@ -83,3 +84,4 @@ async def query_llm(message: cl.Message) -> None:
         await cb.final_stream.update()
     else:
         await cl.Message(content=res).send()
+
