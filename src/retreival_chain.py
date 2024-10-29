@@ -1,7 +1,8 @@
 import os
 from pathlib import Path
-from typing import AsyncGenerator, Callable
+from typing import Any, AsyncGenerator, Callable, List, Optional, Union
 
+from langchain.callbacks.base import BaseCallbackHandler
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.retrievers import EnsembleRetriever
 from langchain.retrievers.self_query.base import SelfQueryRetriever
@@ -15,13 +16,11 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from conversational_chain.chain import RAGChainWithMemory
 from conversational_chain.memory import ChatHistoryMemory
 from reactome.metadata_info import descriptions_info, field_info
-from system_prompt.reactome_prompt import qa_system_prompt
 
 
 def list_chroma_subdirectories(directory: Path) -> list[str]:
     subdirectories = list(
-        chroma_file.parent.name
-        for chroma_file in directory.glob('*/chroma.sqlite3')
+        chroma_file.parent.name for chroma_file in directory.glob("*/chroma.sqlite3")
     )
     return subdirectories
 
@@ -32,7 +31,7 @@ async def invoke(self, query: str) -> AsyncGenerator[str, None]:
 
 
 def get_embedding(
-    hf_model: str = None, device: str = "cpu"
+    hf_model: Optional[str] = None, device: str = "cpu"
 ) -> Callable[[], Embeddings]:
     if hf_model is None:
         return OpenAIEmbeddings
@@ -56,17 +55,19 @@ def initialize_retrieval_chain(
     embeddings_directory: Path,
     commandline: bool,
     verbose: bool,
-    ollama_model: str = None,
+    ollama_model: Optional[str] = None,
     ollama_url: str = "http://localhost:11434",
-    hf_model: str = None,
+    hf_model: Optional[str] = None,
     device: str = "cpu",
-
-)-> RAGChainWithMemory:
+) -> RAGChainWithMemory:
     memory = ChatHistoryMemory()
 
-    callbacks: list[StreamingStdOutCallbackHandler] = []
+    callbacks: list[BaseCallbackHandler] = []
     if commandline:
         callbacks = [StreamingStdOutCallbackHandler()]
+
+    # Define llm without redefinition
+    llm: Union[ChatOllama, ChatOpenAI]
 
     if ollama_model is None:  # Use OpenAI when Ollama not specified
         llm = ChatOpenAI(
@@ -83,13 +84,13 @@ def initialize_retrieval_chain(
             verbose=verbose,
             model=ollama_model,
             base_url=ollama_url,
-            system=qa_system_prompt,
         )
 
     # Get OpenAIEmbeddings (or HuggingFaceEmbeddings model if specified)
     embedding_callable = get_embedding(hf_model, device)
 
-    retriever_list: list[SelfQueryRetriever] = []
+    # Adjusted type for retriever_list
+    retriever_list: List[Any] = []
     for subdirectory in list_chroma_subdirectories(embeddings_directory):
         embedding = embedding_callable()
         vectordb = Chroma(
@@ -106,7 +107,9 @@ def initialize_retrieval_chain(
         )
         retriever_list.append(retriever)
 
-    reactome_retriever =  EnsembleRetriever(retrievers=retriever_list, weights=[0.25, 0.25, 0.25, 0.25])
+    reactome_retriever = EnsembleRetriever(
+        retrievers=retriever_list, weights=[0.25] * len(retriever_list)
+    )
 
     RAGChainWithMemory.invoke = invoke
     qa = RAGChainWithMemory(

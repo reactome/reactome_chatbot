@@ -5,6 +5,7 @@ class ChatHistoryMemory:
     """
     Manages the chat history for the conversation.
     """
+
     def __init__(self):
         self.history = []
 

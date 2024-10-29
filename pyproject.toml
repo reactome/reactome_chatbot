@@ -43,6 +43,7 @@ mypy = "^1.13.0"
 black = "^24.10.0"
 isort = "^5.13.2"
 pandas-stubs = "^2.2.3.241009"
+types-requests = "^2.32.0.20241016"
 
 [[tool.poetry.source]]
 name = "pytorch_cpu"

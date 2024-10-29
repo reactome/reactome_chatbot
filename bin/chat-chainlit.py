@@ -47,7 +47,7 @@ async def chat_profile():
         cl.ChatProfile(
             name="React-to-me",
             markdown_description="An AI assistant specialized in exploring **Reactome** biological pathways and processes.",
-            icon="https://reactome.org/templates/favourite/favicon.ico"
+            icon="https://reactome.org/templates/favourite/favicon.ico",
         )
     ]
 
@@ -80,8 +80,7 @@ async def main(message: cl.Message) -> None:
     cb.answer_reached = True
 
     res = await llm_chain.ainvoke(message.content, callbacks=[cb])
-    if cb.has_streamed_final_answer:
+    if cb.has_streamed_final_answer and cb.final_stream is not None:
         await cb.final_stream.update()
     else:
         await cl.Message(content=res).send()
-

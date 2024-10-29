@@ -37,12 +37,14 @@ class RAGChainWithMemory:
         Runs the chain synchronously.
         """
         # Invoke the chain and get the parsed output
-        response = self.rag_chain.invoke({
-            "input": user_input,
-            "chat_history": self.memory.get_history(),
-        })
+        response = self.rag_chain.invoke(
+            {
+                "input": user_input,
+                "chat_history": self.memory.get_history(),
+            }
+        )
 
-        answer = response['answer']
+        answer = response["answer"]
 
         # Update memory with user input and LLM response
         self.memory.add_human_message(user_input)
@@ -55,12 +57,15 @@ class RAGChainWithMemory:
         Runs the chain asynchronously.
         """
         # Invoke the chain asynchronously
-        response = await self.rag_chain.ainvoke({
-            "input": user_input,
-            "chat_history": self.memory.get_history(),
-        }, callbacks=callbacks)
+        response = await self.rag_chain.ainvoke(
+            {
+                "input": user_input,
+                "chat_history": self.memory.get_history(),
+            },
+            callbacks=callbacks,
+        )
 
-        answer = response['answer']
+        answer = response["answer"]
 
         # Update memory with user input and LLM response
         self.memory.add_human_message(user_input)

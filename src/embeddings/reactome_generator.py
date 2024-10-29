@@ -1,5 +1,5 @@
 import os
-from typing import Dict
+from typing import Dict, Optional, Union
 
 import torch
 from langchain_community.vectorstores import Chroma
@@ -16,9 +16,9 @@ def upload_to_chromadb(
     embeddings_dir: str,
     file: str,
     embedding_table: str,
-    hf_model: str = None,
-    device: str = None,
-) -> None:
+    hf_model: Optional[str] = None,
+    device: Optional[str] = None,
+) -> Chroma:
     metadata_columns: Dict[str, list] = {
         "reactions": [
             "st_id",
@@ -49,41 +49,42 @@ def upload_to_chromadb(
         encoding="utf-8",
     )
     docs = loader.load()
+    embeddings_instance: Union[
+        OpenAIEmbeddings, HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
+    ]
     if hf_model is None:  # Use OpenAI
-        embeddings = OpenAIEmbeddings()
+        embeddings_instance = OpenAIEmbeddings()
     elif hf_model.startswith("openai/text-embedding-"):
-        embeddings = OpenAIEmbeddings(model=hf_model[len("openai/") :])
+        embeddings_instance = OpenAIEmbeddings(model=hf_model[len("openai/") :])
     elif "HUGGINGFACEHUB_API_TOKEN" in os.environ:
-        embeddings = HuggingFaceEndpointEmbeddings(
+        embeddings_instance = HuggingFaceEndpointEmbeddings(
             huggingfacehub_api_token=os.environ["HUGGINGFACEHUB_API_TOKEN"],
             model=hf_model,
         )
     else:
         if device == "cuda":
             torch.cuda.empty_cache()
-        embeddings = HuggingFaceEmbeddings(
+        embeddings_instance = HuggingFaceEmbeddings(
             model_name=hf_model,
             model_kwargs={"device": device, "trust_remote_code": True},
             encode_kwargs={"batch_size": 12, "normalize_embeddings": False},
         )
 
-    db = Chroma.from_documents(
+    return Chroma.from_documents(
         documents=docs,
-        embedding=embeddings,
+        embedding=embeddings_instance,
         persist_directory=os.path.join(embeddings_dir, embedding_table),
     )
-
-    return db
 
 
 def generate_reactome_embeddings(
     embeddings_dir: str,
     neo4j_uri: str = "bolt://localhost:7687",
-    neo4j_username: str = None,
-    neo4j_password: str = None,
+    neo4j_username: Optional[str] = None,
+    neo4j_password: Optional[str] = None,
     force: bool = False,
-    hf_model: str = None,
-    device: str = None,
+    hf_model: Optional[str] = None,
+    device: Optional[str] = None,
 ) -> None:
     connector = Neo4jConnector(
         uri=neo4j_uri, user=neo4j_username, password=neo4j_password
