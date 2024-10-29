@@ -89,7 +89,7 @@ jobs:
 
             - env:
                 AWS_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-                AWS_REGISTRY_ALIAS: k2y5k6e2
+                AWS_REGISTRY_ALIAS: reactome
                 AWS_REPO: reactome-chatbot
                 IMG_TAG: ${{ steps.get-hash.outputs.SHORT_SHA }}
               run: |
