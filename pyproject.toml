@@ -35,6 +35,7 @@ torch = {version = "^2.4.0+cpu", source = "pytorch_cpu"}
 langchain-chroma = "^0.1.4"
 langchain-ollama = "^0.2.0"
 lark = "^1.2.2"
+langgraph = "^0.2.39"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.7.1"
