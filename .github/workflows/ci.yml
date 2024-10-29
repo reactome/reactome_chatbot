@@ -94,7 +94,7 @@ jobs:
                 IMG_TAG: ${{ steps.get-hash.outputs.SHORT_SHA }}
               run: |
                 docker load --input /tmp/image.tar
-                docker image tag tmp-tag $AWS_REGISTRY/$AWS_REGISTRY_ALIAS/$AWS_REPO:$IMG_TAG
-                docker image tag tmp-tag $AWS_REGISTRY/$AWS_REGISTRY_ALIAS/$AWS_REPO:latest
+                docker image tag reactome-chatbot:${{ github.sha }} $AWS_REGISTRY/$AWS_REGISTRY_ALIAS/$AWS_REPO:$IMG_TAG
+                docker image tag reactome-chatbot:${{ github.sha }} $AWS_REGISTRY/$AWS_REGISTRY_ALIAS/$AWS_REPO:latest
                 docker push $AWS_REGISTRY/$AWS_REGISTRY_ALIAS/$AWS_REPO:$IMG_TAG
                 docker push $AWS_REGISTRY/$AWS_REGISTRY_ALIAS/$AWS_REPO:latest
