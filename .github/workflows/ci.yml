@@ -90,7 +90,7 @@ jobs:
         IMAGE_TAG: ${{ github.sha }}
       run: |
         docker load --input /tmp/image.tar
-        docker tag reactome_chatbot:${{ github.sha }} $ECR_REGISTRY/reactome_chatbot:$IMAGE_TAG
-        docker tag reactome_chatbot:${{ github.sha }} $ECR_REGISTRY/reactome_chatbot:latest
+        docker tag reactome_chatbot:${{ github.sha }} $ECR_REGISTRY/reactome-chatbot:$IMAGE_TAG
+        docker tag reactome_chatbot:${{ github.sha }} $ECR_REGISTRY/reactome-chatbot:latest
         docker push $ECR_REGISTRY/reactome_chatbot:$IMAGE_TAG
         docker push $ECR_REGISTRY/reactome_chatbot:latest
