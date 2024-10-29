@@ -1,12 +1,12 @@
 from pathlib import Path
-from typing import Any, Callable, Dict, Tuple
+from typing import Callable
 
 import pandas as pd
 
-from reactome.neo4j_connector import (Neo4jConnector, get_complexes, get_ewas,
-                                      get_reactions, get_summations)
+from reactome.neo4j_connector import (Neo4jConnector, Neo4jDict, get_complexes,
+                                      get_ewas, get_reactions, get_summations)
 
-CSV_GENERATION_MAP: Dict[str, Callable[[Neo4jConnector], Any]] = {
+CSV_GENERATION_MAP: dict[str, Callable[[Neo4jConnector], Neo4jDict]] = {
     "reactions.csv": get_reactions,
     "summations.csv": get_summations,
     "complexes.csv": get_complexes,
@@ -16,7 +16,7 @@ CSV_GENERATION_MAP: Dict[str, Callable[[Neo4jConnector], Any]] = {
 
 def generate_csv(
     connector: Neo4jConnector,
-    data_fetch_func: Callable[[Neo4jConnector], Any],
+    data_fetch_func: Callable[[Neo4jConnector], Neo4jDict],
     file_name: str,
     csv_dir: Path,
     force: bool = False,
@@ -26,7 +26,7 @@ def generate_csv(
     if not force and csv_file_path.exists():
         return str(csv_file_path)
 
-    data: Any = data_fetch_func(connector)
+    data: Neo4jDict = data_fetch_func(connector)
     df: pd.DataFrame = pd.DataFrame(data)
     df["url"] = "https://reactome.org/content/detail/" + df["st_id"]
     df.to_csv(csv_file_path, index=False)
@@ -35,7 +35,7 @@ def generate_csv(
 
 def generate_all_csvs(
     connector: Neo4jConnector, parent_dir: str, force: bool = False
-) -> Tuple[str, ...]:
+) -> tuple[str, ...]:
     csv_dir = Path(parent_dir) / "csv_files"
     csv_dir.mkdir(parents=True, exist_ok=True)
 

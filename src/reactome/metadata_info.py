@@ -1,5 +1,3 @@
-from typing import Dict, List
-
 from langchain.chains.query_constructor.base import AttributeInfo
 
 pathway_id_description = "A Reactome Identifier unique to each pathway. A pathway name may appear multiple times in the dataset\
@@ -17,7 +15,7 @@ descriptions_info: dict[str, str] = {
 }
 
 
-field_info: Dict[str, List[AttributeInfo]] = {
+field_info: dict[str, list[AttributeInfo]] = {
     "summations": [
         AttributeInfo(
             name="st_id",

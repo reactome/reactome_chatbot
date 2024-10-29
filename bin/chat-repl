@@ -2,11 +2,11 @@
 
 import argparse
 import os
-from typing import Any
 
 import pyfiglet
 from dotenv import load_dotenv
 
+from conversational_chain.chain import RAGChainWithMemory
 from retreival_chain import initialize_retrieval_chain
 from util.embedding_environment import EmbeddingEnvironment
 
@@ -48,7 +48,7 @@ async def main() -> None:
     env = os.getenv("CHAT_ENV", "reactome")
     embeddings_directory = EmbeddingEnvironment.get_dir(env)
 
-    qa = initialize_retrieval_chain(
+    qa: RAGChainWithMemory = initialize_retrieval_chain(
         env,
         embeddings_directory,
         True,
@@ -64,7 +64,7 @@ async def main() -> None:
         await interactive_mode(qa, args.verbose)
 
 
-async def interactive_mode(qa: Any, verbose: bool) -> None:
+async def interactive_mode(qa: RAGChainWithMemory, verbose: bool) -> None:
     reactome_figlet = pyfiglet.figlet_format("React-to-me")
     print(reactome_figlet)
     print(
@@ -78,7 +78,9 @@ async def interactive_mode(qa: Any, verbose: bool) -> None:
         await print_results(qa, query, verbose)
 
 
-async def print_results(qa: Any, query: str, verbose: bool) -> None:
+async def print_results(
+    qa: RAGChainWithMemory, query: str, verbose: bool
+) -> None:
     async for qa_result in qa.invoke(query):
         pass
 

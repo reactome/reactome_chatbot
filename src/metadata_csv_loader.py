@@ -1,6 +1,6 @@
 import csv
 from io import TextIOWrapper
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from langchain_community.document_loaders.base import BaseLoader
 from langchain_community.document_loaders.helpers import detect_file_encodings
@@ -32,9 +32,9 @@ class MetaDataCSVLoader(BaseLoader):
         self,
         file_path: str,
         source_column: Optional[str] = None,
-        metadata_columns: Optional[List[str]] = None,
-        content_columns: Optional[List[str]] = None,
-        csv_args: Optional[Dict[str, Any]] = None,
+        metadata_columns: Optional[list[str]] = None,
+        content_columns: Optional[list[str]] = None,
+        csv_args: dict[str, Any] = dict(),
         encoding: Optional[str] = None,
         autodetect_encoding: bool = False,
     ) -> None:
@@ -52,15 +52,15 @@ class MetaDataCSVLoader(BaseLoader):
         """
         self.file_path: str = file_path
         self.source_column: Optional[str] = source_column
-        self.metadata_columns: Optional[List[str]] = metadata_columns
-        self.content_columns: Optional[List[str]] = content_columns
+        self.metadata_columns: Optional[list[str]] = metadata_columns
+        self.content_columns: Optional[list[str]] = content_columns
         self.encoding: Optional[str] = encoding
-        self.csv_args: Dict[str, Any] = csv_args or {}
+        self.csv_args: dict[str, Any] = csv_args
         self.autodetect_encoding: bool = autodetect_encoding
 
-    def load(self) -> List[Document]:
+    def load(self) -> list[Document]:
         """Load data into document objects."""
-        docs: List[Document] = []
+        docs: list[Document] = []
 
         try:
             with open(self.file_path, newline="", encoding=self.encoding) as csvfile:
@@ -84,9 +84,9 @@ class MetaDataCSVLoader(BaseLoader):
 
         return docs
 
-    def __read_file(self, csvfile: TextIOWrapper) -> List[Document]:
+    def __read_file(self, csvfile: TextIOWrapper) -> list[Document]:
         """Read CSV file and return a list of Document objects."""
-        docs: List[Document] = []
+        docs: list[Document] = []
 
         # Skip lines starting with '#'
         valid_lines = (line for line in csvfile if not line.startswith("#"))
@@ -119,7 +119,7 @@ class MetaDataCSVLoader(BaseLoader):
                     for k, v in row.items()
                 )
 
-            metadata: Dict[str, str] = {"source": source, "row": str(i)}
+            metadata: dict[str, str] = {"source": source, "row": str(i)}
             if self.metadata_columns:
                 for col in self.metadata_columns:
                     try:

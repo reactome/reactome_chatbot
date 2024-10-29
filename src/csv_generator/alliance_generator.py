@@ -1,9 +1,9 @@
 import gzip
 import os
 import shutil
+from typing import Optional
 
 import requests
-from typings import Optional
 
 
 def download_file(url: str, dest: str, force: bool) -> Optional[str]:
