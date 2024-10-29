@@ -1,8 +1,8 @@
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).parent.parent.parent
-EM_ARCHIVE = REPO_ROOT / "embeddings"
-EM_CURRENT = EM_ARCHIVE / "current"
+REPO_ROOT: Path = Path(__file__).parent.parent.parent
+EM_ARCHIVE: Path = REPO_ROOT / "embeddings"
+EM_CURRENT: Path = EM_ARCHIVE / "current"
 
 
 class EmbeddingEnvironment:
@@ -10,11 +10,12 @@ class EmbeddingEnvironment:
         self.embeddings: dict[str, Path] = dict()
         if env_path != "":
             for embedding_path in map(Path, env_path.split(":")):
-                db = embedding_path.parent.name
+                db: str = embedding_path.parent.name
                 self.embeddings[db] = embedding_path
 
     @classmethod
     def _get(cls):  # -> Self
+        env_path: str
         if EM_CURRENT.exists():
             with EM_CURRENT.open("r") as current_fp:
                 env_path = current_fp.read()
@@ -36,9 +37,9 @@ class EmbeddingEnvironment:
 
     @classmethod
     def set_one(cls, embedding_path: Path) -> None:
-        db = embedding_path.parent.name
-        embeddings_dict = cls.get_dict()
+        db: str = embedding_path.parent.name
+        embeddings_dict: dict[str, Path] = cls.get_dict()
         embeddings_dict[db] = embedding_path
-        env_path = ":".join(map(str, embeddings_dict.values()))
+        env_path: str = ":".join(map(str, embeddings_dict.values()))
         with EM_CURRENT.open("w") as current_fp:
             current_fp.write(env_path)

@@ -1,8 +1,9 @@
 import os
-from typing import Dict, Optional, Union
+from typing import Optional
 
 import torch
 from langchain_community.vectorstores import Chroma
+from langchain_core.embeddings import Embeddings
 from langchain_huggingface import (HuggingFaceEmbeddings,
                                    HuggingFaceEndpointEmbeddings)
 from langchain_openai import OpenAIEmbeddings
@@ -19,7 +20,7 @@ def upload_to_chromadb(
     hf_model: Optional[str] = None,
     device: Optional[str] = None,
 ) -> Chroma:
-    metadata_columns: Dict[str, list] = {
+    metadata_columns: dict[str, list] = {
         "reactions": [
             "st_id",
             "display_name",
@@ -49,9 +50,7 @@ def upload_to_chromadb(
         encoding="utf-8",
     )
     docs = loader.load()
-    embeddings_instance: Union[
-        OpenAIEmbeddings, HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
-    ]
+    embeddings_instance: Embeddings
     if hf_model is None:  # Use OpenAI
         embeddings_instance = OpenAIEmbeddings()
     elif hf_model.startswith("openai/text-embedding-"):

@@ -3,7 +3,7 @@ import os
 import shutil
 
 import requests
-from typings import Optional
+from typing import Optional
 
 
 def download_file(url: str, dest: str, force: bool) -> Optional[str]:

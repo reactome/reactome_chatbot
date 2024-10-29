@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Any, AsyncGenerator, Callable, List, Optional, Union
+from typing import AsyncGenerator, Callable, Optional
 
 from langchain.callbacks.base import BaseCallbackHandler
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
@@ -67,7 +67,7 @@ def initialize_retrieval_chain(
         callbacks = [StreamingStdOutCallbackHandler()]
 
     # Define llm without redefinition
-    llm: Union[ChatOllama, ChatOpenAI]
+    llm: ChatOllama | ChatOpenAI
 
     if ollama_model is None:  # Use OpenAI when Ollama not specified
         llm = ChatOpenAI(
@@ -90,7 +90,7 @@ def initialize_retrieval_chain(
     embedding_callable = get_embedding(hf_model, device)
 
     # Adjusted type for retriever_list
-    retriever_list: List[Any] = []
+    retriever_list: list[SelfQueryRetriever] = []
     for subdirectory in list_chroma_subdirectories(embeddings_directory):
         embedding = embedding_callable()
         vectordb = Chroma(

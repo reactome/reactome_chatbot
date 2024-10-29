@@ -1,9 +1,10 @@
 import os
-from typing import Dict, Optional, Union
+from typing import Optional
 
 import requests
 import torch
 from langchain_community.vectorstores import Chroma
+from langchain_core.embeddings import Embeddings
 from langchain_huggingface import (HuggingFaceEmbeddings,
                                    HuggingFaceEndpointEmbeddings)
 from langchain_openai import OpenAIEmbeddings
@@ -35,7 +36,7 @@ def upload_to_chromadb(
     hf_model: Optional[str] = None,
     device: Optional[str] = None,
 ) -> Optional[Chroma]:
-    metadata_columns: Dict[str, list] = {
+    metadata_columns: dict[str, list] = {
         "genes": [
             "Your Input",
             "Gene ID",
@@ -260,9 +261,7 @@ def upload_to_chromadb(
                 csv_args={"delimiter": "\t"},
             )
             docs = loader.load()
-            embeddings: Union[
-                OpenAIEmbeddings, HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
-            ]
+            embeddings: Embeddings
 
             # Select embeddings model based on hf_model
             if hf_model is None:  # Use OpenAI

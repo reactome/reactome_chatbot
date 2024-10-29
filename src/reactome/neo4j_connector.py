@@ -1,6 +1,9 @@
-from typing import Dict, List, Optional, Union
+from typing import Any, Optional
 
 from neo4j import GraphDatabase
+
+
+Neo4jDict = dict[str, Any]
 
 
 class Neo4jConnector:
@@ -13,13 +16,13 @@ class Neo4jConnector:
     def close(self) -> None:
         self._driver.close()
 
-    def execute_query(self, query: str) -> List[Dict[str, Union[str, List[str]]]]:
+    def execute_query(self, query: str) -> list[Neo4jDict]:
         with self._driver.session() as session:
             result = session.run(query)
             return result.data()
 
 
-def get_reactions(connector: Neo4jConnector) -> List[Dict[str, Union[str, List[str]]]]:
+def get_reactions(connector: Neo4jConnector) -> list[Neo4jDict]:
     query = """
     MATCH (pathway:Pathway)-[:hasEvent]->(reaction:ReactionLikeEvent)
     WHERE pathway.speciesName = "Homo sapiens"
@@ -41,7 +44,7 @@ def get_reactions(connector: Neo4jConnector) -> List[Dict[str, Union[str, List[s
     return connector.execute_query(query)
 
 
-def get_summations(connector: Neo4jConnector) -> List[Dict[str, Union[str, List[str]]]]:
+def get_summations(connector: Neo4jConnector) -> list[Neo4jDict]:
     query = """
     MATCH (e)-[:summation]->(summation:Summation)
     WHERE (e:Pathway OR e:ReactionLikeEvent) and e.speciesName = "Homo sapiens"
@@ -56,7 +59,7 @@ def get_summations(connector: Neo4jConnector) -> List[Dict[str, Union[str, List[
     return connector.execute_query(query)
 
 
-def get_complexes(connector: Neo4jConnector) -> List[Dict[str, Union[str, List[str]]]]:
+def get_complexes(connector: Neo4jConnector) -> list[Neo4jDict]:
     query = """
     MATCH (complex:Complex)-[:hasComponent]->(component)
     WHERE complex.speciesName = "Homo sapiens"
@@ -69,7 +72,7 @@ def get_complexes(connector: Neo4jConnector) -> List[Dict[str, Union[str, List[s
     return connector.execute_query(query)
 
 
-def get_ewas(connector: Neo4jConnector) -> List[Dict[str, Union[str, List[str]]]]:
+def get_ewas(connector: Neo4jConnector) -> list[Neo4jDict]:
     query = """
      MATCH q1 =(database:ReferenceDatabase)<-[:referenceDatabase]-(entity1:ReferenceEntity)<--(gene:ReferenceEntity)<-[:referenceEntity]-(protein:PhysicalEntity)
       where database.displayName = "HGNC"
