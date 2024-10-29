@@ -8,6 +8,7 @@ from langchain.retrievers import EnsembleRetriever
 from langchain.retrievers.self_query.base import SelfQueryRetriever
 from langchain_chroma.vectorstores import Chroma
 from langchain_core.embeddings import Embeddings
+from langchain_core.retrievers import RetrieverLike
 from langchain_huggingface import (HuggingFaceEmbeddings,
                                    HuggingFaceEndpointEmbeddings)
 from langchain_ollama.chat_models import ChatOllama
@@ -90,7 +91,7 @@ def initialize_retrieval_chain(
     embedding_callable = get_embedding(hf_model, device)
 
     # Adjusted type for retriever_list
-    retriever_list: list[SelfQueryRetriever] = []
+    retriever_list: list[RetrieverLike] = []
     for subdirectory in list_chroma_subdirectories(embeddings_directory):
         embedding = embedding_callable()
         vectordb = Chroma(
