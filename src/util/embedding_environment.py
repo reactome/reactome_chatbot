@@ -15,7 +15,6 @@ class EmbeddingEnvironment:
 
     @classmethod
     def _get(cls):  # -> Self
-        env_path: str
         if EM_CURRENT.exists():
             with EM_CURRENT.open("r") as current_fp:
                 env_path = current_fp.read()

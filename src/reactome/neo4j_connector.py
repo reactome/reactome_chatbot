@@ -2,7 +2,6 @@ from typing import Any, Optional
 
 from neo4j import GraphDatabase
 
-
 Neo4jDict = dict[str, Any]
 
 
