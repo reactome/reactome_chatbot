@@ -34,7 +34,7 @@ class MetaDataCSVLoader(BaseLoader):
         source_column: Optional[str] = None,
         metadata_columns: Optional[List[str]] = None,
         content_columns: Optional[List[str]] = None,
-        csv_args: Optional[Dict[str, Any]] = None,  # Replaced `any` with `Any`
+        csv_args: Optional[Dict[str, Any]] = None,
         encoding: Optional[str] = None,
         autodetect_encoding: bool = False,
     ) -> None:
@@ -55,7 +55,7 @@ class MetaDataCSVLoader(BaseLoader):
         self.metadata_columns: Optional[List[str]] = metadata_columns
         self.content_columns: Optional[List[str]] = content_columns
         self.encoding: Optional[str] = encoding
-        self.csv_args: Dict[str, Any] = csv_args or {}  # Replaced `any` with `Any`
+        self.csv_args: Dict[str, Any] = csv_args or {}
         self.autodetect_encoding: bool = autodetect_encoding
 
     def load(self) -> List[Document]:
@@ -93,7 +93,7 @@ class MetaDataCSVLoader(BaseLoader):
 
         csv_reader: csv.DictReader = csv.DictReader(
             valid_lines, **self.csv_args
-        )  # Added type annotation
+        )
         for i, row in enumerate(csv_reader):
             try:
                 source = (
