@@ -3,9 +3,10 @@ import os
 import shutil
 
 import requests
+from typings import Optional
 
 
-def download_file(url: str, dest: str, force: bool) -> str:
+def download_file(url: str, dest: str, force: bool) -> Optional[str]:
     # Create the directory if it doesn't exist
     os.makedirs(os.path.dirname(dest), exist_ok=True)
 

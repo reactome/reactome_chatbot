@@ -1,6 +1,6 @@
 import csv
 from io import TextIOWrapper
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from langchain_community.document_loaders.base import BaseLoader
 from langchain_community.document_loaders.helpers import detect_file_encodings
@@ -34,7 +34,7 @@ class MetaDataCSVLoader(BaseLoader):
         source_column: Optional[str] = None,
         metadata_columns: Optional[List[str]] = None,
         content_columns: Optional[List[str]] = None,
-        csv_args: Optional[Dict[str, any]] = None,
+        csv_args: Optional[Dict[str, Any]] = None,
         encoding: Optional[str] = None,
         autodetect_encoding: bool = False,
     ) -> None:
@@ -55,7 +55,7 @@ class MetaDataCSVLoader(BaseLoader):
         self.metadata_columns: Optional[List[str]] = metadata_columns
         self.content_columns: Optional[List[str]] = content_columns
         self.encoding: Optional[str] = encoding
-        self.csv_args: Dict[str, any] = csv_args or {}
+        self.csv_args: Dict[str, Any] = csv_args or {}
         self.autodetect_encoding: bool = autodetect_encoding
 
     def load(self) -> List[Document]:
@@ -91,7 +91,9 @@ class MetaDataCSVLoader(BaseLoader):
         # Skip lines starting with '#'
         valid_lines = (line for line in csvfile if not line.startswith("#"))
 
-        csv_reader = csv.DictReader(valid_lines, **self.csv_args)
+        csv_reader: csv.DictReader = csv.DictReader(
+            valid_lines, **self.csv_args
+        )
         for i, row in enumerate(csv_reader):
             try:
                 source = (

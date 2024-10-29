@@ -2,11 +2,11 @@ import hashlib
 import hmac
 import os
 
+import requests
 from chainlit.utils import mount_chainlit
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
-import requests
 
 load_dotenv()
 
@@ -16,16 +16,18 @@ CLOUDFLARE_SECRET_KEY = os.getenv("CLOUDFLARE_SECRET_KEY")
 CLOUDFLARE_SITE_KEY = os.getenv("CLOUDFLARE_SITE_KEY")
 
 
-def make_signature(value:str) -> str:
+def make_signature(value: str) -> str:
+    if CLOUDFLARE_SECRET_KEY is None:
+        raise ValueError("CLOUDFLARE_SECRET_KEY is not set")
     return hmac.new(
-        CLOUDFLARE_SECRET_KEY.encode(),
-        value.encode(),
-        hashlib.sha256
+        CLOUDFLARE_SECRET_KEY.encode(), value.encode(), hashlib.sha256
     ).hexdigest()
 
-def create_secure_cookie(value:str) -> str:
+
+def create_secure_cookie(value: str) -> str:
     signature = make_signature(value)
     return f"{value}|{signature}"
+
 
 def verify_secure_cookie(cookie_value: str) -> bool:
     try:
@@ -40,7 +42,8 @@ def verify_secure_cookie(cookie_value: str) -> bool:
 async def verify_captcha_middleware(request: Request, call_next):
     # Allow access to CAPTCHA pages and static files
     if (
-        request.url.path in ["/chat/verify_captcha", "/chat/verify_captcha_page", "/chat/static"]
+        request.url.path
+        in ["/chat/verify_captcha", "/chat/verify_captcha_page", "/chat/static"]
         or request.url.path.startswith("/static")
         or not os.getenv("CLOUDFLARE_SECRET_KEY")
     ):
@@ -93,16 +96,15 @@ async def captcha_page():
 async def verify_captcha(request: Request):
     form_data = await request.form()
     cf_turnstile_response = form_data.get("cf-turnstile-response")
-
-    if not cf_turnstile_response:
-        raise HTTPException(status_code=400, detail="CAPTCHA response is missing")
+    if not isinstance(cf_turnstile_response, str):
+        raise HTTPException(status_code=400, detail="CAPTCHA response is invalid")
 
     # Verify the CAPTCHA with Cloudflare
     url = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
     data = {
         "secret": os.getenv("CLOUDFLARE_SECRET_KEY"),
         "response": cf_turnstile_response,
-        "remoteip": request.client.host
+        "remoteip": request.client.host if request.client else "127.0.0.1",
     }
 
     # Perform request to Cloudflare Turnstile verification endpoint
@@ -120,8 +122,8 @@ async def verify_captcha(request: Request):
         key="captcha_verified",
         value=cookie_value,
         max_age=3600,  # Cookie expires in 1 hour
-        secure=True,   # HTTPS only
-        httponly=True  # inaccessible to client side JS
+        secure=True,  # HTTPS only
+        httponly=True,  # inaccessible to client side JS
     )
 
     return redirect_response

@@ -3,13 +3,8 @@ from typing import Any, Callable, Dict, Tuple
 
 import pandas as pd
 
-from reactome.neo4j_connector import (
-    Neo4jConnector,
-    get_complexes,
-    get_ewas,
-    get_reactions,
-    get_summations,
-)
+from reactome.neo4j_connector import (Neo4jConnector, get_complexes, get_ewas,
+                                      get_reactions, get_summations)
 
 CSV_GENERATION_MAP: Dict[str, Callable[[Neo4jConnector], Any]] = {
     "reactions.csv": get_reactions,
@@ -40,14 +35,12 @@ def generate_csv(
 
 def generate_all_csvs(
     connector: Neo4jConnector, parent_dir: str, force: bool = False
-) -> Tuple[str, str, str, str]:
+) -> Tuple[str, ...]:
     csv_dir = Path(parent_dir) / "csv_files"
     csv_dir.mkdir(parents=True, exist_ok=True)
 
     csv_paths = []
     for file_name, data_fetch_func in CSV_GENERATION_MAP.items():
-        csv_path = generate_csv(
-            connector, data_fetch_func, file_name, csv_dir, force
-        )
+        csv_path = generate_csv(connector, data_fetch_func, file_name, csv_dir, force)
         csv_paths.append(csv_path)
     return tuple(csv_paths)

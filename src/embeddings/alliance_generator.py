@@ -1,10 +1,11 @@
 import os
-from typing import Dict
+from typing import Dict, Optional, Union
 
 import requests
 import torch
 from langchain_community.vectorstores import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
+from langchain_huggingface import (HuggingFaceEmbeddings,
+                                   HuggingFaceEndpointEmbeddings)
 from langchain_openai import OpenAIEmbeddings
 
 from csv_generator.alliance_generator import generate_all_csvs
@@ -28,8 +29,12 @@ def get_release_version() -> str:
 
 
 def upload_to_chromadb(
-    embeddings_dir: str, hf_model: str, device: str, version: str, force: str
-) -> None:
+    embeddings_dir: str,
+    version: str,
+    force: bool,  # Changed from str to bool
+    hf_model: Optional[str] = None,
+    device: Optional[str] = None,
+) -> Optional[Chroma]:
     metadata_columns: Dict[str, list] = {
         "genes": [
             "Your Input",
@@ -242,6 +247,8 @@ def upload_to_chromadb(
             base_name = os.path.basename(file_path)
             print(base_name)
 
+    db = None  # Initialize db variable
+
     for filetype, column_names in metadata_columns.items():
         file = csv_dir + filetype + ".tsv"
         if filetype == "genes":
@@ -253,7 +260,11 @@ def upload_to_chromadb(
                 csv_args={"delimiter": "\t"},
             )
             docs = loader.load()
+            embeddings: Union[
+                OpenAIEmbeddings, HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
+            ]
 
+            # Select embeddings model based on hf_model
             if hf_model is None:  # Use OpenAI
                 embeddings = OpenAIEmbeddings()
             elif hf_model.startswith("openai/text-embedding-"):
@@ -278,22 +289,25 @@ def upload_to_chromadb(
                 persist_directory=os.path.join(embeddings_dir, filetype),
             )
             print(db)
-        print("filetype")
-        print(filetype)
+
+    print("filetype")
+    print(filetype)
+
+    return db  # Ensure to return the db at the end
 
 
 def generate_alliance_embeddings(
     embeddings_dir: str,
     force: bool = False,
-    hf_model: str = None,
-    device: str = None,
+    hf_model: Optional[str] = None,
+    device: Optional[str] = None,
     **kwargs,
 ) -> None:
     release_version = get_release_version()
     print(f"Release Version: {release_version}")
     if not embeddings_dir.endswith(release_version):
         print(
-            "the embeddings dir you gave is:",
+            "The embeddings dir you gave is:",
             embeddings_dir,
             " where the live version of Alliance is ",
             release_version,
@@ -301,4 +315,4 @@ def generate_alliance_embeddings(
         exit()
 
     generate_all_csvs(release_version, force)
-    upload_to_chromadb(embeddings_dir, hf_model, device, release_version, force)
+    upload_to_chromadb(embeddings_dir, release_version, force, hf_model, device)
