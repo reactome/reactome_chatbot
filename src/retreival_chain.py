@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import AsyncGenerator, Callable, Optional
+from typing import Callable, Optional
 
 from langchain.callbacks.base import BaseCallbackHandler
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
@@ -14,7 +14,7 @@ from langchain_huggingface import (HuggingFaceEmbeddings,
 from langchain_ollama.chat_models import ChatOllama
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-from conversational_chain.chain import RAGChainWithMemory
+from conversational_chain.graph import RAGGraphWithMemory
 from conversational_chain.memory import ChatHistoryMemory
 from reactome.metadata_info import descriptions_info, field_info
 
@@ -24,11 +24,6 @@ def list_chroma_subdirectories(directory: Path) -> list[str]:
         chroma_file.parent.name for chroma_file in directory.glob("*/chroma.sqlite3")
     )
     return subdirectories
-
-
-async def invoke(self, query: str) -> AsyncGenerator[str, None]:
-    async for message in self.astream(query):
-        yield message
 
 
 def get_embedding(
@@ -60,7 +55,7 @@ def initialize_retrieval_chain(
     ollama_url: str = "http://localhost:11434",
     hf_model: Optional[str] = None,
     device: str = "cpu",
-) -> RAGChainWithMemory:
+) -> RAGGraphWithMemory:
     memory = ChatHistoryMemory()
 
     callbacks: list[BaseCallbackHandler] = []
@@ -73,7 +68,7 @@ def initialize_retrieval_chain(
     if ollama_model is None:  # Use OpenAI when Ollama not specified
         llm = ChatOpenAI(
             temperature=0.0,
-            streaming=commandline,
+            streaming=True,
             callbacks=callbacks,
             verbose=verbose,
             model="gpt-4o-mini",
@@ -112,8 +107,7 @@ def initialize_retrieval_chain(
         retrievers=retriever_list, weights=[0.25] * len(retriever_list)
     )
 
-    RAGChainWithMemory.invoke = invoke
-    qa = RAGChainWithMemory(
+    qa = RAGGraphWithMemory(
         memory=memory,
         retriever=reactome_retriever,
         llm=llm,

@@ -418,17 +418,17 @@ uvloop = ["uvloop (>=0.15.2)"]
 
 [[package]]
 name = "boto3"
-version = "1.35.50"
+version = "1.35.51"
 description = "The AWS SDK for Python"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "boto3-1.35.50-py3-none-any.whl", hash = "sha256:14724b905fd13f26d9d8f7cdcea0fa65a9acad79f60f41f7662667f4e233d97c"},
-    {file = "boto3-1.35.50.tar.gz", hash = "sha256:4f15d1ccb481d66f6925b8c91c970ce41b956b6ecf7c479f23e2159531b37eec"},
+    {file = "boto3-1.35.51-py3-none-any.whl", hash = "sha256:c922f6a18958af9d8af0489d6d8503b517029d8159b26aa4859a8294561c72e9"},
+    {file = "boto3-1.35.51.tar.gz", hash = "sha256:a57c6c7012ecb40c43e565a6f7a891f39efa990ff933eab63cd456f7501c2731"},
 ]
 
 [package.dependencies]
-botocore = ">=1.35.50,<1.36.0"
+botocore = ">=1.35.51,<1.36.0"
 jmespath = ">=0.7.1,<2.0.0"
 s3transfer = ">=0.10.0,<0.11.0"
 
@@ -437,13 +437,13 @@ crt = ["botocore[crt] (>=1.21.0,<2.0a0)"]
 
 [[package]]
 name = "botocore"
-version = "1.35.50"
+version = "1.35.51"
 description = "Low-level, data-driven core of boto 3."
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "botocore-1.35.50-py3-none-any.whl", hash = "sha256:965d3b99179ac04aa98e4c4baf4a970ebce77a5e02bb2a0a21cb6304e2bc0955"},
-    {file = "botocore-1.35.50.tar.gz", hash = "sha256:136ecef8d5a1088f1ba485c0bbfca40abd42b9f9fe9e11d8cde4e53b4c05b188"},
+    {file = "botocore-1.35.51-py3-none-any.whl", hash = "sha256:4d65b00111bd12b98e9f920ecab602cf619cc6a6d0be6e5dd53f517e4b92901c"},
+    {file = "botocore-1.35.51.tar.gz", hash = "sha256:a9b3d1da76b3e896ad74605c01d88f596324a3337393d4bfbfa0d6c35822ca9c"},
 ]
 
 [package.dependencies]
@@ -1679,19 +1679,19 @@ adal = ["adal (>=1.0.2)"]
 
 [[package]]
 name = "langchain"
-version = "0.3.4"
+version = "0.3.5"
 description = "Building applications with LLMs through composability"
 optional = false
 python-versions = "<4.0,>=3.9"
 files = [
-    {file = "langchain-0.3.4-py3-none-any.whl", hash = "sha256:7a1241d9429510d2083c62df0da998a7b2b05c730cd4255b89da9d47c57f48fd"},
-    {file = "langchain-0.3.4.tar.gz", hash = "sha256:3596515fcd0157dece6ec96e0240d29f4cf542d91ecffc815d32e35198dfff37"},
+    {file = "langchain-0.3.5-py3-none-any.whl", hash = "sha256:f62ea88bb12e40b1b210cf059a5e564bfb17ee3194651944d5a013abb88d30ee"},
+    {file = "langchain-0.3.5.tar.gz", hash = "sha256:ff8f138e7e75c34ab155397853964494b212abda856b9c983dedc535249f29e8"},
 ]
 
 [package.dependencies]
 aiohttp = ">=3.8.3,<4.0.0"
 async-timeout = {version = ">=4.0.0,<5.0.0", markers = "python_version < \"3.11\""}
-langchain-core = ">=0.3.12,<0.4.0"
+langchain-core = ">=0.3.13,<0.4.0"
 langchain-text-splitters = ">=0.3.0,<0.4.0"
 langsmith = ">=0.1.17,<0.2.0"
 numpy = [
@@ -1822,17 +1822,17 @@ tiktoken = ">=0.7,<1"
 
 [[package]]
 name = "langchain-text-splitters"
-version = "0.3.0"
+version = "0.3.1"
 description = "LangChain text splitting utilities"
 optional = false
 python-versions = "<4.0,>=3.9"
 files = [
-    {file = "langchain_text_splitters-0.3.0-py3-none-any.whl", hash = "sha256:e84243e45eaff16e5b776cd9c81b6d07c55c010ebcb1965deb3d1792b7358e83"},
-    {file = "langchain_text_splitters-0.3.0.tar.gz", hash = "sha256:f9fe0b4d244db1d6de211e7343d4abc4aa90295aa22e1f0c89e51f33c55cd7ce"},
+    {file = "langchain_text_splitters-0.3.1-py3-none-any.whl", hash = "sha256:842c9b342dc4b1a810f911a262f0daa772beb83d6e4f13a87ae7a3de015cb2a9"},
+    {file = "langchain_text_splitters-0.3.1.tar.gz", hash = "sha256:5d2a749d0e70c7c6a3e0a0a3996648fd06cb9fe8e316c3040ca6541811d8ecaf"},
 ]
 
 [package.dependencies]
-langchain-core = ">=0.3.0,<0.4.0"
+langchain-core = ">=0.3.13,<0.4.0"
 
 [[package]]
 name = "langgraph"
@@ -4685,13 +4685,13 @@ telegram = ["requests"]
 
 [[package]]
 name = "transformers"
-version = "4.46.0"
+version = "4.46.1"
 description = "State-of-the-art Machine Learning for JAX, PyTorch and TensorFlow"
 optional = false
 python-versions = ">=3.8.0"
 files = [
-    {file = "transformers-4.46.0-py3-none-any.whl", hash = "sha256:e161268ae8bee315eb9e9b4c0b27f1bd6980f91e0fc292d75249193d339704c0"},
-    {file = "transformers-4.46.0.tar.gz", hash = "sha256:3a9e2eb537094db11c3652334d281afa4766c0e5091c4dcdb454e9921bb0d2b7"},
+    {file = "transformers-4.46.1-py3-none-any.whl", hash = "sha256:f77b251a648fd32e3d14b5e7e27c913b7c29154940f519e4c8c3aa6061df0f05"},
+    {file = "transformers-4.46.1.tar.gz", hash = "sha256:16d79927d772edaf218820a96f9254e2211f9cd7fb3c308562d2d636c964a68c"},
 ]
 
 [package.dependencies]

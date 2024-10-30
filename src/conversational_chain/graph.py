@@ -1,8 +1,9 @@
 from typing import Annotated, Sequence, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph.state import START, CompiledStateGraph, StateGraph
+from langgraph.graph.state import CompiledStateGraph, StateGraph
 from langgraph.graph.message import add_messages
 
 from conversational_chain.chain import RAGChainWithMemory
@@ -23,14 +24,16 @@ class RAGGraphWithMemory(RAGChainWithMemory):
         super().__init__(*chain_args)
 
         # Single-node graph (for now)
-        workflow: StateGraph = StateGraph(ChatState)
-        workflow.add_edge(START, "model")
-        workflow.add_node("model", self.call_model)
+        graph: StateGraph = StateGraph(ChatState)
+        graph.add_node("model", self.call_model)
+        graph.set_entry_point("model")
+        graph.set_finish_point("model")
 
-        self.app: CompiledStateGraph = workflow.compile(checkpointer=MemorySaver())
+        memory = MemorySaver()
+        self.graph: CompiledStateGraph = graph.compile(checkpointer=memory)
 
-    def call_model(self, state: ChatState) -> ChatResponse:
-        response = self.rag_chain.invoke(state)
+    async def call_model(self, state: ChatState, config: RunnableConfig) -> ChatResponse:
+        response = await self.rag_chain.ainvoke(state, config)
         return {
             "chat_history": [
                 HumanMessage(state["input"]),
@@ -39,3 +42,10 @@ class RAGGraphWithMemory(RAGChainWithMemory):
             "context": response["context"],
             "answer": response["answer"],
         }
+
+    async def ainvoke(self, user_input: str, **kwargs) -> str:
+        response: ChatResponse = await self.graph.ainvoke(
+            {"input": user_input},
+            config = RunnableConfig(**kwargs)
+        )
+        return response["answer"]
