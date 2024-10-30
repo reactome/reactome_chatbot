@@ -1,4 +1,4 @@
-from typing import Annotated, Any, Optional, Sequence, TypedDict
+from typing import Annotated, Any, Sequence, TypedDict
 
 from langchain_core.callbacks.base import Callbacks
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
@@ -48,7 +48,7 @@ class RAGGraphWithMemory(RAGChainWithMemory):
 
     async def ainvoke(
         self, user_input: str, callbacks: Callbacks,
-        configurable: Optional[dict[str, Any]]
+        configurable: dict[str, Any]
     ) -> str:
         response: dict[str, Any] = await self.graph.ainvoke(
             {"input": user_input},
