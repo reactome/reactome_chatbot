@@ -46,10 +46,10 @@ class RAGGraphWithMemory(RAGChainWithMemory):
         }
 
     async def ainvoke(
-        self, user_input: str, runnable_kwargs: dict[str, Any]
+        self, user_input: str, **runnable_kwargs: dict[str, Any]
     ) -> str:
         response: dict[str, Any] = await self.graph.ainvoke(
             {"input": user_input},
-            config = RunnableConfig(**runnable_kwargs)
+            config = runnable_kwargs
         )
         return response["answer"]
