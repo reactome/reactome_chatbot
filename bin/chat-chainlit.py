@@ -80,8 +80,10 @@ async def main(message: cl.Message) -> None:
     )
     res = await llm_graph.ainvoke(
         message.content,
-        callbacks = [cb],
-        configurable = {"thread_id": "0"}  # single thread
+        runnable_kwargs = {
+            "callbacks" : [cb],
+            "configurable" : {"thread_id": "0"}  # single thread
+        },
     )
     if cb.has_streamed_final_answer and cb.final_stream is not None:
         await cb.final_stream.update()

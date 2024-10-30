@@ -1,4 +1,4 @@
-from typing import Annotated, Sequence, TypedDict
+from typing import Annotated, Any, Sequence, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
@@ -32,7 +32,9 @@ class RAGGraphWithMemory(RAGChainWithMemory):
         memory = MemorySaver()
         self.graph: CompiledStateGraph = graph.compile(checkpointer=memory)
 
-    async def call_model(self, state: ChatState, config: RunnableConfig) -> ChatResponse:
+    async def call_model(
+        self, state: ChatState, config: RunnableConfig
+    ) -> ChatResponse:
         response = await self.rag_chain.ainvoke(state, config)
         return {
             "chat_history": [
@@ -43,9 +45,11 @@ class RAGGraphWithMemory(RAGChainWithMemory):
             "answer": response["answer"],
         }
 
-    async def ainvoke(self, user_input: str, **kwargs) -> str:
-        response: ChatResponse = await self.graph.ainvoke(
+    async def ainvoke(
+        self, user_input: str, runnable_kwargs: dict[str, Any]
+    ) -> str:
+        response: dict[str, Any] = await self.graph.ainvoke(
             {"input": user_input},
-            config = RunnableConfig(**kwargs)
+            config = RunnableConfig(**runnable_kwargs)
         )
         return response["answer"]
