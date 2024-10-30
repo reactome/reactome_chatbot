@@ -1,5 +1,6 @@
-from typing import Annotated, Any, Sequence, TypedDict
+from typing import Annotated, Any, Optional, Sequence, TypedDict
 
+from langchain_core.callbacks.base import Callbacks
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
@@ -46,10 +47,14 @@ class RAGGraphWithMemory(RAGChainWithMemory):
         }
 
     async def ainvoke(
-        self, user_input: str, **runnable_kwargs: dict[str, Any]
+        self, user_input: str, callbacks: Callbacks,
+        configurable: Optional[dict[str, Any]]
     ) -> str:
         response: dict[str, Any] = await self.graph.ainvoke(
             {"input": user_input},
-            config = runnable_kwargs
+            config = RunnableConfig(
+                callbacks = callbacks,
+                configurable = configurable,
+            )
         )
         return response["answer"]
