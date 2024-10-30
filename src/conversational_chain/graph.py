@@ -20,8 +20,8 @@ class ChatState(ChatResponse):
 
 
 class RAGGraphWithMemory(RAGChainWithMemory):
-    def __init__(self, *chain_args):
-        super().__init__(*chain_args)
+    def __init__(self, **chain_kwargs):
+        super().__init__(**chain_kwargs)
 
         # Single-node graph (for now)
         graph: StateGraph = StateGraph(ChatState)
