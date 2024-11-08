@@ -1,9 +1,11 @@
-from langchain.schema import HumanMessage, AIMessage
+from langchain.schema import AIMessage, HumanMessage
+
 
 class ChatHistoryMemory:
     """
     Manages the chat history for the conversation.
     """
+
     def __init__(self):
         self.history = []
 

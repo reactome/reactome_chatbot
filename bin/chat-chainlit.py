@@ -6,8 +6,9 @@ import os
 from typing import Dict, Optional
 
 import chainlit as cl
-
 from dotenv import load_dotenv
+
+from conversational_chain.graph import RAGGraphWithMemory
 from retreival_chain import initialize_retrieval_chain
 from util.embedding_environment import EmbeddingEnvironment
 
@@ -58,23 +59,24 @@ async def chat_profile():
         cl.ChatProfile(
             name="React-to-me",
             markdown_description="An AI assistant specialized in exploring **Reactome** biological pathways and processes.",
-            icon="https://reactome.org/templates/favourite/favicon.ico"
+            icon="https://reactome.org/templates/favourite/favicon.ico",
         )
     ]
 
 
 @cl.on_chat_start
-async def quey_llm() -> None:
+async def start() -> None:
     chat_profile = cl.user_session.get("chat_profile")
+
     embeddings_directory = EmbeddingEnvironment.get_dir(env)
-    llm_chain = initialize_retrieval_chain(
+    llm_graph = initialize_retrieval_chain(
         env,
         embeddings_directory,
         False,
         False,
         hf_model=EmbeddingEnvironment.get_model(env),
     )
-    cl.user_session.set("llm_chain", llm_chain)
+    cl.user_session.set("llm_graph", llm_graph)
 
     initial_message: str = f"""Welcome to {chat_profile} your interactive chatbot for exploring Reactome!
         Ask me about biological pathways and processes"""
@@ -82,15 +84,17 @@ async def quey_llm() -> None:
 
 
 @cl.on_message
-async def query_llm(message: cl.Message) -> None:
-    llm_chain = cl.user_session.get("llm_chain")
+async def main(message: cl.Message) -> None:
+    llm_graph: RAGGraphWithMemory = cl.user_session.get("llm_graph")
     cb = cl.AsyncLangchainCallbackHandler(
         stream_final_answer=True, answer_prefix_tokens=["FINAL", "ANSWER"]
     )
-    cb.answer_reached = True
-
-    res = await llm_chain.ainvoke(message.content, callbacks=[cb])
-    if cb.has_streamed_final_answer:
+    res = await llm_graph.ainvoke(
+        message.content,
+        callbacks = [cb],
+        configurable = {"thread_id": "0"}  # single thread
+    )
+    if cb.has_streamed_final_answer and cb.final_stream is not None:
         await cb.final_stream.update()
     else:
         await cl.Message(content=res).send()

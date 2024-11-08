@@ -1,11 +1,12 @@
 import gzip
 import os
 import shutil
+from typing import Optional
 
 import requests
 
 
-def download_file(url: str, dest: str, force: bool) -> str:
+def download_file(url: str, dest: str, force: bool) -> Optional[str]:
     # Create the directory if it doesn't exist
     os.makedirs(os.path.dirname(dest), exist_ok=True)
 

@@ -1,39 +1,33 @@
 import os
 from pathlib import Path
-from typing import AsyncGenerator, Callable
+from typing import Callable, Optional
 
+from langchain.callbacks.base import BaseCallbackHandler
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.retrievers import EnsembleRetriever
 from langchain.retrievers.self_query.base import SelfQueryRetriever
-from langchain_community.chat_models import ChatOllama
-from langchain_community.vectorstores import Chroma
+from langchain_chroma.vectorstores import Chroma
 from langchain_core.embeddings import Embeddings
-from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
+from langchain_core.retrievers import RetrieverLike
+from langchain_huggingface import (HuggingFaceEmbeddings,
+                                   HuggingFaceEndpointEmbeddings)
+from langchain_ollama.chat_models import ChatOllama
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-
+from conversational_chain.graph import RAGGraphWithMemory
+from conversational_chain.memory import ChatHistoryMemory
 from reactome.metadata_info import descriptions_info, field_info
-
-from src.conversational_chain.memory import ChatHistoryMemory
-from src.conversational_chain.chain import RAGChainWithMemory
-from system_prompt.reactome_prompt import qa_system_prompt
 
 
 def list_chroma_subdirectories(directory: Path) -> list[str]:
     subdirectories = list(
-        chroma_file.parent.name
-        for chroma_file in directory.glob('*/chroma.sqlite3')
+        chroma_file.parent.name for chroma_file in directory.glob("*/chroma.sqlite3")
     )
     return subdirectories
 
 
-async def invoke(self, query: str) -> AsyncGenerator[str, None]:
-    async for message in self.astream(query):
-        yield message
-
-
 def get_embedding(
-    hf_model: str = None, device: str = "cpu"
+    hf_model: Optional[str] = None, device: str = "cpu"
 ) -> Callable[[], Embeddings]:
     if hf_model is None:
         return OpenAIEmbeddings
@@ -57,22 +51,24 @@ def initialize_retrieval_chain(
     embeddings_directory: Path,
     commandline: bool,
     verbose: bool,
-    ollama_model: str = None,
+    ollama_model: Optional[str] = None,
     ollama_url: str = "http://localhost:11434",
-    hf_model: str = None,
+    hf_model: Optional[str] = None,
     device: str = "cpu",
-
-)-> RAGChainWithMemory:
+) -> RAGGraphWithMemory:
     memory = ChatHistoryMemory()
 
-    callbacks: list[StreamingStdOutCallbackHandler] = []
+    callbacks: list[BaseCallbackHandler] = []
     if commandline:
         callbacks = [StreamingStdOutCallbackHandler()]
+
+    # Define llm without redefinition
+    llm: ChatOllama | ChatOpenAI
 
     if ollama_model is None:  # Use OpenAI when Ollama not specified
         llm = ChatOpenAI(
             temperature=0.0,
-            streaming=commandline,
+            streaming=True,
             callbacks=callbacks,
             verbose=verbose,
             model="gpt-4o-mini",
@@ -84,13 +80,13 @@ def initialize_retrieval_chain(
             verbose=verbose,
             model=ollama_model,
             base_url=ollama_url,
-            system=qa_system_prompt,
         )
 
     # Get OpenAIEmbeddings (or HuggingFaceEmbeddings model if specified)
     embedding_callable = get_embedding(hf_model, device)
 
-    retriever_list: list[SelfQueryRetriever] = []
+    # Adjusted type for retriever_list
+    retriever_list: list[RetrieverLike] = []
     for subdirectory in list_chroma_subdirectories(embeddings_directory):
         embedding = embedding_callable()
         vectordb = Chroma(
@@ -107,10 +103,11 @@ def initialize_retrieval_chain(
         )
         retriever_list.append(retriever)
 
-    reactome_retriever =  EnsembleRetriever(retrievers=retriever_list, weights=[0.25, 0.25, 0.25, 0.25])
+    reactome_retriever = EnsembleRetriever(
+        retrievers=retriever_list, weights=[0.25] * len(retriever_list)
+    )
 
-    RAGChainWithMemory.invoke = invoke
-    qa = RAGChainWithMemory(
+    qa = RAGGraphWithMemory(
         memory=memory,
         retriever=reactome_retriever,
         llm=llm,
