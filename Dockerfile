@@ -10,8 +10,10 @@ ENV VENV_PATH="/app/.venv"
 # Set PYTHONPATH environment variable to include the src directory
 ENV PYTHONPATH="/app/src:/app/.venv/lib/python3.9/site-packages"
 # Install system dependencies
+# libpq5 is for python package psycopg
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the requirements file into the container

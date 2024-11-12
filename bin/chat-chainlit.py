@@ -8,9 +8,9 @@ from typing import Dict, Optional
 import chainlit as cl
 from dotenv import load_dotenv
 
-from conversational_chain.graph import RAGGraphWithMemory
-from retreival_chain import initialize_retrieval_chain
+from retreival_chain import create_retrieval_chain
 from util.embedding_environment import EmbeddingEnvironment
+from langgraph.graph.state import StateGraph
 
 load_dotenv()
 
@@ -42,15 +42,15 @@ logging.info(f"Selected environment: {selected_env}")
 
 env = os.getenv("CHAT_ENV", "reactome")
 
-
-@cl.oauth_callback
-def oauth_callback(
-  provider_id: str,
-  token: str,
-  raw_user_data: Dict[str, str],
-  default_user: cl.User,
-) -> Optional[cl.User]:
-  return default_user
+if os.getenv("AUTH_AUTH0_CLIENT_ID"):
+    @cl.oauth_callback
+    def oauth_callback(
+        provider_id: str,
+        token: str,
+        raw_user_data: Dict[str, str],
+        default_user: cl.User,
+    ) -> Optional[cl.User]:
+        return default_user
 
 
 @cl.set_chat_profiles
@@ -68,18 +68,24 @@ async def chat_profile():
 async def start() -> None:
     chat_profile = cl.user_session.get("chat_profile")
 
+    # Set up the embeddings directory
     embeddings_directory = EmbeddingEnvironment.get_dir(env)
-    llm_graph = initialize_retrieval_chain(
+
+    llm_graph = create_retrieval_chain(
         env,
         embeddings_directory,
         False,
         False,
         hf_model=EmbeddingEnvironment.get_model(env),
     )
+
+    await llm_graph.initialize()
     cl.user_session.set("llm_graph", llm_graph)
 
-    initial_message: str = f"""Welcome to {chat_profile} your interactive chatbot for exploring Reactome!
-        Ask me about biological pathways and processes"""
+    initial_message = (
+        f"Welcome to {chat_profile}, your interactive chatbot for exploring Reactome!"
+        " Ask me about biological pathways and processes."
+    )
     await cl.Message(content=initial_message).send()
 
 
