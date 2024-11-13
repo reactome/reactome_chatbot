@@ -7,10 +7,11 @@ from typing import Dict, Optional
 
 import chainlit as cl
 from dotenv import load_dotenv
+from langgraph.graph.state import StateGraph
 
 from retreival_chain import create_retrieval_chain
 from util.embedding_environment import EmbeddingEnvironment
-from langgraph.graph.state import StateGraph
+from conversational_chain.graph import RAGGraphWithMemory
 
 load_dotenv()
 
@@ -43,6 +44,7 @@ logging.info(f"Selected environment: {selected_env}")
 env = os.getenv("CHAT_ENV", "reactome")
 
 if os.getenv("AUTH_AUTH0_CLIENT_ID"):
+
     @cl.oauth_callback
     def oauth_callback(
         provider_id: str,
@@ -97,8 +99,8 @@ async def main(message: cl.Message) -> None:
     )
     res = await llm_graph.ainvoke(
         message.content,
-        callbacks = [cb],
-        configurable = {"thread_id": "0"}  # single thread
+        callbacks=[cb],
+        configurable={"thread_id": "0"},  # single thread
     )
     if cb.has_streamed_final_answer and cb.final_stream is not None:
         await cb.final_stream.update()

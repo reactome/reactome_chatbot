@@ -41,6 +41,15 @@ services:
       timeout: 5s
       retries: 5
 
+  pgadmin:
+      image: dpage/pgadmin4
+      environment:
+        PGADMIN_DEFAULT_EMAIL: 'test@test.com'
+        PGADMIN_DEFAULT_PASSWORD: 'test'
+      ports:
+        - 16543:80
+      volumes:
+        - ./servers.json:/pgadmin4/servers.json
+
 volumes:
   postgres_data:
-

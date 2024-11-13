@@ -9,8 +9,7 @@ from langchain.retrievers.self_query.base import SelfQueryRetriever
 from langchain_chroma.vectorstores import Chroma
 from langchain_core.embeddings import Embeddings
 from langchain_core.retrievers import RetrieverLike
-from langchain_huggingface import (HuggingFaceEmbeddings,
-                                   HuggingFaceEndpointEmbeddings)
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
 from langchain_ollama.chat_models import ChatOllama
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
