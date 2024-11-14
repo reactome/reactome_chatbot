@@ -3,19 +3,21 @@
 import logging
 import logging.config
 import os
-from typing import Dict, Optional
+from typing import Optional
 
 import chainlit as cl
+import chainlit.data as cl_data
+from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 from dotenv import load_dotenv
-from langgraph.graph.state import StateGraph
 
 from retreival_chain import create_retrieval_chain
 from util.embedding_environment import EmbeddingEnvironment
 from conversational_chain.graph import RAGGraphWithMemory
 
+
 load_dotenv()
 
-default_log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+DEFAULT_LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
 LOGGING_CONFIG = {
     "version": 1,
@@ -27,32 +29,34 @@ LOGGING_CONFIG = {
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "default",
-            "level": default_log_level,  # Change to WARNING, ERROR, or CRITICAL
+            "level": DEFAULT_LOG_LEVEL,  # Change to WARNING, ERROR, or CRITICAL
         },
     },
     "root": {
         "handlers": ["console"],
-        "level": default_log_level,  # Set the default log level for all loggers
+        "level": DEFAULT_LOG_LEVEL,  # Set the default log level for all loggers
     },
 }
-
 logging.config.dictConfig(LOGGING_CONFIG)
 
-selected_env = os.getenv("CHAT_ENV", "reactome")
-logging.info(f"Selected environment: {selected_env}")
-
-env = os.getenv("CHAT_ENV", "reactome")
+ENV = os.getenv("CHAT_ENV", "reactome")
+logging.info(f"Selected environment: {ENV}")
 
 if os.getenv("AUTH_AUTH0_CLIENT_ID"):
-
     @cl.oauth_callback
     def oauth_callback(
         provider_id: str,
         token: str,
-        raw_user_data: Dict[str, str],
+        raw_user_data: dict[str, str],
         default_user: cl.User,
     ) -> Optional[cl.User]:
         return default_user
+
+# f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_DB')}?sslmode=disable"
+CHAINLIT_DB_URI = f"postgresql+psycopg://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_CHAINLIT_DB')}?sslmode=disable"
+cl_data._data_layer = SQLAlchemyDataLayer(
+    conninfo=CHAINLIT_DB_URI
+)
 
 
 @cl.set_chat_profiles
@@ -71,14 +75,14 @@ async def start() -> None:
     chat_profile = cl.user_session.get("chat_profile")
 
     # Set up the embeddings directory
-    embeddings_directory = EmbeddingEnvironment.get_dir(env)
+    embeddings_directory = EmbeddingEnvironment.get_dir(ENV)
 
     llm_graph = create_retrieval_chain(
-        env,
+        ENV,
         embeddings_directory,
         False,
         False,
-        hf_model=EmbeddingEnvironment.get_model(env),
+        hf_model=EmbeddingEnvironment.get_model(ENV),
     )
 
     await llm_graph.initialize()
@@ -106,3 +110,10 @@ async def main(message: cl.Message) -> None:
         await cb.final_stream.update()
     else:
         await cl.Message(content=res).send()
+
+
+@cl.on_chat_end
+async def end() -> None:
+    llm_graph: RAGGraphWithMemory | None = cl.user_session.get("llm_graph")
+    if llm_graph is not None:
+        await llm_graph.close_conn_pool()
