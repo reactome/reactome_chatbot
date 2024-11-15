@@ -42,7 +42,11 @@ logging.config.dictConfig(LOGGING_CONFIG)
 ENV = os.getenv("CHAT_ENV", "reactome")
 logging.info(f"Selected environment: {ENV}")
 
-if os.getenv("AUTH_AUTH0_CLIENT_ID"):
+CHAINLIT_DB_URI = f"postgresql+psycopg://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_CHAINLIT_DB')}?sslmode=disable"
+cl_data._data_layer = SQLAlchemyDataLayer(conninfo=CHAINLIT_DB_URI)
+
+
+if os.getenv("OAUTH_AUTH0_CLIENT_ID"):
     @cl.oauth_callback
     def oauth_callback(
         provider_id: str,
@@ -51,12 +55,6 @@ if os.getenv("AUTH_AUTH0_CLIENT_ID"):
         default_user: cl.User,
     ) -> Optional[cl.User]:
         return default_user
-
-# f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_DB')}?sslmode=disable"
-CHAINLIT_DB_URI = f"postgresql+psycopg://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_CHAINLIT_DB')}?sslmode=disable"
-cl_data._data_layer = SQLAlchemyDataLayer(
-    conninfo=CHAINLIT_DB_URI
-)
 
 
 @cl.set_chat_profiles
