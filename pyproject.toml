@@ -13,7 +13,7 @@ packages = [
 
 #lark is needed for langchain -> SelfQueryRetriever
 [tool.poetry.dependencies]
-python = ">=3.10, <=3.12.3"
+python = ">=3.12, <4"
 langchain = "^0.3.4"
 openai = "^1.12.0"
 chromadb = "^0.5.16"
@@ -31,7 +31,10 @@ langchain-core = "^0.3.13"
 langchain-huggingface = "^0.1.0"
 einops = "^0.8.0"
 boto3 = "^1.34.148"
-torch = {version = "^2.4.0+cpu", source = "pytorch_cpu"}
+torch = [
+    { version = "^2.4.0+cpu", markers = "sys_platform == 'linux' and platform_machine == 'x86_64'", source = "pytorch_cpu" },
+    { version = "^2.4.0", markers = "sys_platform != 'linux' or platform_machine != 'x86_64'", source = "PyPI" }
+]
 langchain-chroma = "^0.1.4"
 langchain-ollama = "^0.2.0"
 lark = "^1.2.2"
