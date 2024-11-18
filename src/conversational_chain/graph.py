@@ -1,5 +1,5 @@
 import os
-from typing import Annotated, Any, Sequence, TypedDict
+from typing import Annotated, Any, AsyncIterator, Sequence, TypedDict
 
 from langchain_core.callbacks.base import Callbacks
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
@@ -79,16 +79,36 @@ class RAGGraphWithMemory(RAGChainWithMemory):
             "answer": response["answer"],
         }
 
+
     async def ainvoke(
         self, user_input: str, callbacks: Callbacks,
         configurable: dict[str, Any]
     ) -> str:
-        if self.graph is not None:
-            response: dict[str, Any] = await self.graph.ainvoke(
-                {"input": user_input},
-                config = RunnableConfig(
-                    callbacks = callbacks,
-                    configurable = configurable,
-                )
+        if self.graph is None:
+            return ""
+        response: dict[str, Any] = await self.graph.ainvoke(
+            {"input": user_input},
+            config = RunnableConfig(
+                callbacks = callbacks,
+                configurable = configurable,
             )
+        )
         return response["answer"]
+
+
+    async def astream(
+        self, user_input: str, callbacks: Callbacks,
+        configurable: dict[str, Any]
+    ) -> AsyncIterator[str]:
+        if self.graph is None:
+            return
+        response_part: dict[str, Any]
+        async for response_part in self.graph.astream(
+            {"input": user_input},
+            config = RunnableConfig(
+                callbacks = callbacks,
+                configurable = configurable,
+            ),
+            stream_mode = "updates"
+        ):
+            yield response_part["answer"]

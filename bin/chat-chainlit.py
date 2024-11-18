@@ -3,10 +3,10 @@
 import logging
 import logging.config
 import os
-from typing import Optional
 
 import chainlit as cl
 import chainlit.data as cl_data
+from chainlit.types import ThreadDict
 from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 from dotenv import load_dotenv
 
@@ -53,7 +53,7 @@ if os.getenv("OAUTH_AUTH0_CLIENT_ID"):
         token: str,
         raw_user_data: dict[str, str],
         default_user: cl.User,
-    ) -> Optional[cl.User]:
+    ) -> cl.User | None:
         return default_user
 
 
@@ -68,13 +68,8 @@ async def chat_profile():
     ]
 
 
-@cl.on_chat_start
-async def start() -> None:
-    chat_profile = cl.user_session.get("chat_profile")
-
-    # Set up the embeddings directory
+async def setup_session() -> None:
     embeddings_directory = EmbeddingEnvironment.get_dir(ENV)
-
     llm_graph = create_retrieval_chain(
         ENV,
         embeddings_directory,
@@ -82,9 +77,15 @@ async def start() -> None:
         False,
         hf_model=EmbeddingEnvironment.get_model(ENV),
     )
-
     await llm_graph.initialize()
     cl.user_session.set("llm_graph", llm_graph)
+
+
+@cl.on_chat_start
+async def start() -> None:
+    await setup_session()
+
+    chat_profile: str = cl.user_session.get("chat_profile")
 
     initial_message = (
         f"Welcome to {chat_profile}, your interactive chatbot for exploring Reactome!"
@@ -93,21 +94,28 @@ async def start() -> None:
     await cl.Message(content=initial_message).send()
 
 
+@cl.on_chat_resume
+async def resume(thread: ThreadDict) -> None:
+    await setup_session()
+    # LangGraph AsyncPostgresSaver restores chat state with thread_id
+
+
 @cl.on_message
 async def main(message: cl.Message) -> None:
     llm_graph: RAGGraphWithMemory = cl.user_session.get("llm_graph")
-    cb = cl.AsyncLangchainCallbackHandler(
-        stream_final_answer=True, answer_prefix_tokens=["FINAL", "ANSWER"]
-    )
-    res = await llm_graph.ainvoke(
+    session_id: str = cl.user_session.get("id")
+
+    response_message = cl.Message(content="")
+
+    response_part: str
+    async for response_part in llm_graph.astream(
         message.content,
-        callbacks=[cb],
-        configurable={"thread_id": "0"},  # single thread
-    )
-    if cb.has_streamed_final_answer and cb.final_stream is not None:
-        await cb.final_stream.update()
-    else:
-        await cl.Message(content=res).send()
+        callbacks=[],
+        configurable={"thread_id": session_id},
+    ):
+        await response_message.stream_token(response_part)
+
+    await response_message.send()
 
 
 @cl.on_chat_end
