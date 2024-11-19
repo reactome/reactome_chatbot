@@ -94,7 +94,7 @@ async def start() -> None:
     await cl.Message(content=initial_message).send()
 
 
-@cl.on_chat_resume
+#@cl.on_chat_resume
 async def resume(thread: ThreadDict) -> None:
     await setup_session()
     # LangGraph AsyncPostgresSaver restores chat state with thread_id
@@ -104,18 +104,18 @@ async def resume(thread: ThreadDict) -> None:
 async def main(message: cl.Message) -> None:
     llm_graph: RAGGraphWithMemory = cl.user_session.get("llm_graph")
     session_id: str = cl.user_session.get("id")
-
-    response_message = cl.Message(content="")
-
-    response_part: str
-    async for response_part in llm_graph.astream(
+    cb = cl.AsyncLangchainCallbackHandler(
+        stream_final_answer=True, answer_prefix_tokens=["FINAL", "ANSWER"]
+    )
+    res = await llm_graph.ainvoke(
         message.content,
-        callbacks=[],
+        callbacks=[cb],
         configurable={"thread_id": session_id},
-    ):
-        await response_message.stream_token(response_part)
-
-    await response_message.send()
+    )
+    if cb.has_streamed_final_answer and cb.final_stream is not None:
+        await cb.final_stream.update()
+    else:
+        await cl.Message(content=res).send()
 
 
 @cl.on_chat_end

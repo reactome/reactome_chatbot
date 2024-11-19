@@ -94,21 +94,3 @@ class RAGGraphWithMemory(RAGChainWithMemory):
             )
         )
         return response["answer"]
-
-
-    async def astream(
-        self, user_input: str, callbacks: Callbacks,
-        configurable: dict[str, Any]
-    ) -> AsyncIterator[str]:
-        if self.graph is None:
-            return
-        response_part: dict[str, Any]
-        async for response_part in self.graph.astream(
-            {"input": user_input},
-            config = RunnableConfig(
-                callbacks = callbacks,
-                configurable = configurable,
-            ),
-            stream_mode = "updates"
-        ):
-            yield response_part["answer"]
