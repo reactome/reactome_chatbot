@@ -66,7 +66,6 @@ def create_retrieval_chain(
     if ollama_model is None:  # Use OpenAI when Ollama not specified
         llm = ChatOpenAI(
             temperature=0.0,
-            streaming=True,
             callbacks=callbacks,
             verbose=verbose,
             model="gpt-4o-mini",

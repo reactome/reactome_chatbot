@@ -10,9 +10,9 @@ from chainlit.types import ThreadDict
 from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 from dotenv import load_dotenv
 
+from conversational_chain.graph import RAGGraphWithMemory
 from retreival_chain import create_retrieval_chain
 from util.embedding_environment import EmbeddingEnvironment
-from conversational_chain.graph import RAGGraphWithMemory
 
 
 load_dotenv()
@@ -97,7 +97,7 @@ async def start() -> None:
 #@cl.on_chat_resume
 async def resume(thread: ThreadDict) -> None:
     await setup_session()
-    # LangGraph AsyncPostgresSaver restores chat state with thread_id
+    # TODO: restore langgraph checkpoint
 
 
 @cl.on_message
@@ -105,17 +105,14 @@ async def main(message: cl.Message) -> None:
     llm_graph: RAGGraphWithMemory = cl.user_session.get("llm_graph")
     session_id: str = cl.user_session.get("id")
     cb = cl.AsyncLangchainCallbackHandler(
-        stream_final_answer=True, answer_prefix_tokens=["FINAL", "ANSWER"]
+        stream_final_answer=True,
+        force_stream_final_answer=True,  # we're not using prefix tokens
     )
-    res = await llm_graph.ainvoke(
+    await llm_graph.ainvoke(
         message.content,
         callbacks=[cb],
         configurable={"thread_id": session_id},
     )
-    if cb.has_streamed_final_answer and cb.final_stream is not None:
-        await cb.final_stream.update()
-    else:
-        await cl.Message(content=res).send()
 
 
 @cl.on_chat_end

@@ -1,14 +1,14 @@
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains.history_aware_retriever import create_history_aware_retriever
 from langchain.chains.retrieval import create_retrieval_chain
-from langchain_core.language_models import LanguageModelLike
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.retrievers import RetrieverLike
 
 from system_prompt.reactome_prompt import contextualize_q_prompt, qa_prompt
 
 
 class RAGChainWithMemory:
-    def __init__(self, memory, retriever: RetrieverLike, llm: LanguageModelLike):
+    def __init__(self, memory, retriever: RetrieverLike, llm: BaseChatModel):
         """
         Initializes the Retrieval-Augmented Generation (RAG) chain with memory.
         """
@@ -24,7 +24,7 @@ class RAGChainWithMemory:
 
         # Create the documents chain
         self.question_answer_chain = create_stuff_documents_chain(
-            llm=self.llm,
+            llm=self.llm.model_copy(update={"streaming": True}),
             prompt=qa_prompt,
         )
 
