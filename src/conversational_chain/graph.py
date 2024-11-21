@@ -1,17 +1,18 @@
+import asyncio
 import os
-from typing import Annotated, Any, AsyncIterator, Sequence, TypedDict
+from typing import Annotated, Any, Sequence, TypedDict
 
 from langchain_core.callbacks.base import Callbacks
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph, StateGraph
-
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from psycopg_pool import AsyncConnectionPool
 from psycopg import AsyncConnection
+from psycopg_pool import AsyncConnectionPool
 
 from conversational_chain.chain import RAGChainWithMemory
+
 
 LANGGRAPH_DB_URI = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_LANGGRAPH_DB')}?sslmode=disable"
 
@@ -19,6 +20,7 @@ connection_kwargs = {
     "autocommit": True,
     "prepare_threshold": 0,
 }
+
 
 class ChatResponse(TypedDict):
     chat_history: Annotated[Sequence[BaseMessage], add_messages]
@@ -42,12 +44,17 @@ class RAGGraphWithMemory(RAGChainWithMemory):
         self.pool: AsyncConnectionPool[AsyncConnection[dict[str, Any]]] | None = None
 
 
+    def __del__(self) -> None:
+        if self.pool:
+            asyncio.run(self.close_pool())
+
+
     async def initialize(self) -> None:
-        """Initialize the connection pool asynchronously."""
-        await self.create_conn_pool()
+        checkpointer: AsyncPostgresSaver = await self.create_checkpointer()
+        self.graph = self.uncompiled_graph.compile(checkpointer=checkpointer)
 
 
-    async def create_conn_pool(self) -> None:
+    async def create_checkpointer(self) -> AsyncPostgresSaver:
         self.pool = AsyncConnectionPool(
             conninfo=LANGGRAPH_DB_URI,
             max_size=20,
@@ -58,12 +65,11 @@ class RAGGraphWithMemory(RAGChainWithMemory):
         await self.pool.open()
         checkpointer = AsyncPostgresSaver(self.pool)
         await checkpointer.setup()
-        self.graph = self.uncompiled_graph.compile(checkpointer=checkpointer)
+        return checkpointer
 
 
-    async def close_conn_pool(self) -> None:
-        if self.pool is not None:
-            await self.pool.close()
+    async def close_pool(self) -> None:
+        await self.pool.close()
 
 
     async def call_model(
@@ -81,16 +87,15 @@ class RAGGraphWithMemory(RAGChainWithMemory):
 
 
     async def ainvoke(
-        self, user_input: str, callbacks: Callbacks,
-        configurable: dict[str, Any]
+        self, user_input: str, callbacks: Callbacks, thread_id: str
     ) -> str:
         if self.graph is None:
-            return ""
+            await self.initialize()
         response: dict[str, Any] = await self.graph.ainvoke(
             {"input": user_input},
             config = RunnableConfig(
-                callbacks = callbacks,
-                configurable = configurable,
+                callbacks=callbacks,
+                configurable={"thread_id": thread_id},
             )
         )
         return response["answer"]

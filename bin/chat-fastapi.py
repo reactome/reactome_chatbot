@@ -2,18 +2,19 @@ import hashlib
 import hmac
 import os
 
-import requests
 from chainlit.utils import mount_chainlit
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
+import requests
+
 
 load_dotenv()
 
-app = FastAPI()
-
 CLOUDFLARE_SECRET_KEY = os.getenv("CLOUDFLARE_SECRET_KEY")
 CLOUDFLARE_SITE_KEY = os.getenv("CLOUDFLARE_SITE_KEY")
+
+app = FastAPI()
 
 
 def make_signature(value: str) -> str:
