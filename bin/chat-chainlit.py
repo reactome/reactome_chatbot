@@ -54,6 +54,9 @@ async def chat_profile() -> list[cl.ChatProfile]:
 
 @cl.on_chat_start
 async def start() -> None:
+    thread_id: str = cl.user_session.get("id")
+    cl.user_session.set("thread_id", thread_id)
+
     chat_profile: str = cl.user_session.get("chat_profile")
     initial_message = (
         f"Welcome to {chat_profile}, your interactive chatbot for exploring Reactome!"
@@ -64,12 +67,12 @@ async def start() -> None:
 
 @cl.on_chat_resume
 async def resume(thread: ThreadDict) -> None:
-    pass
+    pass  # ChainLit/LangGraph Postgres integrations handle everything
 
 
 @cl.on_message
 async def main(message: cl.Message) -> None:
-    session_id: str = cl.user_session.get("id")
+    thread_id: str = cl.user_session.get("thread_id")
     cb = cl.AsyncLangchainCallbackHandler(
         stream_final_answer=True,
         force_stream_final_answer=True,  # we're not using prefix tokens
@@ -77,5 +80,5 @@ async def main(message: cl.Message) -> None:
     await llm_graph.ainvoke(
         message.content,
         callbacks=[cb],
-        thread_id=session_id,
+        thread_id=thread_id,
     )
