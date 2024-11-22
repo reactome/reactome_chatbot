@@ -10,10 +10,10 @@ from fastapi.responses import RedirectResponse
 
 load_dotenv()
 
+app = FastAPI()
+
 CLOUDFLARE_SECRET_KEY = os.getenv("CLOUDFLARE_SECRET_KEY")
 CLOUDFLARE_SITE_KEY = os.getenv("CLOUDFLARE_SITE_KEY")
-
-app = FastAPI()
 
 
 def make_signature(value: str) -> str:

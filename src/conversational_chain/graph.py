@@ -46,9 +46,9 @@ class RAGGraphWithMemory(RAGChainWithMemory):
         if self.pool:
             asyncio.run(self.close_pool())
 
-    async def initialize(self) -> None:
+    async def initialize(self) -> CompiledStateGraph:
         checkpointer: AsyncPostgresSaver = await self.create_checkpointer()
-        self.graph = self.uncompiled_graph.compile(checkpointer=checkpointer)
+        return self.uncompiled_graph.compile(checkpointer=checkpointer)
 
     async def create_checkpointer(self) -> AsyncPostgresSaver:
         self.pool = AsyncConnectionPool(
@@ -64,7 +64,8 @@ class RAGGraphWithMemory(RAGChainWithMemory):
         return checkpointer
 
     async def close_pool(self) -> None:
-        await self.pool.close()
+        if self.pool:
+            await self.pool.close()
 
     async def call_model(
         self, state: ChatState, config: RunnableConfig
@@ -83,7 +84,7 @@ class RAGGraphWithMemory(RAGChainWithMemory):
         self, user_input: str, callbacks: Callbacks, thread_id: str
     ) -> str:
         if self.graph is None:
-            await self.initialize()
+            self.graph = await self.initialize()
         response: dict[str, Any] = await self.graph.ainvoke(
             {"input": user_input},
             config=RunnableConfig(
