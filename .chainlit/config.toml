@@ -97,9 +97,9 @@ github = "https://github.com/reactome/reactome_chatbot/issues"
     #paper = "#FFFFFF"
 
     [UI.theme.light.primary]
-        #main = "#F80061"
-        #dark = "#980039"
-        #light = "#FFE7EB"
+        main = "#2F9EC2"
+        dark = "#0F5462"
+        light = "#E1F4FC"
     [UI.theme.light.text]
         #primary = "#212121"
         #secondary = "#616161"
@@ -110,9 +110,9 @@ github = "https://github.com/reactome/reactome_chatbot/issues"
     #paper = "#FFFFFF"
 
     [UI.theme.dark.primary]
-        #main = "#F80061"
-        #dark = "#980039"
-        #light = "#FFE7EB"
+        main = "#2F9EC2"
+        dark = "#0F5462"
+        light = "#E1F4FC"
     [UI.theme.dark.text]
         #primary = "#EEEEEE"
         #secondary = "#BDBDBD"
