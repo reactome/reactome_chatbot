@@ -10,3 +10,4 @@ PYTHON_PATH=/app/src:/app:
 CHAT_ENV=reactome
 CLOUDFLARE_SECRET_KEY=
 CLOUDFLARE_SITE_KEY=0x4AAAAAAAkzFQ5GRs2toYuv
+CHAINLIT_IMAGE=public.ecr.aws/reactome/reactome-chatbot:latest

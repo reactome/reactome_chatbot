@@ -1,6 +1,6 @@
 services:
   chainlit:
-    image: reactome-chatbot
+    image: ${CHAINLIT_IMAGE}
     container_name: biochat_chainlit
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
@@ -33,7 +33,6 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
       - ./initdb:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
