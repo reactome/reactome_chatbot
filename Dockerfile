@@ -1,5 +1,5 @@
 # Use an official Python runtime as a parent image
-FROM python:3.10-slim
+FROM python:3.12-slim
 
 # Set the working directory in the container
 WORKDIR /app
@@ -8,23 +8,25 @@ WORKDIR /app
 ENV VENV_PATH="/app/.venv"
 
 # Set PYTHONPATH environment variable to include the src directory
-ENV PYTHONPATH="/app/src:/app/.venv/lib/python3.9/site-packages"
+ENV PYTHONPATH="/app/src"
 # Install system dependencies
+# libpq5 is for python package psycopg
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the requirements file into the container
 COPY pyproject.toml poetry.lock ./
 
 # Install specific versions of filelock, virtualenv, and poetry
-RUN pip install filelock==3.15.4 virtualenv==20.26.3 poetry==1.8.3
+RUN pip install filelock==3.15.4 virtualenv==20.26.6 poetry==1.8.4
 
 # Set poetry to create virtual environment in the project directory
 RUN poetry config virtualenvs.in-project true
 
 # Install dependencies without dev dependencies
-RUN poetry install --no-root --with dev
+RUN poetry install --no-root --without dev
 
 # Adjust PATH to include the virtual environment's bin directory
 ENV PATH="${VENV_PATH}/bin:${PATH}"

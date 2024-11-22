@@ -5,7 +5,7 @@ import re
 from argparse import ArgumentParser
 from pathlib import Path, PurePosixPath
 from shutil import rmtree
-from typing import NamedTuple
+from typing import NamedTuple, Self
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import boto3
@@ -38,7 +38,7 @@ class EmbeddingSelection(NamedTuple):
         return path
 
     @classmethod
-    def parse(cls, embedding_id:str): # -> Self
+    def parse(cls, embedding_id:str) -> Self:
         embedding_id = embedding_id.replace("\\", "/")
         match = re.fullmatch(r"([^/]+/[^/]+)/([^/]+)/([^/]+)", embedding_id)
         if match is None:
@@ -75,8 +75,8 @@ def install(embedding: EmbeddingSelection):
 
 def make(
     embedding: EmbeddingSelection,
-    openai_key: str = None,
-    hf_key: str = None,
+    openai_key: str | None = None,
+    hf_key: str | None = None,
     **kwargs
 ):
     embedding_path:Path = embedding.path(check_exists=False)
@@ -120,8 +120,8 @@ def rm(embedding: EmbeddingSelection):
 
 
 def ls():
-    for embedding_str in EM_ARCHIVE.glob("*/*/*/*"):
-        print(embedding_str.relative_to(EM_ARCHIVE))
+    for embedding_path in EM_ARCHIVE.glob("*/*/*/*/"):
+        print(embedding_path.relative_to(EM_ARCHIVE))
 
 
 def ls_remote():

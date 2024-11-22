@@ -7,8 +7,8 @@ The Reactome ChatBot is an interactive tool that provides information about biol
 
 ### Prerequisites
 
-- Python 3.x
-- Poetry (for dependency management)
+- Python 3.12
+- Poetry 1.8 (for dependency management)
 - Docker (for running the PostgreSQL database and potentially the application)
 
 ### Installation Steps
@@ -61,7 +61,7 @@ To start the PostgreSQL database, run the following command:
 docker-compose up -d
 ```
 
-This will run the app through bin/chat-fastapi.py where the user will need to fill in an hcaptcha to access the chat interfaces. This should be used in production. 
+This will run the app through bin/chat-fastapi.py where the user will need to fill in an hcaptcha to access the chat interfaces. This should be used in production.
 
 if you want to run chainlit directly run:
 
@@ -102,7 +102,7 @@ Reactome Dockerized Graph database from DockerHub: [reactome/graphdb](https://hu
 To generate embeddings using the embedding generator script, use the following command:
 
 ```bash
-python bin/embeddings_manager.py make openai/text-embedding-ada-002/reactome/Release89 --openai-key=<your-key>
+python bin/embeddings_manager.py make openai/text-embedding-3-large/reactome/Release89 --openai-key=<your-key>
 ```
 This command will generate embeddings using the specified OpenAI API key.
 

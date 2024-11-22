@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   chainlit:
     image: reactome-chatbot
@@ -8,11 +6,16 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_CHAINLIT_DB=${POSTGRES_CHAINLIT_DB}
+      - POSTGRES_LANGGRAPH_DB=${POSTGRES_LANGGRAPH_DB}
       - LOG_LEVEL=${LOG_LEVEL}
       - CHAT_ENV=${CHAT_ENV}
       - CLOUDFLARE_SECRET_KEY=${CLOUDFLARE_SECRET_KEY}
       - CLOUDFLARE_SITE_KEY=${CLOUDFLARE_SITE_KEY}
+      - OAUTH_AUTH0_CLIENT_ID=${OAUTH_AUTH0_CLIENT_ID}
+      - OAUTH_AUTH0_CLIENT_SECRET=${OAUTH_AUTH0_CLIENT_SECRET}
+      - OAUTH_AUTH0_DOMAIN=${OAUTH_AUTH0_DOMAIN}
+      - CHAINLIT_AUTH_SECRET=${CHAINLIT_AUTH_SECRET}
     ports:
       - "8000:8000"
     depends_on:
@@ -27,17 +30,26 @@ services:
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  pgadmin:
+      image: dpage/pgadmin4
+      environment:
+        - PGADMIN_DEFAULT_EMAIL=${PGADMIN_DEFAULT_EMAIL}
+        - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_DEFAULT_PASSWORD}
+      ports:
+        - 16543:80
+      volumes:
+        - ./servers.json:/pgadmin4/servers.json
+
 volumes:
   postgres_data:
-

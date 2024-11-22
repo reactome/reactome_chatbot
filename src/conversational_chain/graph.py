@@ -1,13 +1,24 @@
+import asyncio
+import os
 from typing import Annotated, Any, Sequence, TypedDict
 
 from langchain_core.callbacks.base import Callbacks
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph, StateGraph
+from psycopg import AsyncConnection
+from psycopg_pool import AsyncConnectionPool
 
 from conversational_chain.chain import RAGChainWithMemory
+
+LANGGRAPH_DB_URI = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_LANGGRAPH_DB')}?sslmode=disable"
+
+connection_kwargs = {
+    "autocommit": True,
+    "prepare_threshold": 0,
+}
 
 
 class ChatResponse(TypedDict):
@@ -21,17 +32,40 @@ class ChatState(ChatResponse):
 
 
 class RAGGraphWithMemory(RAGChainWithMemory):
-    def __init__(self, **chain_kwargs):
+    def __init__(self, **chain_kwargs) -> None:
         super().__init__(**chain_kwargs)
+        state_graph: StateGraph = StateGraph(ChatState)
+        state_graph.add_node("model", self.call_model)
+        state_graph.set_entry_point("model")
+        state_graph.set_finish_point("model")
+        self.uncompiled_graph: StateGraph = state_graph
+        self.graph: CompiledStateGraph | None = None
+        self.pool: AsyncConnectionPool[AsyncConnection[dict[str, Any]]] | None = None
 
-        # Single-node graph (for now)
-        graph: StateGraph = StateGraph(ChatState)
-        graph.add_node("model", self.call_model)
-        graph.set_entry_point("model")
-        graph.set_finish_point("model")
+    def __del__(self) -> None:
+        if self.pool:
+            asyncio.run(self.close_pool())
 
-        memory = MemorySaver()
-        self.graph: CompiledStateGraph = graph.compile(checkpointer=memory)
+    async def initialize(self) -> CompiledStateGraph:
+        checkpointer: AsyncPostgresSaver = await self.create_checkpointer()
+        return self.uncompiled_graph.compile(checkpointer=checkpointer)
+
+    async def create_checkpointer(self) -> AsyncPostgresSaver:
+        self.pool = AsyncConnectionPool(
+            conninfo=LANGGRAPH_DB_URI,
+            max_size=20,
+            open=False,
+            timeout=30,
+            kwargs=connection_kwargs,
+        )
+        await self.pool.open()
+        checkpointer = AsyncPostgresSaver(self.pool)
+        await checkpointer.setup()
+        return checkpointer
+
+    async def close_pool(self) -> None:
+        if self.pool:
+            await self.pool.close()
 
     async def call_model(
         self, state: ChatState, config: RunnableConfig
@@ -47,14 +81,15 @@ class RAGGraphWithMemory(RAGChainWithMemory):
         }
 
     async def ainvoke(
-        self, user_input: str, callbacks: Callbacks,
-        configurable: dict[str, Any]
+        self, user_input: str, callbacks: Callbacks, thread_id: str
     ) -> str:
+        if self.graph is None:
+            self.graph = await self.initialize()
         response: dict[str, Any] = await self.graph.ainvoke(
             {"input": user_input},
-            config = RunnableConfig(
-                callbacks = callbacks,
-                configurable = configurable,
-            )
+            config=RunnableConfig(
+                callbacks=callbacks,
+                configurable={"thread_id": thread_id},
+            ),
         )
         return response["answer"]
