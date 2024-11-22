@@ -13,7 +13,6 @@ from retreival_chain import create_retrieval_chain
 from util.embedding_environment import EmbeddingEnvironment
 from util.logging import logging
 
-
 load_dotenv()
 
 ENV = os.getenv("CHAT_ENV", "reactome")
@@ -32,6 +31,7 @@ llm_graph: RAGGraphWithMemory = create_retrieval_chain(
 
 
 if os.getenv("OAUTH_AUTH0_CLIENT_ID"):
+
     @cl.oauth_callback
     def oauth_callback(
         provider_id: str,
@@ -47,7 +47,7 @@ async def chat_profile() -> list[cl.ChatProfile]:
     return [
         cl.ChatProfile(
             name="React-to-me",
-            markdown_description="An AI assistant specialized in exploring **Reactome** biological pathways and processes."
+            markdown_description="An AI assistant specialized in exploring **Reactome** biological pathways and processes.",
         )
     ]
 

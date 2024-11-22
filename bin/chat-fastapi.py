@@ -2,12 +2,11 @@ import hashlib
 import hmac
 import os
 
+import requests
 from chainlit.utils import mount_chainlit
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
-import requests
-
 
 load_dotenv()
 

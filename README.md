@@ -7,8 +7,8 @@ The Reactome ChatBot is an interactive tool that provides information about biol
 
 ### Prerequisites
 
-- Python 3.x
-- Poetry (for dependency management)
+- Python 3.12
+- Poetry 1.8 (for dependency management)
 - Docker (for running the PostgreSQL database and potentially the application)
 
 ### Installation Steps

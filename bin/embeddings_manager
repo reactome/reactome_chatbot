@@ -5,7 +5,7 @@ import re
 from argparse import ArgumentParser
 from pathlib import Path, PurePosixPath
 from shutil import rmtree
-from typing import NamedTuple, Optional, Self
+from typing import NamedTuple, Self
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import boto3
@@ -75,8 +75,8 @@ def install(embedding: EmbeddingSelection):
 
 def make(
     embedding: EmbeddingSelection,
-    openai_key: Optional[str] = None,
-    hf_key: Optional[str] = None,
+    openai_key: str | None = None,
+    hf_key: str | None = None,
     **kwargs
 ):
     embedding_path:Path = embedding.path(check_exists=False)

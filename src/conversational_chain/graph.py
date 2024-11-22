@@ -5,14 +5,13 @@ from typing import Annotated, Any, Sequence, TypedDict
 from langchain_core.callbacks.base import Callbacks
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph, StateGraph
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
 from conversational_chain.chain import RAGChainWithMemory
-
 
 LANGGRAPH_DB_URI = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_LANGGRAPH_DB')}?sslmode=disable"
 
@@ -43,16 +42,13 @@ class RAGGraphWithMemory(RAGChainWithMemory):
         self.graph: CompiledStateGraph | None = None
         self.pool: AsyncConnectionPool[AsyncConnection[dict[str, Any]]] | None = None
 
-
     def __del__(self) -> None:
         if self.pool:
             asyncio.run(self.close_pool())
 
-
     async def initialize(self) -> None:
         checkpointer: AsyncPostgresSaver = await self.create_checkpointer()
         self.graph = self.uncompiled_graph.compile(checkpointer=checkpointer)
-
 
     async def create_checkpointer(self) -> AsyncPostgresSaver:
         self.pool = AsyncConnectionPool(
@@ -67,10 +63,8 @@ class RAGGraphWithMemory(RAGChainWithMemory):
         await checkpointer.setup()
         return checkpointer
 
-
     async def close_pool(self) -> None:
         await self.pool.close()
-
 
     async def call_model(
         self, state: ChatState, config: RunnableConfig
@@ -85,7 +79,6 @@ class RAGGraphWithMemory(RAGChainWithMemory):
             "answer": response["answer"],
         }
 
-
     async def ainvoke(
         self, user_input: str, callbacks: Callbacks, thread_id: str
     ) -> str:
@@ -93,9 +86,9 @@ class RAGGraphWithMemory(RAGChainWithMemory):
             await self.initialize()
         response: dict[str, Any] = await self.graph.ainvoke(
             {"input": user_input},
-            config = RunnableConfig(
+            config=RunnableConfig(
                 callbacks=callbacks,
                 configurable={"thread_id": thread_id},
-            )
+            ),
         )
         return response["answer"]

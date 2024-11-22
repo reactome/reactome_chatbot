@@ -33,6 +33,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
+      - postgres_data:/var/lib/postgresql/data
       - ./initdb:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
@@ -43,8 +44,8 @@ services:
   pgadmin:
       image: dpage/pgadmin4
       environment:
-        PGADMIN_DEFAULT_EMAIL: 'test@test.com'
-        PGADMIN_DEFAULT_PASSWORD: 'test'
+        - PGADMIN_DEFAULT_EMAIL=${PGADMIN_DEFAULT_EMAIL}
+        - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_DEFAULT_PASSWORD}
       ports:
         - 16543:80
       volumes:
