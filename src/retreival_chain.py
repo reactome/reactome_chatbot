@@ -50,7 +50,7 @@ def get_embedding(
         )
 
 
-def initialize_retrieval_chain(
+def create_retrieval_chain(
     env: str,
     embeddings_directory: Path,
     commandline: bool,
@@ -68,11 +68,9 @@ def initialize_retrieval_chain(
 
     # Define llm without redefinition
     llm: ChatOllama | ChatOpenAI
-
     if ollama_model is None:  # Use OpenAI when Ollama not specified
         llm = ChatOpenAI(
             temperature=0.0,
-            streaming=True,
             callbacks=callbacks,
             verbose=verbose,
             model="gpt-4o-mini",
@@ -113,8 +111,7 @@ def initialize_retrieval_chain(
             persist_directory=str(embeddings_directory / subdirectory),
             embedding_function=embedding,
         )
-
-        selfq_retriever = SelfQueryRetriever.from_llm(
+        retriever = SelfQueryRetriever.from_llm(
             llm=llm,
             vectorstore=vectordb,
             document_contents=descriptions_info[subdirectory],
@@ -122,7 +119,7 @@ def initialize_retrieval_chain(
             search_kwargs={"k": 15},
         )
         rrf_retriever = EnsembleRetriever(
-            retrievers=[bm25_retriever, selfq_retriever], weights=[0.2, 0.8]
+            retrievers=[bm25_retriever], weights=[0.2, 0.8]
         )
         retriever_list.append(rrf_retriever)
 

@@ -91,9 +91,7 @@ class MetaDataCSVLoader(BaseLoader):
         # Skip lines starting with '#'
         valid_lines = (line for line in csvfile if not line.startswith("#"))
 
-        csv_reader: csv.DictReader = csv.DictReader(
-            valid_lines, **self.csv_args
-        )
+        csv_reader: csv.DictReader = csv.DictReader(valid_lines, **self.csv_args)
         for i, row in enumerate(csv_reader):
             try:
                 source = (
