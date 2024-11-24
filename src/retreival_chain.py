@@ -111,7 +111,8 @@ def create_retrieval_chain(
             persist_directory=str(embeddings_directory / subdirectory),
             embedding_function=embedding,
         )
-        retriever = SelfQueryRetriever.from_llm(
+
+        selfq_retriever = SelfQueryRetriever.from_llm(
             llm=llm,
             vectorstore=vectordb,
             document_contents=descriptions_info[subdirectory],
@@ -119,7 +120,7 @@ def create_retrieval_chain(
             search_kwargs={"k": 15},
         )
         rrf_retriever = EnsembleRetriever(
-            retrievers=[bm25_retriever], weights=[0.2, 0.8]
+            retrievers=[bm25_retriever, selfq_retriever], weights=[0.2, 0.8]
         )
         retriever_list.append(rrf_retriever)
 
@@ -132,5 +133,6 @@ def create_retrieval_chain(
         retriever=reactome_retriever,
         llm=llm,
     )
+
 
     return qa
