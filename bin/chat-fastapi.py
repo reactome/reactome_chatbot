@@ -129,4 +129,4 @@ async def verify_captcha(request: Request):
     return redirect_response
 
 
-mount_chainlit(app=app, target="bin/chat-chainlit.py", path="/chat")
+mount_chainlit(app=app, target="bin/chat-chainlit.py", path=os.getenv("CHAINLIT_URI"))

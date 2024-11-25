@@ -40,6 +40,7 @@ langchain-ollama = "^0.2.0"
 lark = "^1.2.2"
 langgraph = "^0.2.39"
 langgraph-checkpoint-postgres = "^2.0.2"
+rank-bm25 = "^0.2.2"
 psycopg = {extras = ["binary"], version = "^3.2.3"}
 
 [tool.poetry.group.dev.dependencies]
