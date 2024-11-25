@@ -5,10 +5,13 @@ from typing import Callable, Optional
 from langchain.callbacks.base import BaseCallbackHandler
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.retrievers import EnsembleRetriever
+from langchain.retrievers.merger_retriever import MergerRetriever
 from langchain.retrievers.self_query.base import SelfQueryRetriever
 from langchain_chroma.vectorstores import Chroma
+from langchain_community.document_loaders.csv_loader import CSVLoader
+from langchain_community.retrievers import BM25Retriever
 from langchain_core.embeddings import Embeddings
-from langchain_core.retrievers import RetrieverLike
+from langchain_core.retrievers import BaseRetriever
 from langchain_huggingface import (HuggingFaceEmbeddings,
                                    HuggingFaceEndpointEmbeddings)
 from langchain_ollama.chat_models import ChatOllama
@@ -84,25 +87,36 @@ def create_retrieval_chain(
     embedding_callable = get_embedding(hf_model, device)
 
     # Adjusted type for retriever_list
-    retriever_list: list[RetrieverLike] = []
+    retriever_list: list[BaseRetriever] = []
     for subdirectory in list_chroma_subdirectories(embeddings_directory):
+        # set up BM25 retriever
+        csv_file_name = subdirectory + ".csv"
+        reactome_csvs_dir: Path = embeddings_directory / "csv_files"
+        loader = CSVLoader(file_path=reactome_csvs_dir / csv_file_name)
+        data = loader.load()
+        bm25_retriever = BM25Retriever.from_documents(data)
+        bm25_retriever.k = 15
+
+        # set up vectorstore SelfQuery retriever
         embedding = embedding_callable()
         vectordb = Chroma(
             persist_directory=str(embeddings_directory / subdirectory),
             embedding_function=embedding,
         )
-        retriever = SelfQueryRetriever.from_llm(
+
+        selfq_retriever = SelfQueryRetriever.from_llm(
             llm=llm,
             vectorstore=vectordb,
             document_contents=descriptions_info[subdirectory],
             metadata_field_info=field_info[subdirectory],
-            search_kwargs={"k": 10},
+            search_kwargs={"k": 15},
         )
-        retriever_list.append(retriever)
+        rrf_retriever = EnsembleRetriever(
+            retrievers=[bm25_retriever, selfq_retriever], weights=[0.2, 0.8]
+        )
+        retriever_list.append(rrf_retriever)
 
-    reactome_retriever = EnsembleRetriever(
-        retrievers=retriever_list, weights=[0.25] * len(retriever_list)
-    )
+    reactome_retriever = MergerRetriever(retrievers=retriever_list)
 
     qa = RAGGraphWithMemory(
         memory=memory,
