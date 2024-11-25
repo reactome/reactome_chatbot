@@ -13,7 +13,6 @@ ENV PYTHONPATH="/app/src"
 # libpq5 is for python package psycopg
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
-    libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the requirements file into the container
