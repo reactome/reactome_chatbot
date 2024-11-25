@@ -134,5 +134,4 @@ def create_retrieval_chain(
         llm=llm,
     )
 
-
     return qa
