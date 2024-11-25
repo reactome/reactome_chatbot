@@ -25,6 +25,22 @@ services:
     volumes:
       - ./embeddings:/app/embeddings
 
+  chainlit-no-login:
+    image: ${CHAINLIT_IMAGE}
+    container_name: biochat_chainlit_no_login
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - CHAT_ENV=${CHAT_ENV}
+      - CLOUDFLARE_SECRET_KEY=${CLOUDFLARE_SECRET_KEY}
+      - CLOUDFLARE_SITE_KEY=${CLOUDFLARE_SITE_KEY}
+      - CHAINLIT_URI=${CHAINLIT_URI_NO_LOGIN}
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./embeddings:/app/embeddings
+
+
   postgres:
     image: postgres:13
     container_name: biochat_postgres
