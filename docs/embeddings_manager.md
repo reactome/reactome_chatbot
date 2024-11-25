@@ -1,9 +1,9 @@
 # Reactome Chatbot Embeddings Manager Script
 
-The script located at `bin/embeddings_manager.py` handles the generation, version-switching, and S3 upload/download of embeddings for the chatbot. Embeddings are installed locally to the `embeddings/` directory.
+The script located at `./bin/embeddings_manager` handles the generation, version-switching, and S3 upload/download of embeddings for the chatbot. Embeddings are installed locally to the `embeddings/` directory.
 
 ```
-$ python .\bin\embeddings_manager.py -h
+$ ./bin/embeddings_manager -h
 usage: embeddings_manager.py [-h] {pull,use,install,make,push,rm,ls,ls-remote,which} ...
 
 positional arguments:
@@ -29,9 +29,9 @@ The script specifies embeddings using strings with the following format:
 <modelorg>/<model>/<database>/<version>
 ```
 
-For example, the embeddings for Reactome Release89 using the default [OpenAI embeddings](https://platform.openai.com/docs/guides/embeddings/embedding-models) model (`text-embedding-ada-002`) are specified as:
+For example, the embeddings for Reactome Release89 using the default [OpenAI embeddings](https://platform.openai.com/docs/guides/embeddings/embedding-models) model (`text-embedding-3-large`) are specified as:
 ```
-openai/text-embedding-ada-002/reactome/Release89
+openai/text-embedding-3-large/reactome/Release89
 ```
 
 For HuggingFace models, `<modelorg>/<model>` simply matches the HuggingFace model identifier.
@@ -40,29 +40,29 @@ For HuggingFace models, `<modelorg>/<model>` simply matches the HuggingFace mode
 
 ### List embeddings available to download: `ls-remote`
 ```sh
-python bin/embeddings_manager.py ls-remote
+./bin/embeddings_manager ls-remote
 ```
 
 ### Download embedding: `pull`
 ```sh
-python bin/embeddings_manager.py pull openai/text-embedding-ada-002/reactome/Release89
+./bin/embeddings_manager pull openai/text-embedding-3-large/reactome/Release89
 ```
 
 ## Managing Local Embeddings:
 
 ### List installed embeddings: `ls`
 ```sh
-python bin/embeddings_manager.py ls
+./bin/embeddings_manager ls
 ```
 
 ### Select an embedding for use: `use`
 ```sh
-python bin/embeddings_manager.py use openai/text-embedding-ada-002/reactome/Release89
+./bin/embeddings_manager use openai/text-embedding-3-large/reactome/Release89
 ```
 
 ### Check the current embeddings in use: `which`
 ```
-$ python bin/embeddings_manager.py which
+$ ./bin/embeddings_manager which
 reactome:       nomic-ai\nomic-embed-text-v1.5\reactome\Release89
 alliance:       ...
 ...
@@ -79,18 +79,18 @@ alliance:       ...
 
 #### OpenAi generation (remote):
 ```sh
-python bin/embeddings_manager.py make openai/text-embedding-ada-002/reactome/<Release#> --openai-key <your-key>
+./bin/embeddings_manager make openai/text-embedding-3-large/reactome/<Release#> --openai-key <your-key>
 ```
 
 #### HuggingFace generation (local):
 ```sh
-python bin/embeddings_manager.py make <hf-model>/reactome/<Release#> --device <cpu/cuda>
+./bin/embeddings_manager make <hf-model>/reactome/<Release#> --device <cpu/cuda>
 ```
 
 #### HuggingFaceHub generation (remote):
 Either specify `--hf-key` or environment variable `HUGGINGFACEHUB_API_TOKEN`.
 ```sh
-python bin/embeddings_manager.py make <hf-model>/reactome/<Release#> --hf-key <your-key>
+./bin/embeddings_manager make <hf-model>/reactome/<Release#> --hf-key <your-key>
 ```
 
 ## Uploading to S3: `push`
@@ -98,5 +98,5 @@ python bin/embeddings_manager.py make <hf-model>/reactome/<Release#> --hf-key <y
 ⚠️ Requires S3 write access.
 
 ```sh
-python bin/embeddings_manager.py push openai/text-embedding-ada-002/reactome/Release89
+./bin/embeddings_manager push openai/text-embedding-3-large/reactome/Release89
 ```

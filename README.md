@@ -9,29 +9,46 @@ The Reactome ChatBot is an interactive tool that provides information about biol
 
 - Python 3.12
 - Poetry 1.8 (for dependency management)
-- Docker (for running the PostgreSQL database and potentially the application)
+- _Optional_: Docker (for running the complete application with PostgreSQL database)
 
-### Installation Steps
+### Quick Start
 
-#### Clone the repository:
+Follow these steps to run the barebones Chainlit application.
 
-```bash
-git clone https://github.com/reactome/reactome_chatbot.git
-```
-#### Navigate to the project directory:
-
-```bash
-cd reactome_chatbot
-```
-
-#### Install dependencies using Poetry:
-
-```bash
-poetry install
-```
+1. Clone the repository:
+    ```bash
+    git clone https://github.com/reactome/reactome_chatbot.git
+    ```
+2. Navigate to the project directory:
+    ```bash
+    cd reactome_chatbot
+    ```
+3. Install dependencies using Poetry:
+    ```bash
+    poetry install
+    ```
+4. Verify your `PYTHONPATH` environment variable includes `./src`:
+    ```bash
+    echo $PYTHONPATH
+    # ./src
+    ```
+5. List embeddings available for download:
+    ```bash
+    ./bin/embeddings_manager ls-remote
+    ```
+6. Install your chosen embeddings:
+    ```bash
+    ./bin/embeddings_manager install openai/text-embedding-3-large/reactome/ReleaseXX
+    ```
+7. Run the Chainlit application:
+    ```
+    chainlit run bin/chat-chainlit.py
+    ```
+8. Access the app at http://localhost:8000 🎉
 
 ### Docker Setup
 
+Follow these
 
 #### Build Docker image
 
@@ -61,35 +78,7 @@ To start the PostgreSQL database, run the following command:
 docker-compose up -d
 ```
 
-This will run the app through bin/chat-fastapi.py where the user will need to fill in an hcaptcha to access the chat interfaces. This should be used in production.
-
-if you want to run chainlit directly run:
-
-```bash
-docker run --env-file .env -p 8000:8000 -v $(pwd)/embeddings:/app/embeddings reactome-chatbot /bin/bash -c "chainlit run bin/chat-chainlit.py -w"
-```
-
 ## Usage
-
-### Running the ChatBot
-
-#### Interactively
-To run the ChatBot interactively, execute the following command:
-
-```bash
-poetry run bin/chat-repl
-```
-This will start the ChatBot in interactive mode, allowing users to input queries and receive responses in real-time.
-
-#### Providing Queries Non-interactively
-You can also provide queries non-interactively by passing them as command-line arguments.
-
-For example:
-
-```bash
-poetry run bin/chat-repl --query "What is TP53 involved in?"
-```
-This will execute the ChatBot with the provided query and print the response.
 
 ### Getting Embeddings
 
