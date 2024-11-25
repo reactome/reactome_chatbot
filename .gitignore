@@ -159,5 +159,7 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
+.chainlit/translations/*
+!.chainlit/translations/en-US.json
 csv_files/
 embeddings/
