@@ -31,12 +31,18 @@ services:
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - LOG_LEVEL=${LOG_LEVEL}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_LANGGRAPH_DB=${POSTGRES_LANGGRAPH_DB}_no_login
       - CHAT_ENV=${CHAT_ENV}
       - CLOUDFLARE_SECRET_KEY=${CLOUDFLARE_SECRET_KEY}
       - CLOUDFLARE_SITE_KEY=${CLOUDFLARE_SITE_KEY}
       - CHAINLIT_URI=${CHAINLIT_URI_NO_LOGIN}
     ports:
       - "8001:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - ./embeddings:/app/embeddings
 

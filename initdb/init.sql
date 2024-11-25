@@ -1,5 +1,6 @@
 CREATE DATABASE chatbio_chainlit;
 CREATE DATABASE chatbio_langgraph;
+CREATE DATABASE chatbio_langgraph_no_login;
 
 \c chatbio_chainlit
 
