@@ -51,11 +51,12 @@ jobs:
               uses: ./.github/actions/install_python_poetry
 
             - name: Verify Python imports
+              if: steps.check-poetry-lock.outputs.any_changed == 'true'
               env:
                   PYTHONPATH: ./bin:./src
               run: |
                 poetry check
-                python ./.github/actions/verify_imports.py
+                poetry run python -m ./.github/actions/verify_imports.py
 
     docker-build:
         runs-on: ubuntu-latest
