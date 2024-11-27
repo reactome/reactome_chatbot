@@ -53,7 +53,9 @@ jobs:
             - name: Verify Python imports
               env:
                   PYTHONPATH: ./bin:./src
-              run: python ./.github/actions/verify_imports.py
+              run: |
+                poetry check
+                python ./.github/actions/verify_imports.py
 
     docker-build:
         runs-on: ubuntu-latest
