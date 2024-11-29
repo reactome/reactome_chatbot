@@ -21,22 +21,42 @@ jobs:
         steps:
             - uses: actions/checkout@v4
 
-            - name: Set up Python
-              uses: actions/setup-python@v4
-              with:
-                 python-version: '3.12'
-
-            - name: Install dependencies
-              run: |
-                  python -m pip install --upgrade pip
-                  pip install poetry
-                  poetry install --no-root
+            - name: Set up Python and Poetry
+              uses: ./.github/actions/install_python_poetry
 
             - name: Run linters
               run: |
                   poetry run ruff check .
                   poetry run mypy .
                   poetry run isort --check .
+
+    poetry-check:
+        if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+        runs-on: ${{ matrix.os }}
+        strategy:
+            matrix:
+                os: [ubuntu-latest, macos-13]
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Check poetry.lock for changes
+              id: check-poetry-lock
+              uses: tj-actions/changed-files@v45
+              with:
+                  files: poetry.lock
+
+            - name: Set up Python and Poetry
+              if: steps.check-poetry-lock.outputs.any_changed == 'true'
+              uses: ./.github/actions/install_python_poetry
+
+            - name: Verify Python imports
+              if: steps.check-poetry-lock.outputs.any_changed == 'true'
+              env:
+                  PYTHONPATH: ./bin:./src
+              run: |
+                poetry check
+                poetry run python ./.github/actions/verify_imports.py
 
     docker-build:
         runs-on: ubuntu-latest
