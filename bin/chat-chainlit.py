@@ -8,10 +8,10 @@ from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 from chainlit.types import ThreadDict
 from dotenv import load_dotenv
 
-from conversational_chain.graph import RAGGraphWithMemory
-from retreival_chain import create_retrieval_chain
-from util.embedding_environment import EmbeddingEnvironment
-from util.logging import logging
+from src.conversational_chain.graph import RAGGraphWithMemory
+from src.retreival_chain import create_retrieval_chain
+from src.util.embedding_environment import EmbeddingEnvironment
+from src.util.logging import logging
 
 load_dotenv()
 

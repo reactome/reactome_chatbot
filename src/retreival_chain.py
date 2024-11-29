@@ -17,10 +17,10 @@ from langchain_huggingface import (HuggingFaceEmbeddings,
 from langchain_ollama.chat_models import ChatOllama
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-from conversational_chain.graph import RAGGraphWithMemory
-from conversational_chain.memory import ChatHistoryMemory
-from reactome.metadata_info import descriptions_info, field_info
-from util.embedding_environment import EmbeddingEnvironment
+from src.conversational_chain.graph import RAGGraphWithMemory
+from src.conversational_chain.memory import ChatHistoryMemory
+from src.reactome.metadata_info import descriptions_info, field_info
+from src.util.embedding_environment import EmbeddingEnvironment
 
 
 def list_chroma_subdirectories(directory: Path) -> list[str]:
@@ -125,7 +125,7 @@ def create_retrieval_chain(
         retriever_list.append(rrf_retriever)
 
     reactome_retriever = MergerRetriever(
-        retrievers=retriever_list, weights=[0.25] * len(retriever_list)
+        retrievers=retriever_list
     )
 
     qa = RAGGraphWithMemory(

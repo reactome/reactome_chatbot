@@ -5,7 +5,7 @@ from langchain.chains.retrieval import create_retrieval_chain
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.retrievers import RetrieverLike
 
-from system_prompt.reactome_prompt import contextualize_q_prompt, qa_prompt
+from src.system_prompt.reactome_prompt import contextualize_q_prompt, qa_prompt
 
 
 class RAGChainWithMemory:
