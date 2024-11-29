@@ -1,24 +1,38 @@
-import importlib
+import importlib.machinery
+import importlib.util
 import traceback
+from pathlib import Path
 
 # List all entry points here
-entry_points = [
-    "chat-chainlit",
-    "chat-fastapi",
-    ".embeddings_manager"
-]
+entry_points: list[Path] = list(
+    map(
+        Path("bin").joinpath,
+        [
+            "chat-chainlit.py",
+            "chat-fastapi.py",
+            "embeddings_manager",
+        ],
+    )
+)
 
-failed_imports = []
+failed_imports: list[str] = []
 
-for entry in entry_points:
+location: Path
+for location in entry_points:
+    name: str = location.stem
     try:
-        importlib.import_module(entry)
+        loader = importlib.machinery.SourceFileLoader(name, str(location))
+        spec = importlib.util.spec_from_loader(name, loader)
+        if spec is None:
+            raise ModuleNotFoundError(name)
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
     except ImportError:
-        failed_imports.append(entry)
-        print(f"Failed to import {entry} due to ImportError:")
+        failed_imports.append(name)
+        print(f"Failed to import {location} due to ImportError:")
         traceback.print_exc()
     except Exception as e:
-        print(f"Non-import error for {entry}: {e}")
+        print(f"Non-import error for {location}: {e}")
         traceback.print_exc()
 
 if failed_imports:

@@ -56,7 +56,7 @@ jobs:
                   PYTHONPATH: ./bin:./src
               run: |
                 poetry check
-                poetry run python -m ./.github/actions/verify_imports.py
+                poetry run python ./.github/actions/verify_imports.py
 
     docker-build:
         runs-on: ubuntu-latest
