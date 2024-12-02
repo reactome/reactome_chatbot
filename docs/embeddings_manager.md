@@ -1,6 +1,6 @@
 # Reactome Chatbot Embeddings Manager Script
 
-The script located at `./bin/embeddings_manager` handles the generation, version-switching, and S3 upload/download of embeddings for the chatbot. Embeddings are installed locally to the `embeddings/` directory.
+The script located at `./bin/embeddings_manager` handles the generation, version-switching, and S3 upload/download of resource bundles for the chatbot. Previously these bundles only included embeddings, but have now been expanded to include all documents used by the model for a given data source. Embeddings bundles are installed locally to the `embeddings/` directory.
 
 ```
 $ ./bin/embeddings_manager -h
@@ -63,7 +63,7 @@ For HuggingFace models, `<modelorg>/<model>` simply matches the HuggingFace mode
 ### Check the current embeddings in use: `which`
 ```
 $ ./bin/embeddings_manager which
-reactome:       nomic-ai\nomic-embed-text-v1.5\reactome\Release89
+reactome:       openai/text-embedding-3-large/reactome/Release89
 alliance:       ...
 ...
 ```

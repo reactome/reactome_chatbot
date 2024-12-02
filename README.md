@@ -42,91 +42,66 @@ Follow these steps to run the barebones Chainlit application.
     ```
 7. Run the Chainlit application:
     ```
-    chainlit run bin/chat-chainlit.py
+    chainlit run bin/chat-chainlit.py -w
     ```
 8. Access the app at http://localhost:8000 🎉
 
 ### Docker Setup
 
-Follow these
-
-#### Build Docker image
-
-```bash
-docker build -t reactome-chatbot .
-```
-
-##### Pull embeddings
-
-list embeddings available
-
-```bash
-docker run --env-file .env -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "./bin/embeddings_manager ls-remote"
-```
-
-and pull the one you want
-
-```bash
-docker run --env-file .env -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "./bin/embeddings_manager install <the-embedding-from-ls-remote>"
-```
-
 The project uses Docker Compose to manage the PostgreSQL database. The configuration for the database is stored in the `docker-compose.yml` file, and the environment variables are stored in the `.env` file.
 
-To start the PostgreSQL database, run the following command:
+Follow these steps to run the complete application in Docker.
 
-```bash
-docker-compose up -d
-```
+1. Create a copy of the `env_template` file and name it `.env`:
+    ```bash
+    cp env_template .env
+    ```
+2. Configure the application by editing environment variables in `.env`:
+    - `OPENAI_API_KEY`: add your OpenAI key.
+    - `CLOUDFLARE_SECRET_KEY`: keep blank to disable captcha.
+    - `CHAINLIT_IMAGE=reactome-chatbot`: set this to use your local docker build.
+    - Use the following variables to configure Auth0:
+        + This will enable Chainlit user-login and chat history.
+        ```
+        OAUTH_AUTH0_CLIENT_ID
+        OAUTH_AUTH0_CLIENT_SECRET
+        OAUTH_AUTH0_DOMAIN
+        ```
+3. List embeddings available for download:
+    ```bash
+    docker run --env-file .env -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "./bin/embeddings_manager ls-remote"
+    ```
+4. Install your chosen embeddings:
+    ```bash
+    docker run --env-file .env -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "./bin/embeddings_manager install openai/text-embedding-3-large/reactome/ReleaseXX"
+    ```
+5. Build the Docker image (do this every time you make local changes):
+    ```bash
+    docker build -t reactome-chatbot .
+    ```
+6. Start the Chainlit application and PostgrSQL database in Docker containers:
+    ```bash
+    docker-compose up
 
-## Usage
-
-### Getting Embeddings
-
-Please refer to the [Embeddings Manager documentation](docs/embeddings_manager.md) for updated steps for either downloading or generating embeddings.
-
-#### Dependencies
-
-Reactome Dockerized Graph database from DockerHub: [reactome/graphdb](https://hub.docker.com/r/reactome/graphdb)
-
-To generate embeddings using the embedding generator script, use the following command:
-
-```bash
-python bin/embeddings_manager.py make openai/text-embedding-3-large/reactome/Release89 --openai-key=<your-key>
-```
-This command will generate embeddings using the specified OpenAI API key.
-
-To generate embeddings inside docker run:
-```bash
-mkdir embeddings;
-docker run --env-file .env --net=host -v $(pwd)/embeddings/:/apt/embeddings/ --rm reactome-chatbot bash -c "/app/bin/embedding_generator;"
-```
+    # To run it in the background, use:
+    # docker-compose up -d
+    ```
+7. Access the app at http://localhost:8000 🎉
 
 
-## Configuration
+## Embeddings & Documents Bundles
 
-### Environment Variables
-You can set environment variables for the ChatBot and other components:
+The ChatBot's knowledge of a given data source is generated directly using the latest data release, resulting in a bundle of embedded information and/or text documents. For simplicity, we refer to these bundles as **Embeddings** throughout this document.
 
-- `OPENAI_API_KEY`: API key for the ChatBot (required)
+In the case of Reactome, embeddings bundles are generated once per release from [reactome/graphdb](https://hub.docker.com/r/reactome/graphdb) releases from DockerHub and uploaded to AWS S3 for easy retrieval.
 
-```bash
-export OPENAI_API_KEY=your_openai_api_key
-```
+### Embeddings Manager Script
 
-You can also use a `.env` file to set the environment variable for the chatbot.
+All aspects of generating, managing, uploading, and retrieving embeddings bundles are handled by the `./bin/embeddings_manager` script.
+- Basic usage is covered in the **_Quick Start_** guide above.
+- See the [Embeddings Manager documentation](docs/embeddings_manager.md).
 
-## Running the UI
 
-To run the UI, use the following command:
-
-```bash
-poetry run chainlit run bin/chat-chainlit.py -w
-```
-or with docker
-
-```bash
-docker run -v $(pwd)/bin:/app/bin -v$(pwd)/src:/app/src reactome-chatbot /bin/bash -c "chainlit run bin/chat-chainlit.py -w"
-```
 ## Code Quality
 
 To do main consistency checks
@@ -147,11 +122,6 @@ To make sure imports are organized
 poetry run isort .
 ```
 
-To run these inside of docker run a command like
-```bash
-docker build -t reactome-chatbot .; docker run -v $(pwd)/bin:/app/bin -v$(pwd)/src:/app/src reactome-chatbot /bin/bash -c "poetry run ruff check ."
-sudo chown $(id -u):$(id -g) * -R
-```
 
 ## Contributing
 Contributions to the Reactome ChatBot project are welcome! If you encounter any issues or have suggestions for improvements, feel free to open an issue or submit a pull request.
