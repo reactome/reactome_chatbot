@@ -163,3 +163,4 @@ cython_debug/
 !.chainlit/translations/en-US.json
 csv_files/
 embeddings/
+records/

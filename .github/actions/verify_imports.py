@@ -11,6 +11,7 @@ entry_points: list[Path] = list(
             "chat-chainlit.py",
             "chat-fastapi.py",
             "embeddings_manager",
+            "export_records.py",
         ],
     )
 )
