@@ -49,18 +49,24 @@ def main(records_dir: Path):
             cur.execute(query)
             records = cur.fetchall()
 
+    if len(records) == 0:
+        print("No new records found.")
+        return
+
     latest_timestamp: str = max(row[1] for row in records)
 
     record_file = records_dir / f"records_{latest_timestamp}.csv"
 
     with open(record_file, mode="w", newline="") as file:
-        writer = csv.writer(file)
+        writer = csv.writer(file, lineterminator="\n")
         writer.writerow(["threadId", "createdAt", "name", "type", "output"])
         writer.writerows(records)
+
+    print("Wrote", record_file)
 
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("records_dir", type=Path, default=Path("records"))
+    parser.add_argument("records_dir", type=Path, nargs="?", default=Path("records"))
     args = parser.parse_args()
     main(**vars(args))
