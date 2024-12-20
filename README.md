@@ -91,7 +91,7 @@ Follow these steps to run the complete application in Docker.
 
 ## Embeddings & Documents Bundles
 
-The ChatBot's knowledge of a given data source is generated directly using the latest data release, resulting in a bundle of embedded information and/or text documents. For simplicity, we refer to these bundles as **Embeddings** throughout this document.
+The ChatBot's knowledge of a given data source is generated using the latest data release, resulting in a bundle of embedded information and/or text documents. For simplicity, we refer to these bundles as **Embeddings** throughout this document.
 
 In the case of Reactome, embeddings bundles are generated once per release from [reactome/graphdb](https://hub.docker.com/r/reactome/graphdb) releases from DockerHub and uploaded to AWS S3 for easy retrieval.
 
@@ -99,10 +99,12 @@ In the case of Reactome, embeddings bundles are generated once per release from 
 
 All aspects of generating, managing, uploading, and retrieving embeddings bundles are handled by the `./bin/embeddings_manager` script.
 - Basic usage is covered in the **_Quick Start_** guide above.
-- See the [Embeddings Manager documentation](docs/embeddings_manager.md).
+- See the [Embeddings Manager documentation](docs/embeddings_manager.md) for more information.
 
 
-## Code Quality
+## Developers
+
+### Code Quality
 
 To do main consistency checks
 ```bash
@@ -123,7 +125,7 @@ poetry run isort .
 ```
 
 
-## Contributing
+### Contributing
 Contributions to the Reactome ChatBot project are welcome! If you encounter any issues or have suggestions for improvements, feel free to open an issue or submit a pull request.
 
 Please make sure to follow our contributing guidelines and code of conduct.
@@ -131,6 +133,3 @@ Please make sure to follow our contributing guidelines and code of conduct.
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
-```
-
-Feel free to adjust the instructions and details as needed for your project!
