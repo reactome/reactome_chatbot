@@ -7,9 +7,12 @@ The Reactome ChatBot is an interactive tool that provides information about biol
 
 ### Prerequisites
 
-- Python 3.12
-- Poetry 1.8 (for dependency management)
-- _Optional_: Docker (for running the complete application with PostgreSQL database)
+- **Minimum requirements:**
+    + Python 3.12
+    + [Poetry](https://python-poetry.org/docs/#installation) `1.8.*`
+- **Requirements for running the complete application:**
+    + [Docker](https://docs.docker.com/get-started/get-docker/)
+    + [Docker Compose](https://docs.docker.com/compose/install/)
 
 ### Quick Start
 
@@ -69,11 +72,11 @@ Follow these steps to run the complete application in Docker.
         ```
 3. List embeddings available for download:
     ```bash
-    docker run --env-file .env -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "./bin/embeddings_manager ls-remote"
+    docker compose run --rm chainlit /bin/bash -c "./bin/embeddings_manager ls-remote"
     ```
 4. Install your chosen embeddings:
     ```bash
-    docker run --env-file .env -v $(pwd)/embeddings:/app/embeddings/ reactome-chatbot /bin/bash -c "./bin/embeddings_manager install openai/text-embedding-3-large/reactome/ReleaseXX"
+    docker compose run --rm chainlit /bin/bash -c "./bin/embeddings_manager install openai/text-embedding-3-large/reactome/ReleaseXX"
     ```
 5. Build the Docker image (do this every time you make local changes):
     ```bash
