@@ -29,7 +29,7 @@ def generate_csv(
     data: Neo4jDict = data_fetch_func(connector)
     df: pd.DataFrame = pd.DataFrame(data)
     df["url"] = "https://reactome.org/content/detail/" + df["st_id"]
-    df.to_csv(csv_file_path, index=False)
+    df.to_csv(csv_file_path, index=False, lineterminator="\n")
     return str(csv_file_path)
 
 
