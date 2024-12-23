@@ -75,3 +75,26 @@ class RAGChainWithMemory:
         self.memory.add_ai_message(answer)
 
         return answer
+    
+    def get_context(self, user_input):
+        """
+        Retrieves the documents passed from the retriever to the LLM.
+        """
+        # Use the history-aware retriever to fetch relevant documents
+        response = self.rag_chain.invoke(
+            {
+                "input": user_input,
+                "chat_history": self.memory.get_history(),
+            }
+        )
+
+        answer = response["answer"]
+        context = response["context"]
+
+        final = {"answer": answer, "context":context}
+
+        # Update memory with user input and LLM response
+        self.memory.add_human_message(user_input)
+        self.memory.add_ai_message(answer)
+
+        return final
