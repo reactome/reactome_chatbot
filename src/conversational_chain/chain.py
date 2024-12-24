@@ -75,7 +75,7 @@ class RAGChainWithMemory:
         self.memory.add_ai_message(answer)
 
         return answer
-    
+
     def get_context(self, user_input):
         """
         Retrieves the documents passed from the retriever to the LLM.
@@ -91,7 +91,7 @@ class RAGChainWithMemory:
         answer = response["answer"]
         context = response["context"]
 
-        final = {"answer": answer, "context":context}
+        final = {"answer": answer, "context": context}
 
         # Update memory with user input and LLM response
         self.memory.add_human_message(user_input)
