@@ -1,0 +1,16 @@
+name: 'Setup Python and Poetry'
+description: 'Setup Python environment and install Poetry'
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        pip install --upgrade pip
+        pip install poetry==1.8.4
+        poetry install --no-root

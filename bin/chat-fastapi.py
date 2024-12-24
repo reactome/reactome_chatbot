@@ -12,6 +12,8 @@ load_dotenv()
 
 app = FastAPI()
 
+CHAINLIT_URI = os.getenv("CHAINLIT_URI")
+
 CLOUDFLARE_SECRET_KEY = os.getenv("CLOUDFLARE_SECRET_KEY")
 CLOUDFLARE_SITE_KEY = os.getenv("CLOUDFLARE_SITE_KEY")
 
@@ -43,7 +45,11 @@ async def verify_captcha_middleware(request: Request, call_next):
     # Allow access to CAPTCHA pages and static files
     if (
         request.url.path
-        in ["/chat/verify_captcha", "/chat/verify_captcha_page", "/chat/static"]
+        in [
+            f"{CHAINLIT_URI}/verify_captcha",
+            f"{CHAINLIT_URI}/verify_captcha_page",
+            f"{CHAINLIT_URI}/static",
+        ]
         or request.url.path.startswith("/static")
         or not os.getenv("CLOUDFLARE_SECRET_KEY")
     ):
@@ -55,14 +61,14 @@ async def verify_captcha_middleware(request: Request, call_next):
 
     # If CAPTCHA is not verified, block access
     if not captcha_verified or not verify_secure_cookie(captcha_verified):
-        return RedirectResponse(url="/chat/verify_captcha_page")
+        return RedirectResponse(url=f"{CHAINLIT_URI}/verify_captcha_page")
 
     response = await call_next(request)
     return response
 
 
 # Serve the CAPTCHA verification page (basic HTML form)
-@app.get("/chat/verify_captcha_page")
+@app.get(f"{CHAINLIT_URI}/verify_captcha_page")
 async def captcha_page():
     html_content = f"""
     <html>
@@ -70,7 +76,7 @@ async def captcha_page():
             <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
         </head>
         <body>
-            <form id="captcha-form" action="/chat/verify_captcha" method="post">
+            <form id="captcha-form" action="{CHAINLIT_URI}/verify_captcha" method="post">
                 <div class="cf-turnstile" data-sitekey="{os.getenv('CLOUDFLARE_SITE_KEY')}" data-callback="onSubmit"></div>
             </form>
             <script>
@@ -92,7 +98,7 @@ async def captcha_page():
     return Response(content=html_content, media_type="text/html")
 
 
-@app.post("/chat/verify_captcha")
+@app.post(f"{CHAINLIT_URI}/verify_captcha")
 async def verify_captcha(request: Request):
     form_data = await request.form()
     cf_turnstile_response = form_data.get("cf-turnstile-response")
@@ -117,7 +123,7 @@ async def verify_captcha(request: Request):
 
     # Set a signed cookie to mark CAPTCHA as verified
     cookie_value = create_secure_cookie(cf_turnstile_response)
-    redirect_response = RedirectResponse(url="/chat", status_code=303)
+    redirect_response = RedirectResponse(url=f"{CHAINLIT_URI}", status_code=303)
     redirect_response.set_cookie(
         key="captcha_verified",
         value=cookie_value,
@@ -129,4 +135,4 @@ async def verify_captcha(request: Request):
     return redirect_response
 
 
-mount_chainlit(app=app, target="bin/chat-chainlit.py", path="/chat")
+mount_chainlit(app=app, target="bin/chat-chainlit.py", path=CHAINLIT_URI)

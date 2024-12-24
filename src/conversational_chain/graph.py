@@ -5,13 +5,16 @@ from typing import Annotated, Any, Sequence, TypedDict
 from langchain_core.callbacks.base import Callbacks
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph, StateGraph
 from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
-from src.conversational_chain.chain import RAGChainWithMemory
+from conversational_chain.chain import RAGChainWithMemory
+from util.logging import logging
 
 LANGGRAPH_DB_URI = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_LANGGRAPH_DB')}?sslmode=disable"
 
@@ -19,6 +22,9 @@ connection_kwargs = {
     "autocommit": True,
     "prepare_threshold": 0,
 }
+
+if not os.getenv("POSTGRES_LANGGRAPH_DB"):
+    logging.warning("POSTGRES_LANGGRAPH_DB undefined; falling back to MemorySaver.")
 
 
 class ChatResponse(TypedDict):
@@ -47,10 +53,12 @@ class RAGGraphWithMemory(RAGChainWithMemory):
             asyncio.run(self.close_pool())
 
     async def initialize(self) -> CompiledStateGraph:
-        checkpointer: AsyncPostgresSaver = await self.create_checkpointer()
+        checkpointer: BaseCheckpointSaver[str] = await self.create_checkpointer()
         return self.uncompiled_graph.compile(checkpointer=checkpointer)
 
-    async def create_checkpointer(self) -> AsyncPostgresSaver:
+    async def create_checkpointer(self) -> BaseCheckpointSaver[str]:
+        if not os.getenv("POSTGRES_LANGGRAPH_DB"):
+            return MemorySaver()
         self.pool = AsyncConnectionPool(
             conninfo=LANGGRAPH_DB_URI,
             max_size=20,

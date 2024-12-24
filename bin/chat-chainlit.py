@@ -18,9 +18,6 @@ load_dotenv()
 ENV = os.getenv("CHAT_ENV", "reactome")
 logging.info(f"Selected environment: {ENV}")
 
-CHAINLIT_DB_URI = f"postgresql+psycopg://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_CHAINLIT_DB')}?sslmode=disable"
-cl_data._data_layer = SQLAlchemyDataLayer(conninfo=CHAINLIT_DB_URI)
-
 llm_graph: RAGGraphWithMemory = create_retrieval_chain(
     ENV,
     EmbeddingEnvironment.get_dir(ENV),
@@ -29,6 +26,11 @@ llm_graph: RAGGraphWithMemory = create_retrieval_chain(
     hf_model=EmbeddingEnvironment.get_model(ENV),
 )
 
+if os.getenv("POSTGRES_CHAINLIT_DB"):
+    CHAINLIT_DB_URI = f"postgresql+psycopg://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_CHAINLIT_DB')}?sslmode=disable"
+    cl_data._data_layer = SQLAlchemyDataLayer(conninfo=CHAINLIT_DB_URI)
+else:
+    logging.warning("POSTGRES_CHAINLIT_DB undefined; Chainlit persistence disabled.")
 
 if os.getenv("OAUTH_AUTH0_CLIENT_ID"):
 

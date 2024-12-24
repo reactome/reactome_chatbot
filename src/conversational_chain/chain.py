@@ -3,13 +3,13 @@ from langchain.chains.history_aware_retriever import \
     create_history_aware_retriever
 from langchain.chains.retrieval import create_retrieval_chain
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.retrievers import RetrieverLike
+from langchain_core.retrievers import BaseRetriever
 
 from src.system_prompt.reactome_prompt import contextualize_q_prompt, qa_prompt
 
 
 class RAGChainWithMemory:
-    def __init__(self, memory, retriever: RetrieverLike, llm: BaseChatModel):
+    def __init__(self, memory, retriever: BaseRetriever, llm: BaseChatModel):
         """
         Initializes the Retrieval-Augmented Generation (RAG) chain with memory.
         """

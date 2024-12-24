@@ -11,16 +11,15 @@ from langchain_chroma.vectorstores import Chroma
 from langchain_community.document_loaders.csv_loader import CSVLoader
 from langchain_community.retrievers import BM25Retriever
 from langchain_core.embeddings import Embeddings
-from langchain_core.retrievers import RetrieverLike
+from langchain_core.retrievers import BaseRetriever
 from langchain_huggingface import (HuggingFaceEmbeddings,
                                    HuggingFaceEndpointEmbeddings)
 from langchain_ollama.chat_models import ChatOllama
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-from src.conversational_chain.graph import RAGGraphWithMemory
-from src.conversational_chain.memory import ChatHistoryMemory
-from src.reactome.metadata_info import descriptions_info, field_info
-from src.util.embedding_environment import EmbeddingEnvironment
+from conversational_chain.graph import RAGGraphWithMemory
+from conversational_chain.memory import ChatHistoryMemory
+from reactome.metadata_info import descriptions_info, field_info
 
 
 def list_chroma_subdirectories(directory: Path) -> list[str]:
@@ -87,20 +86,13 @@ def create_retrieval_chain(
     # Get OpenAIEmbeddings (or HuggingFaceEmbeddings model if specified)
     embedding_callable = get_embedding(hf_model, device)
 
-    csv_file_mapping = {
-        "complexes": "complexes.csv",
-        "reactions": "reactions.csv",
-        "summations": "summations.csv",
-        "ewas": "ewas.csv",
-    }
-
     # Adjusted type for retriever_list
-    retriever_list: list[RetrieverLike] = []
+    retriever_list: list[BaseRetriever] = []
     for subdirectory in list_chroma_subdirectories(embeddings_directory):
         # set up BM25 retriever
-        csv_file_name = csv_file_mapping[subdirectory]
-        reactome_csvs_dir: Path = EmbeddingEnvironment.get_dir("reactome") / "csv_files"
-        loader = CSVLoader(file_path=str(reactome_csvs_dir) + "/" + csv_file_name)
+        csv_file_name = subdirectory + ".csv"
+        reactome_csvs_dir: Path = embeddings_directory / "csv_files"
+        loader = CSVLoader(file_path=reactome_csvs_dir / csv_file_name)
         data = loader.load()
         bm25_retriever = BM25Retriever.from_documents(data)
         bm25_retriever.k = 15
@@ -124,9 +116,7 @@ def create_retrieval_chain(
         )
         retriever_list.append(rrf_retriever)
 
-    reactome_retriever = MergerRetriever(
-        retrievers=retriever_list
-    )
+    reactome_retriever = MergerRetriever(retrievers=retriever_list)
 
     qa = RAGGraphWithMemory(
         memory=memory,
