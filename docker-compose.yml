@@ -24,6 +24,7 @@ services:
         condition: service_healthy
     volumes:
       - ./embeddings:/app/embeddings
+      - ./records:/app/records
 
   chainlit-no-login:
     image: ${CHAINLIT_IMAGE}
