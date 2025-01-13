@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 from conversational_chain.graph import RAGGraphWithMemory
 from completeness_grader import completeness_grader
-from pmc_wrapper import PMCBestMatchAPIWrapper
+from pmc_wrapper import PMCBestMatchAPIWrapper, TavilyWrapper
 from question_rewriter import question_rewriter
 from retreival_chain import create_retrieval_chain
 from util.embedding_environment import EmbeddingEnvironment
@@ -60,7 +60,7 @@ def grade_completeness(state):
     completeness = completeness_grader.invoke(
         {"question": question, "generation": generation}
     )
-    state["pmc_search"] = completeness.binary_score
+    state["web_search"] = completeness.binary_score
 
     return state
 
@@ -109,6 +109,32 @@ def perform_pmc_search(state):
     state["pmc_search_results"] = links
     return state
 
+def perform_web_search(state):
+    """
+    Searches the PMC using the LLM-created  query
+
+    Args: 
+        state (dict): the current state graph 
+
+    Retruns: 
+        state (dict): updates the pmc_search_results keys with appended PMC results 
+
+    """
+    question = state['question']
+    generation = state['generation']
+
+    print("___PMC SEARCH___")
+    
+    wrapper = TavilyWrapper(max_results=5, search_depth="advanced")
+    docs = wrapper.invoke(question)
+    
+    links = [f'<a href="{item["url"]}">{item["title"]}</a>' for item in docs]
+
+    search_results_str = "\n".join(links)
+    final = f"{generation} \n\nHere are some other resources that you may find helpful:\n\n {search_results_str}"
+    
+    return {"generation":final, "web_search_results": search_results_str,}
+
 
 def decide_to_search_pmc(state):
     """
@@ -121,10 +147,19 @@ def decide_to_search_pmc(state):
         str: The next step in the workflow.
     """
     pmc_search = state["pmc_search"]
-    print("___ASSESS ANSWER COMPLETENESS___")
     if pmc_search == "No":
-        print("___RESPONSE NOT COMPLETE: SEARCH PMC___")
         return "transform_query"
     else:
-        print("___RESPONSE COMPLETE___")
+        return "finish"
+
+
+def decide_to_search_web(state):
+    """
+    Determines whether the LLM-generated response completely answers user's question.
+    """
+    web_search = state['web_search']
+    
+    if web_search == "No": 
+        return "search_web"
+    else: 
         return "finish"

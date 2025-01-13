@@ -86,3 +86,4 @@ class PMCBestMatchAPIWrapper:
         """
         pmc_ids = self.search_best_match(query, max_results)
         return self.fetch_titles_and_links(pmc_ids)
+    
