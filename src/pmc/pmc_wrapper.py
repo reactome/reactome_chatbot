@@ -1,6 +1,6 @@
-from typing import Dict, List
-
 import requests
+from typing import List, Dict
+
 
 
 class PMCBestMatchAPIWrapper:
@@ -8,18 +8,14 @@ class PMCBestMatchAPIWrapper:
     Wrapper for accessing PubMed Central (PMC) API with "best match" capabilities.
     Combines Entrez E-utilities for ranked queries and OA Web Service for full-text retrieval.
     """
-
+    
     def __init__(self, email: str):
         """
         Initialize the wrapper with the required email for API requests.
         :param email: Your email address for API compliance.
         """
-        self.base_url_entrez = (
-            "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-        )
-        self.base_url_summary = (
-            "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
-        )
+        self.base_url_entrez = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+        self.base_url_summary = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
         self.base_url_oa = "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi"
         self.email = email
 
@@ -36,7 +32,7 @@ class PMCBestMatchAPIWrapper:
             "retmode": "json",
             "retmax": max_results,
             "sort": "relevance",
-            "email": self.email,
+            "email": self.email
         }
         response = requests.get(self.base_url_entrez, params=params)
         response.raise_for_status()
@@ -56,7 +52,7 @@ class PMCBestMatchAPIWrapper:
             "db": "pmc",
             "id": ",".join(pmc_ids),
             "retmode": "json",
-            "email": self.email,
+            "email": self.email
         }
         response_summary = requests.get(self.base_url_summary, params=params_summary)
         response_summary.raise_for_status()
@@ -64,14 +60,13 @@ class PMCBestMatchAPIWrapper:
 
         for pmc_id in pmc_ids:
             record = {
-                "pmcid": pmc_id,
                 "title": summaries.get(pmc_id, {}).get("title", "No title available"),
-                "links": [],
+                "link": []
             }
 
             # Add the online version link
             online_link = f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_id}/"
-            record["links"] = online_link
+            record["link"] = online_link
 
             results.append(record)
 
@@ -86,4 +81,3 @@ class PMCBestMatchAPIWrapper:
         """
         pmc_ids = self.search_best_match(query, max_results)
         return self.fetch_titles_and_links(pmc_ids)
-    

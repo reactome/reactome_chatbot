@@ -41,4 +41,6 @@ class TavilyWrapper:
         :return: A list of dictionaries with 'title' and 'url' keys.
         """
         results = response.get("results", [])
-        return [{"title": result["title"], "url": result["url"]} for result in results]
+        return [{"title": result["title"], "link": result["url"]} for result in results]
+
+    

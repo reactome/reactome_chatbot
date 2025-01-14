@@ -3,7 +3,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
 # System message for question rewriter
-question_rewriter_message = """
+pmc_question_rewriter_message = """
 You are a professional question re-writer with deep expertise in molecular biology and experience as a Reactome curator. Your task is to transform an input question into a highly targeted query optimized for retrieval from the PubMed Central (PMC) database.
 
 In crafting the query, follow these principles to ensure the most relevant search results:
@@ -26,7 +26,7 @@ Ensure the query focuses on returning high-relevance results and is fully compat
 # Define the prompt template for question rewriter
 rewrite_prompt = ChatPromptTemplate.from_messages(
     [
-        ("system", question_rewriter_message),
+        ("system", pmc_question_rewriter_message),
         (
             "human",
             "Here is the initial question: \n\n {question} \n Formulate an improved question.",
@@ -35,4 +35,4 @@ rewrite_prompt = ChatPromptTemplate.from_messages(
 )
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
 # Combine the prompt with an LLM and output parser
-question_rewriter = rewrite_prompt | llm | StrOutputParser()
+pmc_question_rewriter = rewrite_prompt | llm | StrOutputParser()
