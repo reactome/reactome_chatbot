@@ -3,12 +3,15 @@ import os
 from dotenv import load_dotenv
 
 from conversational_chain.graph import RAGGraphWithMemory
-from completeness_grader import completeness_grader
-from pmc_wrapper import PMCBestMatchAPIWrapper, TavilyWrapper
-from question_rewriter import question_rewriter
+from src.pmc.query_handlers.response_evaluator import completeness_grader
+from src.pmc.query_handlers.pmc_query_optimizer import pmc_question_rewriter
+from src.pmc.query_handlers.resource_ranker import resource_ranker
+from pmc_wrapper import PMCBestMatchAPIWrapper
+from src.pmc.tavily_wrapper import TavilyWrapper
 from retreival_chain import create_retrieval_chain
 from util.embedding_environment import EmbeddingEnvironment
 from util.logging import logging
+os.environ["TAVILY_API_KEY"] = "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"
 
 load_dotenv()
 
@@ -25,141 +28,147 @@ llm_graph: RAGGraphWithMemory = create_retrieval_chain(
 )
 
 
-def generate(state):
+
+
+def generate_response(state):
     """
-    Generate answer
+    Generates a response using the chatbot based on the current state.
 
     Args:
-        state(dict): The current graph state.
+        state (dict): The current graph state containing the user's question.
 
     Returns:
-        state (dict): New key added to state, generation that contains LLM generation.
-
+        dict: Updated state with the generated response added under the key 'generation'.
     """
-    print(" ___GENERATE___")
+    print("___GENERATE RESPONSE___")
+
     question = state["question"]
     generation = llm_graph.invoke(question)
-    state["generation"] = generation
-    return state
+
+    return {'generation':generation}
 
 
-def grade_completeness(state):
+def assess_completeness(state):
     """
-    Determine whether the LLM-generated response based on Reactome data is complete.
+    Assesses whether the chatbot's response is complete and determines the need for external searches.
 
     Args:
-        state (dict): The current state graph.
+        state (dict): The current graph state containing the question and generation.
 
     Returns:
-        state (dict): Updated state with pmc_search key indicating if PMC search is needed.
-
+        dict: Updated state with 'external_search' key indicating if further search is required.
     """
-    question = state["question"]
-    generation = state["generation"]
-
-    completeness = completeness_grader.invoke(
-        {"question": question, "generation": generation}
-    )
-    state["web_search"] = completeness.binary_score
-
-    return state
+    question = state['question']
+    generation = state['generation']
+    
+    completeness = completeness_grader.invoke({"question": question, "generation": generation})
+    external_search = completeness.binary_score
+    
+    return {'external_search':external_search}
 
 
-def transform_query(state):
+def transform_query_for_pmc(state):
     """
-    Transform the query to produce an appropriate query for searching PMC.
+    Transforms the user's question into a format suitable for searching PMC.
+
+    Args:
+        state (dict): The current graph state containing the user's question.
+
+    Returns:
+        dict: Updated state with the transformed question under the key 'pmc_question'.
+    """
+    print("___TRANSFORM QUERY FOR PMC___")
+
+    question = state['question']
+    pmc_question = pmc_question_rewriter.invoke({"question": question})
+
+    return {'pmc_question':pmc_question}
+
+
+def perform_pmc_search(state):
+    """
+    Performs a search in the PMC database using the transformed query.
+
+    Args:
+        state (dict): The current graph state containing the transformed PMC query.
+
+    Returns:
+        dict: Updated state with PMC search results under the key 'pmc_search_results'.
+    """
+    print("___PMC SEARCH___")
+        
+    pmc_question = state["pmc_question"]
+    
+    email = 'help@reactome.org'
+    wrapper = PMCBestMatchAPIWrapper(email=email)
+    query = f"{pmc_question} AND review[pt]"
+    pmc_search_results = wrapper.invoke(query, max_results=3)
+    print('perform pmc search pmc_search_results:', pmc_search_results)
+    return {'pmc_search_results':pmc_search_results}
+
+
+def perform_web_search(state):
+    """
+    Performs a web search using the original question.
+
+    Args:
+        state (dict): The current graph state containing the user's question.
+
+    Returns:
+        dict: Updated state with web search results under the key 'web_search_results'.
+    """
+    print("___WEB SEARCH___")
+    
+    question = state['question']
+    
+    wrapper = TavilyWrapper(max_results=3)
+    web_search_results = wrapper.invoke(question)
+
+    return {'web_search_results':web_search_results}
+
+
+def format_external_results(state):
+    """
+    Organizes the outputs from Web and PMC searches into a cohesive format.
+
+    Args:
+        state (dict): The current graph state containing search results and the chatbot response.
+
+    Returns:
+        dict: Updated state with the final organized output under the key 'generation'.
+    """
+    print("___ORGANIZE RESULTS___")
+    
+    question = state['question']
+    generation = state['generation']
+    web_search_results = state['web_search_results']
+    print('web_search_results:', web_search_results)
+    pmc_search_results = state['pmc_search_results']
+    print('generate result pmc_search_results:', pmc_search_results)
+
+    organized_output = resource_ranker.invoke({
+        "question": question,
+        "pmc_search_results": pmc_search_results,
+        "tavily_search_results": web_search_results
+    })
+    generation = f"{generation}\n{organized_output}"
+
+    return {'generation':generation}
+
+
+### Decision Edges
+def decide_next_steps(state):
+    """
+    Determines the next steps in the workflow based on the completeness of the chatbot's response.
 
     Args:
         state (dict): The current graph state.
 
     Returns:
-        state (dict): Updates question key with a re-phrased question.
+        list or str: The next steps to take, either as a single action or a list of actions.
     """
-    print("___TRANSFORM QUERY___")
-    question = state["question"]
-    pmc_question = question_rewriter.invoke({"question": question})
-    state["pmc_question"] = pmc_question
-    return state
-
-
-def perform_pmc_search(state):
-    """
-    Searches the PMC using the LLM-created query.
-
-    Args:
-        state (dict): The current state graph.
-
-    Returns:
-        state (dict): Updates the pmc_search_results key with appended PMC results.
-
-    """
-    pmc_question = state["pmc_question"]
-    generation = state["generation"]
-
-    print("___PMC SEARCH___")
-    email = "helia131500@gmail.com"
-    wrapper = PMCBestMatchAPIWrapper(email=email)
-    docs = wrapper.invoke(pmc_question, max_results=3)
-
-    links = [f'<a href="{item["links"]}">{item["title"]}</a>' for item in docs]
-    search_results_str = "\n - ".join(links)
-    final = f"{generation} \n\nHere are some papers from PMC that you may find helpful:\n\n  - {search_results_str}"
-
-    state["generation"] = final
-    state["pmc_search_results"] = links
-    return state
-
-def perform_web_search(state):
-    """
-    Searches the PMC using the LLM-created  query
-
-    Args: 
-        state (dict): the current state graph 
-
-    Retruns: 
-        state (dict): updates the pmc_search_results keys with appended PMC results 
-
-    """
-    question = state['question']
-    generation = state['generation']
-
-    print("___PMC SEARCH___")
-    
-    wrapper = TavilyWrapper(max_results=5, search_depth="advanced")
-    docs = wrapper.invoke(question)
-    
-    links = [f'<a href="{item["url"]}">{item["title"]}</a>' for item in docs]
-
-    search_results_str = "\n".join(links)
-    final = f"{generation} \n\nHere are some other resources that you may find helpful:\n\n {search_results_str}"
-    
-    return {"generation":final, "web_search_results": search_results_str,}
-
-
-def decide_to_search_pmc(state):
-    """
-    Determines whether the LLM-generated response completely answers user's question.
-
-    Args:
-        state (dict): The current state graph.
-
-    Returns:
-        str: The next step in the workflow.
-    """
-    pmc_search = state["pmc_search"]
-    if pmc_search == "No":
-        return "transform_query"
+    external_search = state['external_search']
+    if external_search == "Yes":
+        return ["perform_web_search", "transform_query_for_pmc"]
     else:
-        return "finish"
-
-
-def decide_to_search_web(state):
-    """
-    Determines whether the LLM-generated response completely answers user's question.
-    """
-    web_search = state['web_search']
-    
-    if web_search == "No": 
-        return "search_web"
-    else: 
         return "finish"
