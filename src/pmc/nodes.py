@@ -11,7 +11,6 @@ from src.pmc.tavily_wrapper import TavilyWrapper
 from retreival_chain import create_retrieval_chain
 from util.embedding_environment import EmbeddingEnvironment
 from util.logging import logging
-os.environ["TAVILY_API_KEY"] = "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"
 
 load_dotenv()
 
