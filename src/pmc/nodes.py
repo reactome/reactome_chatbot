@@ -27,8 +27,6 @@ llm_graph: RAGGraphWithMemory = create_retrieval_chain(
 )
 
 
-
-
 def generate_response(state):
     """
     Generates a response using the chatbot based on the current state.
@@ -136,14 +134,11 @@ def format_external_results(state):
     Returns:
         dict: Updated state with the final organized output under the key 'generation'.
     """
-    print("___ORGANIZE RESULTS___")
     
     question = state['question']
     generation = state['generation']
     web_search_results = state['web_search_results']
-    print('web_search_results:', web_search_results)
     pmc_search_results = state['pmc_search_results']
-    print('generate result pmc_search_results:', pmc_search_results)
 
     organized_output = resource_ranker.invoke({
         "question": question,
