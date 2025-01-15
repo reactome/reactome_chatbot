@@ -3,8 +3,11 @@ import os
 from typing import Annotated, Any, Sequence, TypedDict
 
 from langchain_core.callbacks.base import Callbacks
+from langchain_core.documents import Document
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from langchain_core.runnables import RunnableConfig
+from langchain_core.retrievers import BaseRetriever
+from langchain_core.runnables import Runnable, RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -13,7 +16,7 @@ from langgraph.graph.state import CompiledStateGraph, StateGraph
 from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
-from conversational_chain.chain import RAGChainWithMemory
+from conversational_chain.chain import create_rag_chain
 from util.logging import logging
 
 LANGGRAPH_DB_URI = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_LANGGRAPH_DB')}?sslmode=disable"
@@ -29,22 +32,29 @@ if not os.getenv("POSTGRES_LANGGRAPH_DB"):
 
 class ChatResponse(TypedDict):
     chat_history: Annotated[Sequence[BaseMessage], add_messages]
-    context: str
-    answer: str
+    context: list[Document]
+    answer: str  # primary LLM response that is streamed to the user
 
 
 class ChatState(ChatResponse):
     input: str
 
 
-class RAGGraphWithMemory(RAGChainWithMemory):
-    def __init__(self, **chain_kwargs) -> None:
-        super().__init__(**chain_kwargs)
+class RAGGraphWithMemory:
+    def __init__(self, retriever: BaseRetriever, llm: BaseChatModel) -> None:
+        # Set up runnables
+        self.rag_chain: Runnable = create_rag_chain(llm, retriever)
+
+        # Create graph
         state_graph: StateGraph = StateGraph(ChatState)
+        # Set up nodes
         state_graph.add_node("model", self.call_model)
         state_graph.set_entry_point("model")
         state_graph.set_finish_point("model")
+
         self.uncompiled_graph: StateGraph = state_graph
+
+        # The following are set asynchronously by calling initialize()
         self.graph: CompiledStateGraph | None = None
         self.pool: AsyncConnectionPool[AsyncConnection[dict[str, Any]]] | None = None
 
@@ -90,7 +100,7 @@ class RAGGraphWithMemory(RAGChainWithMemory):
 
     async def ainvoke(
         self, user_input: str, callbacks: Callbacks, thread_id: str
-    ) -> str:
+    ) -> ChatState:
         if self.graph is None:
             self.graph = await self.initialize()
         response: dict[str, Any] = await self.graph.ainvoke(
@@ -100,4 +110,4 @@ class RAGGraphWithMemory(RAGChainWithMemory):
                 configurable={"thread_id": thread_id},
             ),
         )
-        return response["answer"]
+        return response
