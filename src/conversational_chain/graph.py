@@ -38,6 +38,7 @@ class ChatResponse(TypedDict):
 
 class ChatState(ChatResponse):
     input: str
+    additional_text: str  # additional text to send after graph completes
 
 
 class RAGGraphWithMemory:
@@ -49,8 +50,11 @@ class RAGGraphWithMemory:
         state_graph: StateGraph = StateGraph(ChatState)
         # Set up nodes
         state_graph.add_node("model", self.call_model)
+        state_graph.add_node("postprocess", self.postprocess)
+        # Set up edges
         state_graph.set_entry_point("model")
-        state_graph.set_finish_point("model")
+        state_graph.add_edge("model", "postprocess")
+        state_graph.set_finish_point("postprocess")
 
         self.uncompiled_graph: StateGraph = state_graph
 
@@ -96,6 +100,13 @@ class RAGGraphWithMemory:
             ],
             "context": response["context"],
             "answer": response["answer"],
+        }
+
+    async def postprocess(
+        self, state: ChatResponse, config: RunnableConfig
+    ) -> dict[str, str]:
+        return {
+            "additional_text": "",
         }
 
     async def ainvoke(

@@ -8,7 +8,7 @@ from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 from chainlit.types import ThreadDict
 from dotenv import load_dotenv
 
-from conversational_chain.graph import RAGGraphWithMemory
+from conversational_chain.graph import ChatState, RAGGraphWithMemory
 from retreival_chain import create_retrieval_chain
 from util.embedding_environment import EmbeddingEnvironment
 from util.logging import logging
@@ -79,8 +79,10 @@ async def main(message: cl.Message) -> None:
         stream_final_answer=True,
         force_stream_final_answer=True,  # we're not using prefix tokens
     )
-    await llm_graph.ainvoke(
+    result: ChatState = await llm_graph.ainvoke(
         message.content,
         callbacks=[cb],
         thread_id=thread_id,
     )
+    if len(result["additional_text"]) > 0:
+        await cl.Message(content=result["additional_text"]).send()
