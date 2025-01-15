@@ -69,14 +69,18 @@ async def verify_captcha_middleware(request: Request, call_next):
 
 # Serve the CAPTCHA verification page (basic HTML form)
 @app.get(f"{CHAINLIT_URI}/verify_captcha_page")
-async def captcha_page():
+async def captcha_page(request: Request):
+
+    host = request.headers.get('X-Forwarded-Host', request.headers.get('Host'))
+    form_action = f"https://{host}{CHAINLIT_URI}/verify_captcha"
+
     html_content = f"""
     <html>
         <head>
             <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
         </head>
         <body>
-            <form id="captcha-form" action="{CHAINLIT_URI}/verify_captcha" method="post">
+            <form id="captcha-form" action="{form_action}" method="post">
                 <div class="cf-turnstile" data-sitekey="{os.getenv('CLOUDFLARE_SITE_KEY')}" data-callback="onSubmit"></div>
             </form>
             <script>
