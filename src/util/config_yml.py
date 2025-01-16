@@ -11,6 +11,7 @@ from pydantic import BaseModel, ValidationError
 from util.logging import logging
 
 CONFIG_YML = Path("config.yml")
+CONFIG_DEFAULT_YML = Path("config_default.yml")
 
 interval_units = {
     "s": "seconds",
@@ -119,8 +120,10 @@ class Config(BaseModel):
     @classmethod
     def from_yaml(cls, config_yml: Path = CONFIG_YML) -> Self | None:
         if not config_yml.exists():
-            logging.warning(f"Config file not found: {config_yml}")
-            return None
+            logging.warning(
+                f"Config file not found: {config_yml} ; falling back to {CONFIG_DEFAULT_YML}"
+            )
+            config_yml = CONFIG_DEFAULT_YML
         with open(config_yml) as f:
             yaml_data: dict = yaml.safe_load(f)
         try:

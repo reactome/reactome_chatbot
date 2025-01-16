@@ -164,3 +164,4 @@ cython_debug/
 csv_files/
 embeddings/
 records/
+config.yml
