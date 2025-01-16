@@ -11,7 +11,7 @@ from system_prompt.reactome_prompt import contextualize_q_prompt, qa_prompt
 
 def create_rag_chain(llm: BaseChatModel, retriever: BaseRetriever) -> Runnable:
     # Create the history-aware retriever
-    history_aware_retriever: BaseRetriever = create_history_aware_retriever(
+    history_aware_retriever: Runnable = create_history_aware_retriever(
         llm=llm,
         retriever=retriever,
         prompt=contextualize_q_prompt,

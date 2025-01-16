@@ -58,7 +58,7 @@ def main(records_dir: Path):
     with psycopg.connect(CHAINLIT_DB_URI) as conn:
         with conn.cursor() as cur:
             cur.execute(query)
-            header = [col.name for col in cur.description]
+            header = [col.name for col in cur.description] if cur.description else None
             records = cur.fetchall()
 
     if len(records) == 0:
@@ -71,7 +71,8 @@ def main(records_dir: Path):
 
     with open(record_file, mode="w", newline="") as file:
         writer = csv.writer(file, lineterminator="\n")
-        writer.writerow(header)
+        if header:
+            writer.writerow(header)
         writer.writerows(records)
 
     print("Wrote", record_file)

@@ -24,6 +24,8 @@ interval_units = {
 
 def parse_interval(interval_str: str) -> timedelta:
     re_match = re.fullmatch(r"([0-9]+)([smhdw])", interval_str)
+    if not re_match:
+        return timedelta(0)
     value = int(re_match.group(1))
     unit = interval_units[re_match.group(2)]
     return timedelta(**{unit: value})
@@ -103,7 +105,7 @@ class Config(BaseModel):
         user_id: str | None = None,
         event: TriggerEvent | None = None,
         after_messages: int | None = None,
-        last_messages: dict[str, datetime] | None = None,
+        last_messages: dict[str, datetime] = {},
     ) -> dict[str, str]:
         return {
             message_id: message.message

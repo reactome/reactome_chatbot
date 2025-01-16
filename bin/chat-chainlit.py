@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import os
+from typing import Any
 
 import chainlit as cl
 import chainlit.data as cl_data
@@ -8,7 +9,7 @@ from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 from chainlit.types import ThreadDict
 from dotenv import load_dotenv
 
-from conversational_chain.graph import ChatState, RAGGraphWithMemory
+from conversational_chain.graph import RAGGraphWithMemory
 from retreival_chain import create_retrieval_chain
 from util.chainlit_helpers import static_messages
 from util.config_yml import Config, TriggerEvent
@@ -86,7 +87,7 @@ async def main(message: cl.Message) -> None:
         stream_final_answer=True,
         force_stream_final_answer=True,  # we're not using prefix tokens
     )
-    result: ChatState = await llm_graph.ainvoke(
+    result: dict[str, Any] = await llm_graph.ainvoke(
         message.content,
         callbacks=[cb],
         thread_id=thread_id,

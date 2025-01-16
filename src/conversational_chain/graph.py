@@ -112,7 +112,7 @@ class RAGGraphWithMemory:
 
     async def ainvoke(
         self, user_input: str, callbacks: Callbacks, thread_id: str
-    ) -> ChatState:
+    ) -> dict[str, Any]:
         if self.graph is None:
             self.graph = await self.initialize()
         response: dict[str, Any] = await self.graph.ainvoke(
