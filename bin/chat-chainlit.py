@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import os
+from typing import Any
 
 import chainlit as cl
 import chainlit.data as cl_data
@@ -8,12 +9,15 @@ from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 from chainlit.types import ThreadDict
 from dotenv import load_dotenv
 
-from src.conversational_chain.graph import RAGGraphWithMemory
-from src.retreival_chain import create_retrieval_chain
-from src.util.embedding_environment import EmbeddingEnvironment
-from src.util.logging import logging
+from conversational_chain.graph import RAGGraphWithMemory
+from retreival_chain import create_retrieval_chain
+from util.chainlit_helpers import static_messages
+from util.config_yml import Config, TriggerEvent
+from util.embedding_environment import EmbeddingEnvironment
+from util.logging import logging
 
 load_dotenv()
+config: Config | None = Config.from_yaml()
 
 ENV = os.getenv("CHAT_ENV", "reactome")
 logging.info(f"Selected environment: {ENV}")
@@ -58,29 +62,36 @@ async def chat_profile() -> list[cl.ChatProfile]:
 async def start() -> None:
     thread_id: str = cl.user_session.get("id")
     cl.user_session.set("thread_id", thread_id)
-
-    chat_profile: str = cl.user_session.get("chat_profile")
-    initial_message = (
-        f"Welcome to {chat_profile}, your interactive chatbot for exploring Reactome!"
-        " Ask me about biological pathways and processes."
-    )
-    await cl.Message(content=initial_message).send()
+    await static_messages(config, TriggerEvent.on_chat_start)
 
 
 @cl.on_chat_resume
 async def resume(thread: ThreadDict) -> None:
-    pass  # ChainLit/LangGraph Postgres integrations handle everything
+    await static_messages(config, TriggerEvent.on_chat_resume)
+
+
+@cl.on_chat_end
+async def end() -> None:
+    await static_messages(config, TriggerEvent.on_chat_end)
 
 
 @cl.on_message
 async def main(message: cl.Message) -> None:
+    await static_messages(config, TriggerEvent.on_message)
+
+    message_count: int = cl.user_session.get("message_count", 0) + 1
+    cl.user_session.set("message_count", message_count)
+
     thread_id: str = cl.user_session.get("thread_id")
     cb = cl.AsyncLangchainCallbackHandler(
         stream_final_answer=True,
         force_stream_final_answer=True,  # we're not using prefix tokens
     )
-    await llm_graph.ainvoke(
+    result: dict[str, Any] = await llm_graph.ainvoke(
         message.content,
         callbacks=[cb],
         thread_id=thread_id,
     )
+    if len(result["additional_text"]) > 0:
+        await cl.Message(content=result["additional_text"]).send()
+    await static_messages(config, after_messages=message_count)

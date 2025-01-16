@@ -18,7 +18,6 @@ from langchain_ollama.chat_models import ChatOllama
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from conversational_chain.graph import RAGGraphWithMemory
-from conversational_chain.memory import ChatHistoryMemory
 from reactome.metadata_info import descriptions_info, field_info
 
 
@@ -59,8 +58,6 @@ def create_retrieval_chain(
     hf_model: Optional[str] = None,
     device: str = "cpu",
 ) -> RAGGraphWithMemory:
-    memory = ChatHistoryMemory()
-
     callbacks: list[BaseCallbackHandler] = []
     if commandline:
         callbacks = [StreamingStdOutCallbackHandler()]
@@ -119,7 +116,6 @@ def create_retrieval_chain(
     reactome_retriever = MergerRetriever(retrievers=retriever_list)
 
     qa = RAGGraphWithMemory(
-        memory=memory,
         retriever=reactome_retriever,
         llm=llm,
     )

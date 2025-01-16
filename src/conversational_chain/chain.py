@@ -4,97 +4,29 @@ from langchain.chains.history_aware_retriever import \
 from langchain.chains.retrieval import create_retrieval_chain
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.retrievers import BaseRetriever
+from langchain_core.runnables import Runnable
 
 from src.system_prompt.reactome_prompt import contextualize_q_prompt, qa_prompt
 
 
-class RAGChainWithMemory:
-    def __init__(self, memory, retriever: BaseRetriever, llm: BaseChatModel):
-        """
-        Initializes the Retrieval-Augmented Generation (RAG) chain with memory.
-        """
-        self.memory = memory
-        self.llm = llm
+def create_rag_chain(llm: BaseChatModel, retriever: BaseRetriever) -> Runnable:
+    # Create the history-aware retriever
+    history_aware_retriever: Runnable = create_history_aware_retriever(
+        llm=llm,
+        retriever=retriever,
+        prompt=contextualize_q_prompt,
+    )
 
-        # Create the history-aware retriever
-        self.history_aware_retriever = create_history_aware_retriever(
-            llm=self.llm,
-            retriever=retriever,
-            prompt=contextualize_q_prompt,
-        )
+    # Create the documents chain
+    question_answer_chain: Runnable = create_stuff_documents_chain(
+        llm=llm.model_copy(update={"streaming": True}),
+        prompt=qa_prompt,
+    )
 
-        # Create the documents chain
-        self.question_answer_chain = create_stuff_documents_chain(
-            llm=self.llm.model_copy(update={"streaming": True}),
-            prompt=qa_prompt,
-        )
+    # Create the retrieval chain
+    rag_chain: Runnable = create_retrieval_chain(
+        retriever=history_aware_retriever,
+        combine_docs_chain=question_answer_chain,
+    )
 
-        # Create the retrieval chain
-        self.rag_chain = create_retrieval_chain(
-            retriever=self.history_aware_retriever,
-            combine_docs_chain=self.question_answer_chain,
-        )
-
-    def invoke(self, user_input):
-        """
-        Runs the chain synchronously.
-        """
-        # Invoke the chain and get the parsed output
-        response = self.rag_chain.invoke(
-            {
-                "input": user_input,
-                "chat_history": self.memory.get_history(),
-            }
-        )
-
-        answer = response["answer"]
-
-        # Update memory with user input and LLM response
-        self.memory.add_human_message(user_input)
-        self.memory.add_ai_message(answer)
-
-        return answer
-
-    async def ainvoke(self, user_input, callbacks=None):
-        """
-        Runs the chain asynchronously.
-        """
-        # Invoke the chain asynchronously
-        response = await self.rag_chain.ainvoke(
-            {
-                "input": user_input,
-                "chat_history": self.memory.get_history(),
-            },
-            callbacks=callbacks,
-        )
-
-        answer = response["answer"]
-
-        # Update memory with user input and LLM response
-        self.memory.add_human_message(user_input)
-        self.memory.add_ai_message(answer)
-
-        return answer
-
-    def get_context(self, user_input):
-        """
-        Retrieves the documents passed from the retriever to the LLM.
-        """
-        # Use the history-aware retriever to fetch relevant documents
-        response = self.rag_chain.invoke(
-            {
-                "input": user_input,
-                "chat_history": self.memory.get_history(),
-            }
-        )
-
-        answer = response["answer"]
-        context = response["context"]
-
-        final = {"answer": answer, "context": context}
-
-        # Update memory with user input and LLM response
-        self.memory.add_human_message(user_input)
-        self.memory.add_ai_message(answer)
-
-        return final
+    return rag_chain
