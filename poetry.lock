@@ -464,13 +464,13 @@ files = [
 
 [[package]]
 name = "chainlit"
-version = "1.3.2"
+version = "2.0.3"
 description = "Build Conversational AI."
 optional = false
 python-versions = "<4.0.0,>=3.9"
 files = [
-    {file = "chainlit-1.3.2-py3-none-any.whl", hash = "sha256:c0926e8b157a67aede511a8220307889d04e9458ff3f94176e004fe533662d74"},
-    {file = "chainlit-1.3.2.tar.gz", hash = "sha256:5562246ca42c858a42e86efdd5a46c27fd93481706f6fe47416109c47ac41b77"},
+    {file = "chainlit-2.0.3-py3-none-any.whl", hash = "sha256:d177b5e2e9cf55cb93a864e932cd30e6277aabdb11eb957a5f8f7111bc5275e8"},
+    {file = "chainlit-2.0.3.tar.gz", hash = "sha256:a312879420f470eeeffff27823c70a20cace1d32ff5bb4f103b537870fa8b0a0"},
 ]
 
 [package.dependencies]
@@ -482,14 +482,13 @@ fastapi = ">=0.115.3,<0.116"
 filetype = ">=1.2.0,<2.0.0"
 httpx = ">=0.23.0"
 lazify = ">=0.4.0,<0.5.0"
-literalai = "0.0.623"
+literalai = "0.1.103"
 nest-asyncio = ">=1.6.0,<2.0.0"
-numpy = ">=1.26,<2.0"
 packaging = ">=23.1,<24.0"
 pydantic = ">=1,<3"
 pyjwt = ">=2.8.0,<3.0.0"
 python-dotenv = ">=1.0.0,<2.0.0"
-python-multipart = ">=0.0.9,<0.0.10"
+python-multipart = ">=0.0.18,<0.0.19"
 python-socketio = ">=5.11.0,<6.0.0"
 starlette = ">=0.41.2,<0.42.0"
 syncer = ">=2.0.3,<3.0.0"
@@ -1772,18 +1771,18 @@ langchain-core = ">=0.3.29,<0.4.0"
 
 [[package]]
 name = "langgraph"
-version = "0.2.62"
+version = "0.2.63"
 description = "Building stateful, multi-actor applications with LLMs"
 optional = false
 python-versions = "<4.0,>=3.9.0"
 files = [
-    {file = "langgraph-0.2.62-py3-none-any.whl", hash = "sha256:51ae9e02a52485a837642eebe7ae43269af7d7305d62f8f69ac11589b2fbba26"},
-    {file = "langgraph-0.2.62.tar.gz", hash = "sha256:0aac9fd55ffe669bc1312203e0f9ea2733c65cc276f196e7ff0d443cf4efbb89"},
+    {file = "langgraph-0.2.63-py3-none-any.whl", hash = "sha256:7867108e045c0ee52cb705749edd478b08588dce74fbd4466b4197a04c4e718b"},
+    {file = "langgraph-0.2.63.tar.gz", hash = "sha256:4bcdd6023b02d16c840b5ee612bfbafd1b9e0beef91622aa1827593374ee6e8e"},
 ]
 
 [package.dependencies]
 langchain-core = ">=0.2.43,<0.3.0 || >0.3.0,<0.3.1 || >0.3.1,<0.3.2 || >0.3.2,<0.3.3 || >0.3.3,<0.3.4 || >0.3.4,<0.3.5 || >0.3.5,<0.3.6 || >0.3.6,<0.3.7 || >0.3.7,<0.3.8 || >0.3.8,<0.3.9 || >0.3.9,<0.3.10 || >0.3.10,<0.3.11 || >0.3.11,<0.3.12 || >0.3.12,<0.3.13 || >0.3.13,<0.3.14 || >0.3.14,<0.3.15 || >0.3.15,<0.3.16 || >0.3.16,<0.3.17 || >0.3.17,<0.3.18 || >0.3.18,<0.3.19 || >0.3.19,<0.3.20 || >0.3.20,<0.3.21 || >0.3.21,<0.3.22 || >0.3.22,<0.4.0"
-langgraph-checkpoint = ">=2.0.4,<3.0.0"
+langgraph-checkpoint = ">=2.0.10,<3.0.0"
 langgraph-sdk = ">=0.1.42,<0.2.0"
 
 [[package]]
@@ -1803,13 +1802,13 @@ msgpack = ">=1.1.0,<2.0.0"
 
 [[package]]
 name = "langgraph-checkpoint-postgres"
-version = "2.0.12"
+version = "2.0.13"
 description = "Library with a Postgres implementation of LangGraph checkpoint saver."
 optional = false
 python-versions = "<4.0.0,>=3.9.0"
 files = [
-    {file = "langgraph_checkpoint_postgres-2.0.12-py3-none-any.whl", hash = "sha256:2f85db16b15daa2d07c1bb9b345830d56bdc1a5e0f47c1a92f6dfd76d1e21721"},
-    {file = "langgraph_checkpoint_postgres-2.0.12.tar.gz", hash = "sha256:6bd718a4cdd29e47516b993c137f71ac416a302234f1dee5a88869413e5e5a98"},
+    {file = "langgraph_checkpoint_postgres-2.0.13-py3-none-any.whl", hash = "sha256:98fe99c07404541d87f50c277a0120f9c4d964b665e5f42aecd911e0f365ae59"},
+    {file = "langgraph_checkpoint_postgres-2.0.13.tar.gz", hash = "sha256:cadab495a0b3d13534178ab3bd711f12dbfeccb9e5d0fb24905ea809a700b137"},
 ]
 
 [package.dependencies]
@@ -1888,12 +1887,12 @@ files = [
 
 [[package]]
 name = "literalai"
-version = "0.0.623"
+version = "0.1.103"
 description = "An SDK for observability in Python applications"
 optional = false
 python-versions = "*"
 files = [
-    {file = "literalai-0.0.623.tar.gz", hash = "sha256:d65c04dde6b1e99d585e4112a607e5fd574d282b70f600c55a671018340dfb0f"},
+    {file = "literalai-0.1.103.tar.gz", hash = "sha256:060e86e63c0f53041a737b2183354ac092ee8cd9faec817dc95df639bb263a7d"},
 ]
 
 [package.dependencies]
@@ -3836,17 +3835,14 @@ docs = ["sphinx"]
 
 [[package]]
 name = "python-multipart"
-version = "0.0.9"
+version = "0.0.18"
 description = "A streaming multipart parser for Python"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "python_multipart-0.0.9-py3-none-any.whl", hash = "sha256:97ca7b8ea7b05f977dc3849c3ba99d51689822fab725c3703af7c866a0c2b215"},
-    {file = "python_multipart-0.0.9.tar.gz", hash = "sha256:03f54688c663f1b7977105f021043b0793151e4cb1c1a9d4a11fc13d622c4026"},
+    {file = "python_multipart-0.0.18-py3-none-any.whl", hash = "sha256:efe91480f485f6a361427a541db4796f9e1591afc0fb8e7a4ba06bfbc6708996"},
+    {file = "python_multipart-0.0.18.tar.gz", hash = "sha256:7a68db60c8bfb82e460637fa4750727b45af1d5e2ed215593f917f64694d34fe"},
 ]
-
-[package.extras]
-dev = ["atomicwrites (==1.4.1)", "attrs (==23.2.0)", "coverage (==7.4.1)", "hatch", "invoke (==2.2.0)", "more-itertools (==10.2.0)", "pbr (==6.0.0)", "pluggy (==1.4.0)", "py (==1.11.0)", "pytest (==8.0.0)", "pytest-cov (==4.1.0)", "pytest-timeout (==2.2.0)", "pyyaml (==6.0.1)", "ruff (==0.2.1)"]
 
 [[package]]
 name = "python-socketio"
@@ -5518,4 +5514,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.12, <4"
-content-hash = "a573340ef72feed9379108779bf00c8ced62e584d401970578cc49e64355d2a8"
+content-hash = "bdf103c372372d702d379d189fde56a6c38b1fa373f5237312177023fa4929a0"
