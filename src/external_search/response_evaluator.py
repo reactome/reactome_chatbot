@@ -1,17 +1,9 @@
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
+from langchain_core.runnables import Runnable
 
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
-
-class GradeCompleteness(BaseModel):
-    """Binary score for completeness of response"""
-
-    binary_score: str = Field(
-        description="Answer is complete and provides all necessary background, 'Yes' or 'No'"
-    )
-
-structured_completeness_grader = llm.with_structured_output(GradeCompleteness)
+from external_search.state import GraphState
 
 completeness_grader_message = """
 You are an expert grader with extensive knowledge in molecular biology and experience as a Reactome curator.
@@ -29,10 +21,20 @@ Ensure your evaluation is based solely on the information requested in the query
 """
 
 completeness_prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", completeness_grader_message),
-        ("human",  "User question: \n\n {question} \n\n LLM generation: {generation}"),
-    ]
-)
+        [
+            ("system", completeness_grader_message),
+            ("human",  "User question: \n\n {question} \n\n LLM generation: {generation}"),
+        ]
+    )
 
-completeness_grader = completeness_prompt | structured_completeness_grader
+class GradeCompleteness(BaseModel):
+    """Binary score for completeness of response"""
+
+    binary_score: str = Field(
+        description="Answer is complete and provides all necessary background, 'Yes' or 'No'"
+    )
+
+class CompletenessGrader:
+    def __init__(self, llm: BaseChatModel):
+        structured_completeness_grader: Runnable = llm.with_structured_output(GradeCompleteness)
+        self.call: Runnable = completeness_prompt | structured_completeness_grader

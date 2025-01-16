@@ -13,9 +13,8 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from ragas import evaluate
 from ragas.metrics import answer_relevancy, context_utilization, faithfulness
 
-from src.conversational_chain.chain import RAGChainWithMemory
-from src.conversational_chain.memory import ChatHistoryMemory
-from src.reactome.metadata_info import descriptions_info, field_info
+from conversational_chain.chain import create_rag_chain
+from reactome.metadata_info import descriptions_info, field_info
 
 
 def parse_arguments():
@@ -51,11 +50,8 @@ def load_dataset(testset_path):
         raise ValueError(f"Error reading the Excel file: {e}")
 
 
-memory = ChatHistoryMemory()
-
-
-def initialize_rag_chain_with_memory(embeddings_directory, model_name):
-    """Initialize the RAGChainWithMemory system."""
+def initialize_rag_chain(embeddings_directory, model_name):
+    """Initialize the RAG chain system."""
     llm = ChatOpenAI(temperature=0.0, verbose=True, model=model_name)
     retriever_list = []
 
@@ -87,8 +83,7 @@ def initialize_rag_chain_with_memory(embeddings_directory, model_name):
 
     reactome_retriever = MergerRetriever(retrievers=retriever_list)
 
-    qa = RAGChainWithMemory(
-        memory=memory,
+    qa = create_rag_chain(
         retriever=reactome_retriever,
         llm=llm,
     )
@@ -109,7 +104,6 @@ def process_testset(
     contexts = []
 
     for question in questions:
-        memory.clear_history()
         response = qa_system.get_context(question)
         answers.append(response["answer"])
         contexts.append([context.page_content for context in response["context"]])
@@ -155,9 +149,9 @@ def main():
     os.makedirs(response_dir, exist_ok=True)
     os.makedirs(eval_dir, exist_ok=True)
 
-    # Initialize RAGChainWithMemory
+    # Initialize RAG Chain
     embeddings_directory = "/Users/hmohammadi/Desktop/react_to_me_github/reactome_chatbot/embeddings/openai/text-embedding-3-large/reactome/Release90/summations"
-    qa_system = initialize_rag_chain_with_memory(embeddings_directory, model_name)
+    qa_system = initialize_rag_chain(embeddings_directory, model_name)
 
     # Iterate over all .xlsx files in the directory
     for filename in os.listdir(args.testset_dir):
