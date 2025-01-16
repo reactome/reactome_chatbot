@@ -23,7 +23,7 @@ ERROR_PAGE_TEMPLATE = Template(
 <html>
     <body>
         <h1>$error_title</h1>
-        <p>If you believe this to be in error, please contact the maintainers to report an issue.</p>
+        <p>If you believe this to be in error, please contact the maintainers to report an issue: help@reactome.org</p>
         <form action="{CHAINLIT_URI}" method="get">
             <button type="submit">Try again</button>
         </form>
