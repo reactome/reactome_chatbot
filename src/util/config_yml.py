@@ -118,6 +118,9 @@ class Config(BaseModel):
 
     @classmethod
     def from_yaml(cls, config_yml: Path = CONFIG_YML) -> Self | None:
+        if not config_yml.exists():
+            logging.warning(f"Config file not found: {config_yml}")
+            return None
         with open(config_yml) as f:
             yaml_data: dict = yaml.safe_load(f)
         try:

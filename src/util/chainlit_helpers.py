@@ -17,10 +17,12 @@ async def send_messages(messages: Iterable[str]):
 
 
 async def static_messages(
-    config: Config,
+    config: Config | None,
     event: TriggerEvent | None = None,
     after_messages: int | None = None,
 ) -> None:
+    if not config:
+        return
     user_id: str | None = get_user_id()
     last_static_messages: dict[str, datetime] = cl.user_session.get(
         "last_static_messages", {}

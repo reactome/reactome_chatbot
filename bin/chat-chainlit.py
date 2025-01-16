@@ -16,7 +16,7 @@ from util.embedding_environment import EmbeddingEnvironment
 from util.logging import logging
 
 load_dotenv()
-config = Config.from_yaml()
+config: Config | None = Config.from_yaml()
 
 ENV = os.getenv("CHAT_ENV", "reactome")
 logging.info(f"Selected environment: {ENV}")
