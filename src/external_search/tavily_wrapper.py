@@ -1,46 +1,72 @@
-from tavily import TavilyClient
+from typing import Any, Iterable, Literal, TypedDict
+
+from tavily import AsyncTavilyClient, MissingAPIKeyError
+
+from external_search.state import GraphState
+from util.logging import logging
+
+class WebSearchResult(TypedDict):
+    title: str
+    url: str
+    content: str
 
 class TavilyWrapper:
-    """
-    A wrapper for the Tavily API to perform searches and extract relevant results.
-    """
-    def __init__(self, api_key=None, search_depth="advanced", max_results=5):
-        """
-        Initialize the TavilyWrapper with optional API configuration.
-
-        :param api_key: Optional API key for Tavily. If None, it will use the default environment variable.
-        :param search_depth: The depth of the search, default is "advanced".
-        :param max_results: Maximum number of results to fetch, default is 5.
-        """
-        self.tavily_client = TavilyClient(api_key=api_key)
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        search_depth: Literal["basic", "advanced"] = "advanced",
+        max_results: int = 5,
+    ):
+        self.tavily_client: AsyncTavilyClient | None = None
         self.search_depth = search_depth
         self.max_results = max_results
 
-    def invoke(self, query):
-        """
-        Perform a search using the Tavily API.
-
-        :param query: The query string to search for.
-        :return: A list of dictionaries containing titles and URLs of the results.
-        """
         try:
-            response = self.tavily_client.search(
-                query, 
-                search_depth=self.search_depth, 
-                max_results=self.max_results
+            self.tavily_client = AsyncTavilyClient(api_key)
+        except MissingAPIKeyError:
+            logging.warning(
+                "No Tavily API key was provided (TAVILY_API_KEY) - "
+                "external search feature is disabled."
             )
-            return self._extract_results(response)
+
+    async def search(self, query: str) -> list[WebSearchResult]:
+        if self.tavily_client is None:
+            return []
+
+        try:
+            response: dict[str, Any] = await self.tavily_client.search(
+                query=query,
+                search_depth=self.search_depth,
+                max_results=self.max_results,
+            )
         except Exception as e:
-            raise RuntimeError(f"Error during Tavily search: {e}")
+            logging.warning("Tavily Search raised an Exception:", exc_info=True)
+            return []
 
-    def _extract_results(self, response):
-        """
-        Extract titles and URLs from the API response.
+        results: list[dict[str, Any]] = response.get("results", [])
+        return [
+            WebSearchResult(
+                title=result["title"],
+                url=result["url"],
+                content=result.get("content", ""),
+            )
+            for result in results
+            if all(key in result for key in ["title", "url"])
+        ]
 
-        :param response: The raw response from the Tavily API.
-        :return: A list of dictionaries with 'title' and 'url' keys.
-        """
-        results = response.get("results", [])
-        return [{"title": result["title"], "link": result["url"]} for result in results]
+    async def ainvoke(
+        self,
+        state: GraphState
+    ) -> dict[str, str]:
+        query: str = state["question"]
+        web_search_results: list[WebSearchResult] = await self.search(query)
+        formatted_results: str = self.format_results(web_search_results)
+        return { "search_results": formatted_results }
 
-    
+    @staticmethod
+    def format_results(web_search_results: Iterable[WebSearchResult]) -> str:
+        formatted = f"Here are some external resources you may find helpful:"
+        for result in web_search_results:
+            formatted += f"\n- [{result['title']}]({result['content']})"
+        return formatted
