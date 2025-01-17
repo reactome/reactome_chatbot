@@ -11,6 +11,16 @@ def get_user_id() -> str | None:
     return user.identifier if user else None
 
 
+def is_feature_enabled(
+    config: Config | None,
+    feature_id: str
+) -> bool:
+    if not config:
+        return True
+    user_id: str | None = get_user_id()
+    return config.get_feature(feature_id, user_id)
+
+
 async def send_messages(messages: Iterable[str]):
     for message in messages:
         await cl.Message(content=message).send()

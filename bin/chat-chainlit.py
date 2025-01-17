@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 from conversational_chain.graph import RAGGraphWithMemory
 from retreival_chain import create_retrieval_chain
-from util.chainlit_helpers import static_messages
+from util.chainlit_helpers import is_feature_enabled, static_messages
 from util.config_yml import Config, TriggerEvent
 from util.embedding_environment import EmbeddingEnvironment
 from util.logging import logging
@@ -91,6 +91,7 @@ async def main(message: cl.Message) -> None:
         message.content,
         callbacks=[cb],
         thread_id=thread_id,
+        enable_postprocess=is_feature_enabled(config, "postprocessing"),
     )
     if len(result["additional_text"]) > 0:
         await cl.Message(content=result["additional_text"]).send()

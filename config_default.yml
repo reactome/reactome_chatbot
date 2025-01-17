@@ -1,5 +1,10 @@
 # yaml-language-server: $schema=./.config.schema.yaml
 
+features:
+  postprocessing:  # external web search feature
+    enabled: true
+    user_group: all
+
 messages:
 
   welcome:
