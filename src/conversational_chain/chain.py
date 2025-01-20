@@ -6,7 +6,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.runnables import Runnable
 
-from src.system_prompt.reactome_prompt import contextualize_q_prompt, qa_prompt
+from system_prompt.reactome_prompt import contextualize_q_prompt, qa_prompt
 
 
 def create_rag_chain(llm: BaseChatModel, retriever: BaseRetriever) -> Runnable:
