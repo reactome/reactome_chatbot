@@ -7,6 +7,7 @@ class UserGroup(StrEnum):
     all = auto()
     logged_in = auto()
 
+
 class Feature(BaseModel):
     enabled: bool
     user_group: UserGroup | None = None
@@ -16,6 +17,7 @@ class Feature(BaseModel):
             return user_id is not None
         else:
             return True
+
 
 class Features(BaseModel):
     postprocessing: Feature

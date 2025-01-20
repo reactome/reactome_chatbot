@@ -1,7 +1,7 @@
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
+from pydantic import BaseModel, Field
 
 completeness_grader_message = """
 You are an expert grader with extensive knowledge in molecular biology and experience as a Reactome curator.
@@ -18,17 +18,23 @@ No: Either the response is complete (fully answers the query, provides enough ba
 Ensure your evaluation is based solely on the information requested in the query, the adequacy of the response, and the appropriateness of the question.
 """
 
-completeness_prompt = ChatPromptTemplate.from_messages([
-    ("system", completeness_grader_message),
-    ("human",  "User question: \n\n {question} \n\n LLM generation: {generation}"),
-])
+completeness_prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", completeness_grader_message),
+        ("human", "User question: \n\n {question} \n\n LLM generation: {generation}"),
+    ]
+)
+
 
 class GradeCompleteness(BaseModel):
-    binary_score: str = Field(
+    external_search: str = Field(
         description="Answer is complete and provides all necessary background, 'Yes' or 'No'"
     )
 
+
 class CompletenessGrader:
     def __init__(self, llm: BaseChatModel):
-        structured_completeness_grader: Runnable = llm.with_structured_output(GradeCompleteness)
+        structured_completeness_grader: Runnable = llm.with_structured_output(
+            GradeCompleteness
+        )
         self.runnable: Runnable = completeness_prompt | structured_completeness_grader

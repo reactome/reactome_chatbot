@@ -7,7 +7,6 @@ from pydantic import BaseModel
 
 from util.logging import logging
 
-
 interval_units = {
     "s": "seconds",
     "m": "minutes",
