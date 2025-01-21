@@ -43,7 +43,7 @@ class Trigger(BaseModel):
         self,
         event: TriggerEvent | None = None,
         after_messages: int | None = None,
-        last_message: datetime | None = None,
+        last_message: str | None = None,
     ):
         now = datetime.now()
         if self.event and self.event != event:
@@ -57,7 +57,10 @@ class Trigger(BaseModel):
         if (
             self.freq_max
             and last_message
-            and parse_interval(self.freq_max) > now - last_message
+            and (
+                parse_interval(self.freq_max)
+                > now - datetime.fromisoformat(last_message)
+            )
         ):
             return False
         return True

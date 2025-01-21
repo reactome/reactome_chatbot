@@ -1,4 +1,3 @@
-from datetime import datetime
 from pathlib import Path
 from typing import Self
 
@@ -33,7 +32,7 @@ class Config(BaseModel):
         user_id: str | None = None,
         event: TriggerEvent | None = None,
         after_messages: int | None = None,
-        last_messages: dict[str, datetime] = {},
+        last_messages: dict[str, str] = {},
     ) -> dict[str, str]:
         return {
             message_id: message.message

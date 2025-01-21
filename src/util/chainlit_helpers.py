@@ -31,13 +31,13 @@ async def static_messages(
     if not config:
         return
     user_id: str | None = get_user_id()
-    last_static_messages: dict[str, datetime] = cl.user_session.get(
+    last_static_messages: dict[str, str] = cl.user_session.get(
         "last_static_messages", {}
     )
     messages: dict[str, str] = config.get_messages(
         user_id, event, after_messages, last_static_messages
     )
-    now: datetime = datetime.now()
+    now: str = datetime.now().isoformat()
     for message_id in messages:
         last_static_messages[message_id] = now
     cl.user_session.set("last_static_messages", last_static_messages)
