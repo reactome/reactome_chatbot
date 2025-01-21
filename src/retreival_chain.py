@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from typing import Callable, Optional
 
+import chromadb.config
 from langchain.callbacks.base import BaseCallbackHandler
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.retrievers import EnsembleRetriever
@@ -19,6 +20,8 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from conversational_chain.graph import RAGGraphWithMemory
 from reactome.metadata_info import descriptions_info, field_info
+
+chroma_settings = chromadb.config.Settings(anonymized_telemetry=False)
 
 
 def list_chroma_subdirectories(directory: Path) -> list[str]:
@@ -99,6 +102,7 @@ def create_retrieval_chain(
         vectordb = Chroma(
             persist_directory=str(embeddings_directory / subdirectory),
             embedding_function=embedding,
+            client_settings=chroma_settings,
         )
 
         selfq_retriever = SelfQueryRetriever.from_llm(

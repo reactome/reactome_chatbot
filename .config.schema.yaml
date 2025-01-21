@@ -1,6 +1,19 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
 type: object
 properties:
+  features:
+    type: object
+    properties:
+      postprocessing:
+        type: object
+        properties:
+          enabled:
+            type: boolean
+          user_group:
+            type: string
+            enum: ["all", "logged_in"]
+        required: ["enabled"]
+    required: ["postprocessing"]
   messages:
     type: object
     additionalProperties:
@@ -38,4 +51,4 @@ properties:
             - required: ["event"]
             - required: ["after_messages"]
       required: ["message", "trigger"]
-required: ["messages"]
+required: ["features", "messages"]

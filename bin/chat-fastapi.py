@@ -71,7 +71,7 @@ async def verify_captcha_middleware(request: Request, call_next):
         response = await call_next(request)
         return response
 
-    host = request.headers.get('referer')
+    host = request.headers.get("referer")
     if host and host.startswith("http:"):
         url = request.url.replace(scheme="https")
         return RedirectResponse(url=str(url))

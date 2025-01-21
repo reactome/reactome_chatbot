@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 from conversational_chain.graph import RAGGraphWithMemory
 from retreival_chain import create_retrieval_chain
-from util.chainlit_helpers import static_messages
+from util.chainlit_helpers import is_feature_enabled, static_messages
 from util.config_yml import Config, TriggerEvent
 from util.embedding_environment import EmbeddingEnvironment
 from util.logging import logging
@@ -87,11 +87,23 @@ async def main(message: cl.Message) -> None:
         stream_final_answer=True,
         force_stream_final_answer=True,  # we're not using prefix tokens
     )
+    enable_postprocess: bool = is_feature_enabled(config, "postprocessing")
     result: dict[str, Any] = await llm_graph.ainvoke(
         message.content,
         callbacks=[cb],
         thread_id=thread_id,
+        enable_postprocess=enable_postprocess,
     )
-    if len(result["additional_text"]) > 0:
-        await cl.Message(content=result["additional_text"]).send()
+    if (
+        enable_postprocess
+        and cb.final_stream
+        and len(result["additional_content"]["search_results"]) > 0
+    ):
+        sent_message: cl.Message = cb.final_stream
+        search_results_element = cl.CustomElement(
+            name="SearchResults",
+            props={"results": result["additional_content"]["search_results"]},
+        )
+        sent_message.elements = [search_results_element]  # type: ignore
+        await sent_message.update()
     await static_messages(config, after_messages=message_count)

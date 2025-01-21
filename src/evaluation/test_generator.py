@@ -1,7 +1,7 @@
 import argparse
-import json
 import os
 
+import pandas as pd
 from dotenv import load_dotenv
 from langchain_community.document_loaders import DirectoryLoader
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
@@ -49,10 +49,20 @@ def parse_arguments():
 def save_testset(testset, filename):
     output_dir = "testsets"
     os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, f"{filename}_testset.json")
-    with open(output_path, "w") as f:
-        json.dump(testset, f, indent=4)
-    print(f"Testset saved to {output_path}")
+    output_path = os.path.join(output_dir, f"{filename}_testset.xlsx")
+
+    # Convert testset to DataFrame for filtering
+    df = pd.DataFrame(testset)
+
+    # Filter out rows where "ground_truth" is "The answer to given question is not present in context"
+    filtered_df = df[
+        df["ground_truth"] != "The answer to given question is not present in context"
+    ]
+
+    # Save the filtered DataFrame to an Excel file
+    filtered_df.to_excel(output_path, index=False)
+
+    print(f"Filtered testset saved to {output_path}")
 
 
 def main():

@@ -17,6 +17,8 @@ from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
 from conversational_chain.chain import create_rag_chain
+from external_search.state import WebSearchResult
+from external_search.workflow import create_search_workflow
 from util.logging import logging
 
 LANGGRAPH_DB_URI = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_LANGGRAPH_DB')}?sslmode=disable"
@@ -30,21 +32,25 @@ if not os.getenv("POSTGRES_LANGGRAPH_DB"):
     logging.warning("POSTGRES_LANGGRAPH_DB undefined; falling back to MemorySaver.")
 
 
-class ChatResponse(TypedDict):
+class AdditionalContent(TypedDict):
+    search_results: list[WebSearchResult]
+
+
+class ChatState(TypedDict):
+    input: str
     chat_history: Annotated[Sequence[BaseMessage], add_messages]
     context: list[Document]
     answer: str  # primary LLM response that is streamed to the user
-
-
-class ChatState(ChatResponse):
-    input: str
-    additional_text: str  # additional text to send after graph completes
+    additional_content: (
+        AdditionalContent  # additional content to send after graph completes
+    )
 
 
 class RAGGraphWithMemory:
     def __init__(self, retriever: BaseRetriever, llm: BaseChatModel) -> None:
         # Set up runnables
         self.rag_chain: Runnable = create_rag_chain(llm, retriever)
+        self.search_workflow: CompiledStateGraph = create_search_workflow(llm)
 
         # Create graph
         state_graph: StateGraph = StateGraph(ChatState)
@@ -91,35 +97,48 @@ class RAGGraphWithMemory:
 
     async def call_model(
         self, state: ChatState, config: RunnableConfig
-    ) -> ChatResponse:
-        response = await self.rag_chain.ainvoke(state, config)
+    ) -> dict[str, Any]:
+        result = await self.rag_chain.ainvoke(state, config)
         return {
             "chat_history": [
                 HumanMessage(state["input"]),
-                AIMessage(response["answer"]),
+                AIMessage(result["answer"]),
             ],
-            "context": response["context"],
-            "answer": response["answer"],
+            "context": result["context"],
+            "answer": result["answer"],
         }
 
     async def postprocess(
-        self, state: ChatResponse, config: RunnableConfig
-    ) -> dict[str, str]:
-        # TODO: add completeness checking flow here
+        self, state: ChatState, config: RunnableConfig
+    ) -> dict[str, dict[str, list[WebSearchResult]]]:
+        search_results: list[WebSearchResult] = []
+        if config["configurable"]["enable_postprocess"]:
+            result: dict[str, Any] = await self.search_workflow.ainvoke(
+                {"question": state["input"], "generation": state["answer"]},
+            )
+            search_results = result["search_results"]
         return {
-            "additional_text": "",
+            "additional_content": {"search_results": search_results},
         }
 
     async def ainvoke(
-        self, user_input: str, callbacks: Callbacks, thread_id: str
+        self,
+        user_input: str,
+        *,
+        callbacks: Callbacks,
+        thread_id: str,
+        enable_postprocess: bool = True,
     ) -> dict[str, Any]:
         if self.graph is None:
             self.graph = await self.initialize()
-        response: dict[str, Any] = await self.graph.ainvoke(
+        result: dict[str, Any] = await self.graph.ainvoke(
             {"input": user_input},
             config=RunnableConfig(
                 callbacks=callbacks,
-                configurable={"thread_id": thread_id},
+                configurable={
+                    "thread_id": thread_id,
+                    "enable_postprocess": enable_postprocess,
+                },
             ),
         )
-        return response
+        return result
