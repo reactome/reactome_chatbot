@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Iterable
 
 import chainlit as cl
+from langchain_community.callbacks import OpenAICallbackHandler
 
 from util.config_yml import Config, TriggerEvent
 
@@ -18,7 +19,24 @@ def is_feature_enabled(config: Config | None, feature_id: str) -> bool:
     return config.get_feature(feature_id, user_id)
 
 
-async def send_messages(messages: Iterable[str]):
+def save_openai_metrics(message_id: str, openai_cb: OpenAICallbackHandler) -> None:
+    openai_metrics: dict[str, dict] = cl.user_session.get("openai_metrics", {})
+    openai_metrics[message_id] = {
+        prop: openai_cb.__dict__.get(prop, None)
+        for prop in [
+            "completion_tokens",
+            "prompt_tokens",
+            "prompt_tokens_cached",
+            "reasoning_tokens",
+            "successful_requests",
+            "total_cost",
+            "total_tokens",
+        ]
+    }
+    cl.user_session.set("openai_metrics", openai_metrics)
+
+
+async def send_messages(messages: Iterable[str]) -> None:
     for message in messages:
         await cl.Message(content=message).send()
 
@@ -52,3 +70,15 @@ async def static_messages(
         messages.values(),
     )
     await send_messages(messages_formatted)
+
+
+async def update_search_results(
+    search_results: list[dict[str, str]],
+    message: cl.Message,
+) -> None:
+    search_results_element = cl.CustomElement(
+        name="SearchResults",
+        props={"results": search_results},
+    )
+    message.elements = [search_results_element]  # type: ignore
+    await message.update()

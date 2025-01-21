@@ -8,10 +8,12 @@ import chainlit.data as cl_data
 from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 from chainlit.types import ThreadDict
 from dotenv import load_dotenv
+from langchain_community.callbacks import OpenAICallbackHandler
 
 from conversational_chain.graph import RAGGraphWithMemory
 from retreival_chain import create_retrieval_chain
-from util.chainlit_helpers import is_feature_enabled, static_messages
+from util.chainlit_helpers import (is_feature_enabled, save_openai_metrics,
+                                   static_messages, update_search_results)
 from util.config_yml import Config, TriggerEvent
 from util.embedding_environment import EmbeddingEnvironment
 from util.logging import logging
@@ -83,27 +85,31 @@ async def main(message: cl.Message) -> None:
     cl.user_session.set("message_count", message_count)
 
     thread_id: str = cl.user_session.get("thread_id")
-    cb = cl.AsyncLangchainCallbackHandler(
+
+    chainlit_cb = cl.AsyncLangchainCallbackHandler(
         stream_final_answer=True,
         force_stream_final_answer=True,  # we're not using prefix tokens
     )
+    openai_cb = OpenAICallbackHandler()
+
     enable_postprocess: bool = is_feature_enabled(config, "postprocessing")
     result: dict[str, Any] = await llm_graph.ainvoke(
         message.content,
-        callbacks=[cb],
+        callbacks=[chainlit_cb, openai_cb],
         thread_id=thread_id,
         enable_postprocess=enable_postprocess,
     )
+
     if (
         enable_postprocess
-        and cb.final_stream
+        and chainlit_cb.final_stream
         and len(result["additional_content"]["search_results"]) > 0
     ):
-        sent_message: cl.Message = cb.final_stream
-        search_results_element = cl.CustomElement(
-            name="SearchResults",
-            props={"results": result["additional_content"]["search_results"]},
+        await update_search_results(
+            result["additional_content"]["search_results"],
+            chainlit_cb.final_stream,
         )
-        sent_message.elements = [search_results_element]  # type: ignore
-        await sent_message.update()
+
     await static_messages(config, after_messages=message_count)
+
+    save_openai_metrics(message.id, openai_cb)

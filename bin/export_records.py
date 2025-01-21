@@ -22,10 +22,13 @@ def build_query(since_timestamp: str | None) -> str:
             steps.type,
             steps.output,
             feedbacks.value,
-            feedbacks.comment
+            feedbacks.comment,
+            threads.metadata->'openai_metrics'->steps.id::text AS openai_metrics
         FROM steps
         LEFT JOIN
             feedbacks ON steps."parentId" = feedbacks."forId"
+        LEFT JOIN
+            threads ON steps."threadId" = threads.id
         WHERE
             steps.type IN ('user_message', 'assistant_message') AND
             steps."createdAt" > '{since_timestamp}'
