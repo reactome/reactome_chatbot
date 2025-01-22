@@ -115,7 +115,7 @@ class RAGGraphWithMemory:
         if config["configurable"]["enable_postprocess"]:
             result: dict[str, Any] = await self.search_workflow.ainvoke(
                 {"question": state["input"], "generation": state["answer"]},
-                config=RunnableConfig(callbacks=config["callbacks"]),
+                #config=RunnableConfig(callbacks=config["callbacks"]),
             )
             search_results = result["search_results"]
         return {

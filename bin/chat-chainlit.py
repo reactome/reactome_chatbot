@@ -94,12 +94,12 @@ async def main(message: cl.Message) -> None:
         stream_final_answer=True,
         force_stream_final_answer=True,  # we're not using prefix tokens
     )
-    openai_cb = OpenAICallbackHandler()
+    #openai_cb = OpenAICallbackHandler()
 
     enable_postprocess: bool = is_feature_enabled(config, "postprocessing")
     result: dict[str, Any] = await llm_graph.ainvoke(
         message.content,
-        callbacks=[chainlit_cb, openai_cb],
+        callbacks=[chainlit_cb],
         thread_id=thread_id,
         enable_postprocess=enable_postprocess,
     )
@@ -116,4 +116,4 @@ async def main(message: cl.Message) -> None:
 
     await static_messages(config, after_messages=message_count)
 
-    save_openai_metrics(message.id, openai_cb)
+    #save_openai_metrics(message.id, openai_cb)
