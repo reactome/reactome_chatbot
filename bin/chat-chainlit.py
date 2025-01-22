@@ -11,12 +11,9 @@ from dotenv import load_dotenv
 
 from conversational_chain.graph import RAGGraphWithMemory
 from retreival_chain import create_retrieval_chain
-from util.chainlit_helpers import (
-    is_feature_enabled,  # save_openai_metrics,
-    message_rate_limited,
-    static_messages,
-    update_search_results,
-)
+from util.chainlit_helpers import is_feature_enabled  # save_openai_metrics,
+from util.chainlit_helpers import (message_rate_limited, static_messages,
+                                   update_search_results)
 from util.config_yml import Config, TriggerEvent
 from util.embedding_environment import EmbeddingEnvironment
 from util.logging import logging
