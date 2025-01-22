@@ -51,4 +51,26 @@ properties:
             - required: ["event"]
             - required: ["after_messages"]
       required: ["message", "trigger"]
-required: ["features", "messages"]
+  usage_limits:
+    type: object
+    properties:
+      message_rates:
+        type: array
+        items:
+          type: object
+          properties:
+            users:
+              type: array
+              items:
+                type: string
+                oneOf:
+                  - pattern: "@.+\\..+"
+                  - enum: ["all", "logged_in", "guests"]
+            max_messages:
+              type: integer
+            interval:
+              type: string
+              pattern: "^[0-9]+[smhdw]$"
+          required: ["users", "max_messages", "interval"]
+    required: ["message_rates"]
+required: ["features", "messages", "usage_limits"]

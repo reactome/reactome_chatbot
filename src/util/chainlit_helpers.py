@@ -1,15 +1,32 @@
 from datetime import datetime
-from typing import Iterable
+from typing import Any, Iterable
 
 import chainlit as cl
+import chainlit.data as cl_data
 from langchain_community.callbacks import OpenAICallbackHandler
 
 from util.config_yml import Config, TriggerEvent
+
+guest_user_metadata: dict[str, Any] = {}
 
 
 def get_user_id() -> str | None:
     user: cl.User | None = cl.user_session.get("user")
     return user.identifier if user else None
+
+
+def get_user_metadata(
+    key: Any,
+    default: Any | None = None,
+    use_guest: bool = True,
+) -> Any:
+    user: cl.User | None = cl.user_session.get("user")
+    if user:
+        return user.metadata.get(key, default)
+    elif use_guest:
+        return guest_user_metadata.get(key, default)
+    else:
+        return default
 
 
 def is_feature_enabled(config: Config | None, feature_id: str) -> bool:
@@ -34,6 +51,36 @@ def save_openai_metrics(message_id: str, openai_cb: OpenAICallbackHandler) -> No
         ]
     }
     cl.user_session.set("openai_metrics", openai_metrics)
+
+
+def set_user_metadata(key: Any, value: Any, use_guest: bool = True) -> None:
+    global guest_user_metadata  # not ideal, but works for now
+    user: cl.User | None = cl.user_session.get("user")
+    if user:
+        user.metadata[key] = value
+    elif use_guest:
+        guest_user_metadata[key] = value
+
+
+async def message_rate_limited(config: Config | None) -> bool:
+    if not config:
+        return False
+    user_id: str | None = get_user_id()
+    message_times_queue: list[str] = get_user_metadata("message_times_queue", [])
+    is_limited: bool = config.get_message_rate_usage_limited(
+        user_id, message_times_queue
+    )
+    if is_limited:
+        if user_id:
+            await send_messages(
+                ["User messages quota reached. Please try again later."]
+            )
+        else:
+            await send_messages(
+                ["Public messages quota reached. Please try again later."]
+            )
+    set_user_metadata("message_times_queue", message_times_queue)
+    return is_limited
 
 
 async def send_messages(messages: Iterable[str]) -> None:
@@ -82,3 +129,9 @@ async def update_search_results(
     )
     message.elements = [search_results_element]  # type: ignore
     await message.update()
+
+
+async def update_user() -> None:
+    user: cl.User | None = cl.user_session.get("user")
+    if user:
+        await cl_data.get_data_layer().create_user(user)

@@ -5,6 +5,12 @@ features:
     enabled: true
     user_group: all
 
+usage_limits:
+  message_rates:
+    - users: ["all"]
+      max_messages: 100
+      interval: 3h
+
 messages:
 
   welcome:

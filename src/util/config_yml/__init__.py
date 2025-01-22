@@ -6,6 +6,8 @@ from pydantic import BaseModel, ValidationError
 
 from util.config_yml.features import Feature, Features
 from util.config_yml.messages import Message, TriggerEvent
+from util.config_yml.usage_limits import MessageRate, UsageLimits
+from util.config_yml.user_matching import match_user
 from util.logging import logging
 
 CONFIG_YML = Path("config.yml")
@@ -15,6 +17,7 @@ CONFIG_DEFAULT_YML = Path("config_default.yml")
 class Config(BaseModel):
     features: Features
     messages: dict[str, Message]
+    usage_limits: UsageLimits
 
     def get_feature(
         self,
@@ -39,12 +42,23 @@ class Config(BaseModel):
             for message_id, message in self.messages.items()
             if (
                 message.enabled
-                and message.match_recipient(user_id)
+                and match_user(message.recipients, user_id)
                 and message.trigger.match_trigger(
                     event, after_messages, last_messages.get(message_id, None)
                 )
             )
         }
+
+    def get_message_rate_usage_limited(
+        self,
+        user_id: str | None = None,
+        message_times_queue: list[str] = [],
+    ) -> bool:
+        message_rate: MessageRate
+        for message_rate in self.usage_limits.message_rates:
+            if match_user(message_rate.users, user_id):
+                return message_rate.check_rate(message_times_queue)
+        return False  # not rate limited
 
     @classmethod
     def from_yaml(cls, config_yml: Path = CONFIG_YML) -> Self | None:

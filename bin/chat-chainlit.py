@@ -12,8 +12,9 @@ from langchain_community.callbacks import OpenAICallbackHandler
 
 from conversational_chain.graph import RAGGraphWithMemory
 from retreival_chain import create_retrieval_chain
-from util.chainlit_helpers import (is_feature_enabled, save_openai_metrics,
-                                   static_messages, update_search_results)
+from util.chainlit_helpers import (is_feature_enabled, message_rate_limited,
+                                   save_openai_metrics, static_messages,
+                                   update_search_results)
 from util.config_yml import Config, TriggerEvent
 from util.embedding_environment import EmbeddingEnvironment
 from util.logging import logging
@@ -79,6 +80,9 @@ async def end() -> None:
 
 @cl.on_message
 async def main(message: cl.Message) -> None:
+    if await message_rate_limited(config):
+        return
+
     await static_messages(config, TriggerEvent.on_message)
 
     message_count: int = cl.user_session.get("message_count", 0) + 1
