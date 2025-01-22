@@ -8,12 +8,13 @@ import chainlit.data as cl_data
 from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 from chainlit.types import ThreadDict
 from dotenv import load_dotenv
-from langchain_community.callbacks import OpenAICallbackHandler
+#from langchain_community.callbacks import OpenAICallbackHandler
 
 from conversational_chain.graph import RAGGraphWithMemory
 from retreival_chain import create_retrieval_chain
 from util.chainlit_helpers import (is_feature_enabled, message_rate_limited,
-                                   save_openai_metrics, static_messages,
+                                   #save_openai_metrics,
+                                   static_messages,
                                    update_search_results)
 from util.config_yml import Config, TriggerEvent
 from util.embedding_environment import EmbeddingEnvironment
