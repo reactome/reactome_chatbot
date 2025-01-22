@@ -11,10 +11,15 @@ from dotenv import load_dotenv
 
 from conversational_chain.graph import RAGGraphWithMemory
 from retreival_chain import create_retrieval_chain
-from util.chainlit_helpers import is_feature_enabled, static_messages
+from util.chainlit_helpers import is_feature_enabled  # save_openai_metrics,
+from util.chainlit_helpers import (message_rate_limited, static_messages,
+                                   update_search_results)
 from util.config_yml import Config, TriggerEvent
 from util.embedding_environment import EmbeddingEnvironment
 from util.logging import logging
+
+# from langchain_community.callbacks import OpenAICallbackHandler
+
 
 load_dotenv()
 config: Config | None = Config.from_yaml()
@@ -77,33 +82,40 @@ async def end() -> None:
 
 @cl.on_message
 async def main(message: cl.Message) -> None:
+    if await message_rate_limited(config):
+        return
+
     await static_messages(config, TriggerEvent.on_message)
 
     message_count: int = cl.user_session.get("message_count", 0) + 1
     cl.user_session.set("message_count", message_count)
 
     thread_id: str = cl.user_session.get("thread_id")
-    cb = cl.AsyncLangchainCallbackHandler(
+
+    chainlit_cb = cl.AsyncLangchainCallbackHandler(
         stream_final_answer=True,
         force_stream_final_answer=True,  # we're not using prefix tokens
     )
+    # openai_cb = OpenAICallbackHandler()
+
     enable_postprocess: bool = is_feature_enabled(config, "postprocessing")
     result: dict[str, Any] = await llm_graph.ainvoke(
         message.content,
-        callbacks=[cb],
+        callbacks=[chainlit_cb],
         thread_id=thread_id,
         enable_postprocess=enable_postprocess,
     )
+
     if (
         enable_postprocess
-        and cb.final_stream
+        and chainlit_cb.final_stream
         and len(result["additional_content"]["search_results"]) > 0
     ):
-        sent_message: cl.Message = cb.final_stream
-        search_results_element = cl.CustomElement(
-            name="SearchResults",
-            props={"results": result["additional_content"]["search_results"]},
+        await update_search_results(
+            result["additional_content"]["search_results"],
+            chainlit_cb.final_stream,
         )
-        sent_message.elements = [search_results_element]  # type: ignore
-        await sent_message.update()
+
     await static_messages(config, after_messages=message_count)
+
+    # save_openai_metrics(message.id, openai_cb)
