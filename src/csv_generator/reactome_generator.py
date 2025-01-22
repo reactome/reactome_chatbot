@@ -3,8 +3,14 @@ from typing import Callable
 
 import pandas as pd
 
-from reactome.neo4j_connector import (Neo4jConnector, Neo4jDict, get_complexes,
-                                      get_ewas, get_reactions, get_summations)
+from reactome.neo4j_connector import (
+    Neo4jConnector,
+    Neo4jDict,
+    get_complexes,
+    get_ewas,
+    get_reactions,
+    get_summations,
+)
 
 CSV_GENERATION_MAP: dict[str, Callable[[Neo4jConnector], Neo4jDict]] = {
     "reactions.csv": get_reactions,
