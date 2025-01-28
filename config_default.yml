@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=./.config.schema.yaml
+
+features:
+  postprocessing:  # external web search feature
+    enabled: true
+    user_group: all
+
+usage_limits:
+  message_rates:
+    - users: ["all"]
+      max_messages: 100
+      interval: 3h
+
+messages:
+
+  welcome:
+    message: |-
+      Welcome to {chat_profile}, your interactive chatbot for exploring Reactome!
+      Ask me about biological pathways and processes.
+    trigger:
+      event: on_chat_start
+
+  demo-message:
+    message: |-
+      Hello!
+      This is an example message from the `./config.yml` file.
+      Static messages can be defined here and triggered by events.
+
+      **_Use an editor with YAML support for autocomplete and schema validation._**
+    enabled: false
+    trigger:
+      event: on_chat_start
+
+  after3-example:
+    message: |-
+      This message will be triggered after the 3rd message of a chat, until the end of Jan '25.
+      This message only sends to non-authenticated users and users logged in with their GMail account.
+    enabled: false
+    recipients:
+      - guests
+      - "*@gmail.com"
+    trigger:
+      start: 2025-01-01T00:00:00Z
+      end: 2025-02-01T00:00:00Z
+      after_messages: 3
+
+  every-message-example:
+    message: |-
+      Hi, {user_id}. This sends immediately after every message, at most once per minute.
+    enabled: false
+    recipients:
+      - logged_in
+    trigger:
+      event: on_message
+      freq_max: 1m

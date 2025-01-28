@@ -1,60 +1,44 @@
-from typing import List
+from langchain_core.language_models.chat_models import BaseChatModel
+from langgraph.graph import StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
-from langgraph.graph import END, START, StateGraph
-from typing_extensions import TypedDict
-
-from nodes import (generate_response, 
-                   assess_completeness,  
-                   perform_web_search,
-                   format_external_results,
-                   decide_next_steps
-                  )
+from external_search.completeness_grader import CompletenessGrader
+from external_search.state import GraphState
+from external_search.tavily_wrapper import TavilyWrapper
 
 
-class GraphState(TypedDict):
-    """
-    Represents the state of graph. 
-
-    Attributes:
-        question: User question 
-        generation: LLM generated reponse to the user question. 
-        external_search: whether or not to search for external resources.
-        pmc_question: LLM generated PMC query
-        pmc_search_results: results from searching PMC. 
-        web_search_results: results from searching the web
-
-    """
-    question: str
-    generation: str
-    external_search: str
-    web_search_results: List[str]
+def decide_next_steps(state: GraphState) -> str:
+    if state["external_search"] == "Yes":
+        return "perform_web_search"
+    else:
+        return "no_search"
 
 
-def build_workflow():
+def no_search(_) -> dict[str, list]:
+    return {"search_results": []}
+
+
+def create_search_workflow(
+    llm: BaseChatModel, max_results: int = 3
+) -> CompiledStateGraph:
+    completeness_grader = CompletenessGrader(llm)
+    tavily_wrapper = TavilyWrapper(max_results=max_results)
+
     workflow = StateGraph(GraphState)
 
-    ## Add nodes
-    workflow.add_node("generate_response", generate_response)
-    workflow.add_node("assess_completeness", assess_completeness)
-    workflow.add_node("perform_web_search", perform_web_search)
-    workflow.add_node("format_external_results", format_external_results)
+    # Add nodes
+    workflow.add_node("assess_completeness", completeness_grader.runnable)
+    workflow.add_node("perform_web_search", tavily_wrapper.ainvoke)
+    workflow.add_node("no_search", no_search)
 
+    # Add edges
+    workflow.set_entry_point("assess_completeness")
+    workflow.add_conditional_edges(
+        "assess_completeness",
+        decide_next_steps,
+        {"perform_web_search": "perform_web_search", "no_search": "no_search"},
+    )
 
-    ## Add edges
-    workflow.add_edge(START, "generate_response")
-    workflow.add_edge("generate_response", "assess_completeness")
-    workflow.add_conditional_edges("assess_completeness", decide_next_steps, 
-                    {"perform_web_search": "perform_web_search",
-                    "finish": END
-                    },
-                                )
-
-    workflow.add_edge("perform_web_search", "format_external_results")
-
-    workflow.add_edge("format_external_results", END) 
-    return workflow
-
-
-
-if __name__ == "__main__":
-    build_workflow()
+    workflow.set_finish_point("perform_web_search")
+    workflow.set_finish_point("no_search")
+    return workflow.compile()

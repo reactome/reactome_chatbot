@@ -1,11 +1,12 @@
 import hashlib
 import hmac
 import os
+from string import Template
 
 import requests
 from chainlit.utils import mount_chainlit
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import RedirectResponse
 
 load_dotenv()
@@ -16,6 +17,20 @@ CHAINLIT_URI = os.getenv("CHAINLIT_URI")
 
 CLOUDFLARE_SECRET_KEY = os.getenv("CLOUDFLARE_SECRET_KEY")
 CLOUDFLARE_SITE_KEY = os.getenv("CLOUDFLARE_SITE_KEY")
+
+ERROR_PAGE_TEMPLATE = Template(
+    f"""
+<html>
+    <body>
+        <h1>$error_title</h1>
+        <p>If you believe this to be in error, please contact the maintainers to report an issue: help@reactome.org</p>
+        <form action="{CHAINLIT_URI}" method="get">
+            <button type="submit">Try again</button>
+        </form>
+    </body>
+</html>
+"""
+)
 
 
 def make_signature(value: str) -> str:
@@ -55,6 +70,11 @@ async def verify_captcha_middleware(request: Request, call_next):
     ):
         response = await call_next(request)
         return response
+
+    host = request.headers.get("referer")
+    if host and host.startswith("http:"):
+        url = request.url.replace(scheme="https")
+        return RedirectResponse(url=str(url))
 
     # Check if the user has completed the CAPTCHA verification
     captcha_verified = request.cookies.get("captcha_verified")
@@ -103,14 +123,28 @@ async def verify_captcha(request: Request):
     form_data = await request.form()
     cf_turnstile_response = form_data.get("cf-turnstile-response")
     if not isinstance(cf_turnstile_response, str):
-        raise HTTPException(status_code=400, detail="CAPTCHA response is invalid")
+        error_html = ERROR_PAGE_TEMPLATE.substitute(
+            error_title="CAPTCHA response is invalid",
+        )
+        return Response(content=error_html, media_type="text/html", status_code=400)
+
+    client_ip: str
+    if request.client:
+        client_ip = request.client.host
+    elif "X-Forwarded-For" in request.headers:
+        client_ip = request.headers["X-Forwarded-For"].split(",")[0]
+    else:
+        error_html = ERROR_PAGE_TEMPLATE.substitute(
+            error_title="Could not determine client host",
+        )
+        return Response(content=error_html, media_type="text/html", status_code=400)
 
     # Verify the CAPTCHA with Cloudflare
     url = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
     data = {
         "secret": os.getenv("CLOUDFLARE_SECRET_KEY"),
         "response": cf_turnstile_response,
-        "remoteip": request.client.host if request.client else "127.0.0.1",
+        "remoteip": client_ip,
     }
 
     # Perform request to Cloudflare Turnstile verification endpoint
@@ -119,7 +153,10 @@ async def verify_captcha(request: Request):
 
     # If CAPTCHA validation fails, return an error
     if not result.get("success"):
-        raise HTTPException(status_code=400, detail="CAPTCHA verification failed")
+        error_html = ERROR_PAGE_TEMPLATE.substitute(
+            error_title="CAPTCHA verification failed",
+        )
+        return Response(content=error_html, media_type="text/html", status_code=400)
 
     # Set a signed cookie to mark CAPTCHA as verified
     cookie_value = create_secure_cookie(cf_turnstile_response)

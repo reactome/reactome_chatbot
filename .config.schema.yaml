@@ -1,0 +1,76 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+type: object
+properties:
+  features:
+    type: object
+    properties:
+      postprocessing:
+        type: object
+        properties:
+          enabled:
+            type: boolean
+          user_group:
+            type: string
+            enum: ["all", "logged_in"]
+        required: ["enabled"]
+    required: ["postprocessing"]
+  messages:
+    type: object
+    additionalProperties:
+      type: object
+      properties:
+        message:
+          type: string
+        enabled:
+          type: boolean
+        recipients:
+          type: array
+          items:
+            type: string
+            oneOf:
+              - pattern: "@.+\\..+"
+              - enum: ["all", "logged_in", "guests"]
+        trigger:
+          type: object
+          properties:
+            event:
+              type: string
+              enum: ["on_chat_start", "on_chat_end", "on_chat_resume", "on_message"]
+            after_messages:
+              type: integer
+            start:
+              type: string
+              format: date-time
+            end:
+              type: string
+              format: date-time
+            freq_max:
+              type: string
+              pattern: "^[0-9]+[smhdw]$"
+          anyOf:
+            - required: ["event"]
+            - required: ["after_messages"]
+      required: ["message", "trigger"]
+  usage_limits:
+    type: object
+    properties:
+      message_rates:
+        type: array
+        items:
+          type: object
+          properties:
+            users:
+              type: array
+              items:
+                type: string
+                oneOf:
+                  - pattern: "@.+\\..+"
+                  - enum: ["all", "logged_in", "guests"]
+            max_messages:
+              type: integer
+            interval:
+              type: string
+              pattern: "^[0-9]+[smhdw]$"
+          required: ["users", "max_messages", "interval"]
+    required: ["message_rates"]
+required: ["features", "messages", "usage_limits"]

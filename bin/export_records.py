@@ -15,17 +15,31 @@ def build_query(since_timestamp: str | None) -> str:
     if since_timestamp is None:
         since_timestamp = ""
     query = f"""
-        SELECT "threadId", "createdAt", name, type, output
+        SELECT
+            steps."threadId",
+            steps."createdAt",
+            steps.name,
+            steps.type,
+            steps.output,
+            feedbacks.value,
+            feedbacks.comment
         FROM steps
+        LEFT JOIN
+            feedbacks ON steps."parentId" = feedbacks."forId"
+        LEFT JOIN
+            threads ON steps."threadId" = threads.id
         WHERE
-            type IN ('user_message', 'assistant_message') AND
-            "createdAt" > '{since_timestamp}'
-        ORDER BY (
-            SELECT MIN("createdAt")
-            FROM steps s
-            WHERE s."threadId" = steps."threadId"
-        ), "createdAt";
+            steps.type IN ('user_message', 'assistant_message') AND
+            steps."createdAt" > '{since_timestamp}'
+        ORDER BY
+            (
+                SELECT MIN(s."createdAt")
+                FROM steps s
+                WHERE s."threadId" = steps."threadId"
+            ),
+            steps."createdAt";
     """
+    # TODO: add to SELECT , threads.metadata->'openai_metrics'->steps.id::text AS openai_metrics
     return query
 
 
@@ -47,6 +61,7 @@ def main(records_dir: Path):
     with psycopg.connect(CHAINLIT_DB_URI) as conn:
         with conn.cursor() as cur:
             cur.execute(query)
+            header = [col.name for col in cur.description] if cur.description else None
             records = cur.fetchall()
 
     if len(records) == 0:
@@ -59,7 +74,8 @@ def main(records_dir: Path):
 
     with open(record_file, mode="w", newline="") as file:
         writer = csv.writer(file, lineterminator="\n")
-        writer.writerow(["threadId", "createdAt", "name", "type", "output"])
+        if header:
+            writer.writerow(header)
         writer.writerows(records)
 
     print("Wrote", record_file)
