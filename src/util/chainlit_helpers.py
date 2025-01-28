@@ -7,6 +7,7 @@ from chainlit.data import get_data_layer
 from langchain_community.callbacks import OpenAICallbackHandler
 
 from util.config_yml import Config, TriggerEvent
+from util.config_yml.usage_limits import MessageRate
 
 guest_user_metadata: dict[str, Any] = {}
 
@@ -68,24 +69,29 @@ async def message_rate_limited(config: Config | None) -> bool:
         return False
     user_id: str | None = get_user_id()
     message_times_queue: list[str] = get_user_metadata("message_times_queue", [])
-    is_limited: bool = config.get_message_rate_usage_limited(
+    rate_limit: MessageRate | None = config.get_message_rate_usage_limited(
         user_id, message_times_queue
     )
-    if is_limited:
+    if rate_limit:
         quota_message: str
         if user_id:
-            quota_message = "User messages quota reached. Please try again later."
+            quota_message = (
+                "User messages quota reached. "
+                f"You are allowed a maximum of {rate_limit.max_messages} messages every {rate_limit.interval}."
+            )
         else:
             quota_message = "Public messages quota reached. "
             login_uri: str | None = os.getenv("CHAINLIT_URI_LOGIN", "")
             if login_uri:
-                quota_message += f"[Log in]({login_uri}) to continue chatting."
+                quota_message += (
+                    f"[Log in]({login_uri}) to continue chatting with fewer limits."
+                )
             else:
                 quota_message += "Please try again later."
         await send_messages([quota_message])
     set_user_metadata("message_times_queue", message_times_queue)
     await update_user()
-    return is_limited
+    return rate_limit is not None
 
 
 async def send_messages(messages: Iterable[str]) -> None:

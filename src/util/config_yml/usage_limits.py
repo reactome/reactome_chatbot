@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Self
 
 from pydantic import BaseModel
 
@@ -10,7 +11,7 @@ class MessageRate(BaseModel):
     max_messages: int
     interval: str
 
-    def check_rate(self, message_times_queue: list[str]):
+    def check_rate(self, message_times_queue: list[str]) -> Self | None:
         now = datetime.now()
         while len(message_times_queue) > 0:
             if now - datetime.fromisoformat(message_times_queue[0]) > parse_interval(
@@ -21,9 +22,9 @@ class MessageRate(BaseModel):
                 break
         if len(message_times_queue) < self.max_messages:
             message_times_queue.append(now.isoformat())
-            return False  # not rate limited
+            return None  # not rate limited
         else:
-            return True
+            return self
 
 
 class UsageLimits(BaseModel):
