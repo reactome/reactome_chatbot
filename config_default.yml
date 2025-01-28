@@ -20,6 +20,12 @@ messages:
     trigger:
       event: on_chat_start
 
+  survey_message:
+    message: |-
+      We hope you're enjoying your experience with React-to-me! We'd love to hear your feedback to make it even better. Please take a few minutes to fill out our [survey](https://forms.gle/Rvzb8EA73yZs7wd38).
+    trigger:
+      after_messages: 3
+
   demo-message:
     message: |-
       Hello!

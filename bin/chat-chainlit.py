@@ -4,22 +4,20 @@ import os
 from typing import Any
 
 import chainlit as cl
-import chainlit.data as cl_data
+from chainlit.data.base import BaseDataLayer
 from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 from chainlit.types import ThreadDict
 from dotenv import load_dotenv
+from langchain_community.callbacks import OpenAICallbackHandler
 
 from conversational_chain.graph import RAGGraphWithMemory
 from retreival_chain import create_retrieval_chain
-from util.chainlit_helpers import is_feature_enabled  # save_openai_metrics,
-from util.chainlit_helpers import (message_rate_limited, static_messages,
+from util.chainlit_helpers import (is_feature_enabled, message_rate_limited,
+                                   save_openai_metrics, static_messages,
                                    update_search_results)
 from util.config_yml import Config, TriggerEvent
 from util.embedding_environment import EmbeddingEnvironment
 from util.logging import logging
-
-# from langchain_community.callbacks import OpenAICallbackHandler
-
 
 load_dotenv()
 config: Config | None = Config.from_yaml()
@@ -30,14 +28,16 @@ logging.info(f"Selected environment: {ENV}")
 llm_graph: RAGGraphWithMemory = create_retrieval_chain(
     ENV,
     EmbeddingEnvironment.get_dir(ENV),
-    False,
-    False,
     hf_model=EmbeddingEnvironment.get_model(ENV),
 )
 
 if os.getenv("POSTGRES_CHAINLIT_DB"):
     CHAINLIT_DB_URI = f"postgresql+psycopg://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_CHAINLIT_DB')}?sslmode=disable"
-    cl_data._data_layer = SQLAlchemyDataLayer(conninfo=CHAINLIT_DB_URI)
+
+    @cl.data_layer
+    def get_data_layer() -> BaseDataLayer:
+        return SQLAlchemyDataLayer(conninfo=CHAINLIT_DB_URI)
+
 else:
     logging.warning("POSTGRES_CHAINLIT_DB undefined; Chainlit persistence disabled.")
 
@@ -96,12 +96,12 @@ async def main(message: cl.Message) -> None:
         stream_final_answer=True,
         force_stream_final_answer=True,  # we're not using prefix tokens
     )
-    # openai_cb = OpenAICallbackHandler()
+    openai_cb = OpenAICallbackHandler()
 
     enable_postprocess: bool = is_feature_enabled(config, "postprocessing")
     result: dict[str, Any] = await llm_graph.ainvoke(
         message.content,
-        callbacks=[chainlit_cb],
+        callbacks=[chainlit_cb, openai_cb],
         thread_id=thread_id,
         enable_postprocess=enable_postprocess,
     )
@@ -118,4 +118,4 @@ async def main(message: cl.Message) -> None:
 
     await static_messages(config, after_messages=message_count)
 
-    # save_openai_metrics(message.id, openai_cb)
+    save_openai_metrics(message.id, openai_cb)
