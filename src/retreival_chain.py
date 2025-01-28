@@ -12,11 +12,14 @@ from langchain_chroma.vectorstores import Chroma
 from langchain_community.document_loaders.csv_loader import CSVLoader
 from langchain_community.retrievers import BM25Retriever
 from langchain_core.embeddings import Embeddings
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.retrievers import BaseRetriever
 from langchain_huggingface import (HuggingFaceEmbeddings,
                                    HuggingFaceEndpointEmbeddings)
 from langchain_ollama.chat_models import ChatOllama
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_openai.chat_models.base import BaseChatOpenAI, ChatOpenAI
+from langchain_openai.embeddings import OpenAIEmbeddings
+from pydantic import SecretStr
 
 from conversational_chain.graph import RAGGraphWithMemory
 from reactome.metadata_info import descriptions_info, field_info
@@ -54,20 +57,30 @@ def get_embedding(
 def create_retrieval_chain(
     env: str,
     embeddings_directory: Path,
-    commandline: bool,
-    verbose: bool,
+    *,
+    commandline: bool = False,
+    verbose: bool = False,
     ollama_model: Optional[str] = None,
     ollama_url: str = "http://localhost:11434",
     hf_model: Optional[str] = None,
+    ds_model: Optional[str] = None,
     device: str = "cpu",
 ) -> RAGGraphWithMemory:
     callbacks: list[BaseCallbackHandler] = []
     if commandline:
         callbacks = [StreamingStdOutCallbackHandler()]
 
-    # Define llm without redefinition
-    llm: ChatOllama | ChatOpenAI
-    if ollama_model is None:  # Use OpenAI when Ollama not specified
+    llm: BaseChatModel
+    if ds_model and "DEEPSEEK_API_KEY" in os.environ:
+        llm = BaseChatOpenAI(
+            model=ds_model,
+            api_key=SecretStr(os.environ["DEEPSEEK_API_KEY"]),
+            base_url="https://api.deepseek.com",
+            temperature=0.0,
+            callbacks=callbacks,
+            verbose=verbose,
+        )
+    elif ollama_model is None:  # Use OpenAI when Ollama not specified
         llm = ChatOpenAI(
             temperature=0.0,
             callbacks=callbacks,

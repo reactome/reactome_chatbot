@@ -27,7 +27,7 @@ def create_search_workflow(
     workflow = StateGraph(GraphState)
 
     # Add nodes
-    workflow.add_node("assess_completeness", completeness_grader.runnable)
+    workflow.add_node("assess_completeness", completeness_grader.ainvoke)
     workflow.add_node("perform_web_search", tavily_wrapper.ainvoke)
     workflow.add_node("no_search", no_search)
 

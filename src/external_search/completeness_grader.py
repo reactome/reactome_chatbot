@@ -1,7 +1,9 @@
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import Runnable
+from langchain_core.runnables import Runnable, RunnableConfig
 from pydantic import BaseModel, Field
+
+from external_search.state import GraphState
 
 completeness_grader_message = """
 You are an expert grader with extensive knowledge in molecular biology and experience as a Reactome curator.
@@ -27,7 +29,7 @@ completeness_prompt = ChatPromptTemplate.from_messages(
 
 
 class GradeCompleteness(BaseModel):
-    external_search: str = Field(
+    binary_score: str = Field(
         description="Answer is complete and provides all necessary background, 'Yes' or 'No'"
     )
 
@@ -38,3 +40,15 @@ class CompletenessGrader:
             GradeCompleteness
         )
         self.runnable: Runnable = completeness_prompt | structured_completeness_grader
+
+    async def ainvoke(
+        self, state: GraphState, config: RunnableConfig
+    ) -> dict[str, str]:
+        result: GradeCompleteness = await self.runnable.ainvoke(
+            {
+                "question": state["question"],
+                "generation": state["generation"],
+            },
+            config,
+        )
+        return {"external_search": result.binary_score}

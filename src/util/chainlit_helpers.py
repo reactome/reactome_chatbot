@@ -1,8 +1,9 @@
+import os
 from datetime import datetime
 from typing import Any, Iterable
 
 import chainlit as cl
-import chainlit.data as cl_data
+from chainlit.data import get_data_layer
 from langchain_community.callbacks import OpenAICallbackHandler
 
 from util.config_yml import Config, TriggerEvent
@@ -71,15 +72,19 @@ async def message_rate_limited(config: Config | None) -> bool:
         user_id, message_times_queue
     )
     if is_limited:
+        quota_message: str
         if user_id:
-            await send_messages(
-                ["User messages quota reached. Please try again later."]
-            )
+            quota_message = "User messages quota reached. Please try again later."
         else:
-            await send_messages(
-                ["Public messages quota reached. Please try again later."]
-            )
+            quota_message = "Public messages quota reached. "
+            login_uri: str | None = os.getenv("CHAINLIT_URI_LOGIN", "")
+            if login_uri:
+                quota_message += f"[Log in]({login_uri}) to continue chatting."
+            else:
+                quota_message += "Please try again later."
+        await send_messages([quota_message])
     set_user_metadata("message_times_queue", message_times_queue)
+    await update_user()
     return is_limited
 
 
@@ -134,4 +139,4 @@ async def update_search_results(
 async def update_user() -> None:
     user: cl.User | None = cl.user_session.get("user")
     if user:
-        await cl_data.get_data_layer().create_user(user)
+        await get_data_layer().create_user(user)
