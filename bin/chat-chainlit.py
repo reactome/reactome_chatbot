@@ -22,6 +22,7 @@ from util.logging import logging
 load_dotenv()
 config: Config | None = Config.from_yaml()
 
+
 ENV = os.getenv("CHAT_ENV", "reactome")
 logging.info(f"Selected environment: {ENV}")
 

@@ -13,3 +13,5 @@ CLOUDFLARE_SITE_KEY=0x4AAAAAAAkzFQ5GRs2toYuv
 CHAINLIT_IMAGE=public.ecr.aws/reactome/reactome-chatbot:latest
 #CHAINLIT_IMAGE=reactome-chatbot
 CHAINLIT_URI=/chat
+CHAINLIT_ROOT_PATH=
+TAVILY_API_KEY=
