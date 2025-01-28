@@ -11,7 +11,7 @@ from langchain_community.document_loaders.csv_loader import CSVLoader
 from langchain_community.retrievers import BM25Retriever
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from ragas import evaluate
-from ragas.metrics import answer_relevancy, context_utilization, faithfulness
+from ragas.metrics import answer_relevancy, context_utilization, faithfulness, context_recall
 
 from src.conversational_chain.chain import RAGChainWithMemory
 from src.conversational_chain.memory import ChatHistoryMemory
@@ -35,6 +35,12 @@ def parse_arguments():
         default="gpt-4o-mini",
         help="Language model to use for evaluation",
     )
+    parser.add_argument(
+        "--rag_type",
+        choices=["basic", "advanced"],
+        required=True,
+        help="Type of RAG system to use for evaluation",
+    )
     return parser.parse_args()
 
 
@@ -54,7 +60,7 @@ def load_dataset(testset_path):
 memory = ChatHistoryMemory()
 
 
-def initialize_rag_chain_with_memory(embeddings_directory, model_name):
+def initialize_rag_chain_with_memory(embeddings_directory, model_name, rag_type):
     """Initialize the RAGChainWithMemory system."""
     llm = ChatOpenAI(temperature=0.0, verbose=True, model=model_name)
     retriever_list = []
@@ -64,7 +70,7 @@ def initialize_rag_chain_with_memory(embeddings_directory, model_name):
     )
     data = loader.load()
     bm25_retriever = BM25Retriever.from_documents(data)
-    bm25_retriever.k = 15
+    bm25_retriever.k = 7
 
     # Set up vectorstore SelfQuery retriever
     embedding = OpenAIEmbeddings(model="text-embedding-3-large")
@@ -73,17 +79,22 @@ def initialize_rag_chain_with_memory(embeddings_directory, model_name):
         embedding_function=embedding,
     )
 
+    vectordb_retriever = vectordb.as_retriever(search_kwargs={"k": 7})
+
     selfq_retriever = SelfQueryRetriever.from_llm(
         llm=llm,
         vectorstore=vectordb,
         document_contents=descriptions_info["summations"],
         metadata_field_info=field_info["summations"],
-        search_kwargs={"k": 15},
+        search_kwargs={"k": 7},
     )
     rrf_retriever = EnsembleRetriever(
         retrievers=[bm25_retriever, selfq_retriever], weights=[0.2, 0.8]
     )
-    retriever_list.append(rrf_retriever)
+    if rag_type == "basic":
+        retriever_list.append(vectordb_retriever)
+    elif rag_type == "advanced":
+        retriever_list.append(rrf_retriever)
 
     reactome_retriever = MergerRetriever(retrievers=retriever_list)
 
@@ -96,11 +107,9 @@ def initialize_rag_chain_with_memory(embeddings_directory, model_name):
 
 
 def process_testset(
-    testset_path, qa_system, embeddings_directory, response_dir, eval_dir, model_name
+    testset_path, qa_system, embeddings_directory, response_dir, eval_dir, model_name, rag_type
 ):
     """Process a single testset file."""
-    args = parse_arguments()
-
     testset = load_dataset(testset_path)
     questions = [item["question"] for item in testset]
     ground_truths = [item["ground_truth"] for item in testset]
@@ -114,6 +123,11 @@ def process_testset(
         answers.append(response["answer"])
         contexts.append([context.page_content for context in response["context"]])
 
+    rag_response_dir = os.path.join(response_dir, rag_type)
+    rag_eval_dir = os.path.join(eval_dir, rag_type)
+    os.makedirs(rag_response_dir, exist_ok=True)
+    os.makedirs(rag_eval_dir, exist_ok=True)
+    
     # Save responses to an Excel file
     data = {
         "question": questions,
@@ -123,8 +137,8 @@ def process_testset(
     }
     df_ans = pd.DataFrame(data)
     response_filename = os.path.join(
-        response_dir,
-        f"{os.path.splitext(os.path.basename(testset_path))[0]}_{args.model}_responses.xlsx",
+        rag_response_dir,
+        f"{os.path.splitext(os.path.basename(testset_path))[0]}_{model_name}_responses_{rag_type}.xlsx",
     )
     df_ans.to_excel(response_filename, index=False)
     print(f"Responses saved to {response_filename}")
@@ -134,13 +148,13 @@ def process_testset(
     result = evaluate(
         llm=ChatOpenAI(temperature=0.0, verbose=True, model="gpt-4o"),
         dataset=dataset,
-        metrics=[answer_relevancy, context_utilization, faithfulness],
+        metrics=[answer_relevancy, context_utilization, faithfulness, context_recall],
     )
 
     # Save evaluation results to an Excel file
     evaluation_filename = os.path.join(
-        eval_dir,
-        f"{os.path.splitext(os.path.basename(testset_path))[0]}_{args.model}_evaluation.xlsx",
+        rag_eval_dir,
+        f"{os.path.splitext(os.path.basename(testset_path))[0]}_{model_name}_evaluation_{rag_type}.xlsx",
     )
     df_eval = result.to_pandas()
     df_eval.to_excel(evaluation_filename, index=False)
@@ -150,6 +164,7 @@ def process_testset(
 def main():
     args = parse_arguments()
     model_name = args.model
+    rag_type = args.rag_type
     response_dir = os.path.join(args.testset_dir, "response")
     eval_dir = os.path.join(args.testset_dir, "evals")
     os.makedirs(response_dir, exist_ok=True)
@@ -157,7 +172,7 @@ def main():
 
     # Initialize RAGChainWithMemory
     embeddings_directory = "/Users/hmohammadi/Desktop/react_to_me_github/reactome_chatbot/embeddings/openai/text-embedding-3-large/reactome/Release90/summations"
-    qa_system = initialize_rag_chain_with_memory(embeddings_directory, model_name)
+    qa_system = initialize_rag_chain_with_memory(embeddings_directory, model_name, rag_type)
 
     # Iterate over all .xlsx files in the directory
     for filename in os.listdir(args.testset_dir):
@@ -172,6 +187,7 @@ def main():
                 response_dir,
                 eval_dir,
                 model_name,
+                rag_type,
             )
 
 
