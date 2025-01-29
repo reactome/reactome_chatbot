@@ -7,7 +7,7 @@ import requests
 from chainlit.utils import mount_chainlit
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, HTMLResponse
 
 load_dotenv()
 
@@ -172,4 +172,129 @@ async def verify_captcha(request: Request):
     return redirect_response
 
 
+# Landing page at /chat/
+@app.get("/chat/")
+async def landing_page():
+    html_content = """
+    <html>
+    <head>
+        <link rel="stylesheet" href="/static/chainlit.css">
+        <style>
+            body {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                margin: 0;
+                background-color: #f4f7fc;
+                font-family: 'Arial', sans-serif;
+                padding: 20px;
+            }
+            .container {
+                text-align: center;
+                border-radius: 12px;
+                padding: 2rem;
+                background: white;
+                max-width: 600px;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+            }
+            .logo {
+                margin-bottom: 1rem;
+            }
+            .logo img {
+                max-width: 180px;
+                height: auto;
+            }
+            h1 {
+                font-size: 1.8rem;
+                margin-bottom: 1rem;
+                color: #333;
+            }
+            p {
+                font-size: 1rem;
+                color: #444;
+                line-height: 1.6;
+                margin-bottom: 1rem;
+            }
+            .button {
+                display: inline-block;
+                margin: 0.5rem 0;
+                padding: 0.75rem 1.5rem;
+                font-size: 1rem;
+                font-weight: bold;
+                color: white;
+                background-color: #007bff;
+                border: none;
+                border-radius: 8px;
+                cursor: pointer;
+                text-decoration: none;
+                transition: all 0.3s ease;
+                box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            }
+            .button:hover {
+                background-color: #0056b3;
+                transform: translateY(-2px);
+                box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            }
+            .description {
+                font-size: 1rem;
+                color: #555;
+                margin-bottom: 1rem;
+            }
+            .feedback-button {
+                display: inline-block;
+                margin-top: 1rem;
+                padding: 0.6rem 1.2rem;
+                font-size: 0.9rem;
+                font-weight: bold;
+                background-color: #28a745;
+                color: white;
+                border-radius: 8px;
+                text-decoration: none;
+                transition: all 0.3s ease;
+                box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            }
+            .feedback-button:hover {
+                background-color: #218838;
+                transform: translateY(-2px);
+                box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="logo">
+                <img src="https://reactome.org/templates/favourite/images/logo/logo.png" alt="Reactome Logo">
+            </div>
+            <h1>Meet the React-to-Me AI Chatbot!</h1>
+            <p>Your new guide to Reactome. Whether you’re looking for specific genes and pathways or just browsing, our AI Chatbot is here to assist you.</p>
+            <p>We created a model called React-to-Me which interacts in a conversational way, based on content in the Reactome Knowledgebase.</p>
+            <p>We are excited to introduce React-to-Me to get users’ feedback and learn about its strengths and weaknesses. Please try it now and provide us your feedback.</p>
+
+            <a class="feedback-button" href="https://docs.google.com/forms/d/e/1FAIpQLSeWajgdJGV2gETj2bo-_jqU54Ryy6d7acJkvMo-KkflYUmfTg/viewform" target="_blank">
+                Provide Feedback
+            </a>
+
+            <div>
+                <p class="description">
+                    <strong>Personalized:</strong> Log into React-to-Me for enhanced features, such as an increased query allowance and securely stored chat history so you can revisit your conversations in the future.
+                </p>
+                <a class="button" href="/chat/personal" target="_blank">Personal</a>
+            </div>
+
+            <div>
+                <p class="description">
+                    <strong>Guest:</strong> Interact with React-to-Me as a guest. Your conversations will not be stored.
+                </p>
+                <a class="button" href="/chat/guest" target="_blank">Guest</a>
+            </div>
+        </div>
+    </body>
+</html>
+    """
+    return HTMLResponse(content=html_content)
+
+
+# Ensure all other endpoints remain mounted
 mount_chainlit(app=app, target="bin/chat-chainlit.py", path=CHAINLIT_URI)
+
