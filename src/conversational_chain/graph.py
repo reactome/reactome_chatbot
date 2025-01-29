@@ -1,6 +1,6 @@
 import asyncio
 import os
-from typing import Annotated, Any, Sequence, TypedDict
+from typing import Annotated, Any, TypedDict
 
 from langchain_core.callbacks.base import Callbacks
 from langchain_core.documents import Document
@@ -16,7 +16,7 @@ from langgraph.graph.state import CompiledStateGraph, StateGraph
 from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
-from conversational_chain.chain import create_rag_chain
+from conversational_chain.chain import create_rag_chain, create_rephrase_chain
 from external_search.state import WebSearchResult
 from external_search.workflow import create_search_workflow
 from util.logging import logging
@@ -37,8 +37,9 @@ class AdditionalContent(TypedDict):
 
 
 class ChatState(TypedDict):
-    input: str
-    chat_history: Annotated[Sequence[BaseMessage], add_messages]
+    input: str  # User input text
+    query: str  # LLM-generated query from user input
+    chat_history: Annotated[list[BaseMessage], add_messages]
     context: list[Document]
     answer: str  # primary LLM response that is streamed to the user
     additional_content: (
@@ -50,15 +51,18 @@ class RAGGraphWithMemory:
     def __init__(self, retriever: BaseRetriever, llm: BaseChatModel) -> None:
         # Set up runnables
         self.rag_chain: Runnable = create_rag_chain(llm, retriever)
+        self.rephrase_chain: Runnable = create_rephrase_chain(llm)
         self.search_workflow: CompiledStateGraph = create_search_workflow(llm)
 
         # Create graph
         state_graph: StateGraph = StateGraph(ChatState)
         # Set up nodes
+        state_graph.add_node("preprocess", self.preprocess)
         state_graph.add_node("model", self.call_model)
         state_graph.add_node("postprocess", self.postprocess)
         # Set up edges
-        state_graph.set_entry_point("model")
+        state_graph.set_entry_point("preprocess")
+        state_graph.add_edge("preprocess", "model")
         state_graph.add_edge("model", "postprocess")
         state_graph.set_finish_point("postprocess")
 
@@ -95,10 +99,16 @@ class RAGGraphWithMemory:
         if self.pool:
             await self.pool.close()
 
+    async def preprocess(
+        self, state: ChatState, config: RunnableConfig
+    ) -> dict[str, str]:
+        query: str = await self.rephrase_chain.ainvoke(state, config)
+        return {"query": query}
+
     async def call_model(
         self, state: ChatState, config: RunnableConfig
     ) -> dict[str, Any]:
-        result = await self.rag_chain.ainvoke(state, config)
+        result: dict[str, Any] = await self.rag_chain.ainvoke(state, config)
         return {
             "chat_history": [
                 HumanMessage(state["input"]),
@@ -114,7 +124,7 @@ class RAGGraphWithMemory:
         search_results: list[WebSearchResult] = []
         if config["configurable"]["enable_postprocess"]:
             result: dict[str, Any] = await self.search_workflow.ainvoke(
-                {"question": state["input"], "generation": state["answer"]},
+                {"question": state["query"], "generation": state["answer"]},
                 config=RunnableConfig(callbacks=config["callbacks"]),
             )
             search_results = result["search_results"]

@@ -44,6 +44,6 @@ qa_prompt = ChatPromptTemplate.from_messages(
     [
         ("system", qa_system_prompt),
         MessagesPlaceholder(variable_name="chat_history"),
-        ("user", "Context:\n{context}\n\nQuestion: {input}"),
+        ("user", "Context:\n{context}\n\nQuestion: {query}"),
     ]
 )
