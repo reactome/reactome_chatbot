@@ -108,7 +108,13 @@ class RAGGraphWithMemory:
     async def call_model(
         self, state: ChatState, config: RunnableConfig
     ) -> dict[str, Any]:
-        result: dict[str, Any] = await self.rag_chain.ainvoke(state, config)
+        result: dict[str, Any] = await self.rag_chain.ainvoke(
+            {
+                "input": state["query"],
+                "chat_history": state["chat_history"],
+            },
+            config,
+        )
         return {
             "chat_history": [
                 HumanMessage(state["input"]),
