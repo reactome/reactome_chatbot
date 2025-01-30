@@ -61,6 +61,7 @@ async def verify_captcha_middleware(request: Request, call_next):
     if (
         request.url.path
         in [
+            "/chat/",
             f"{CHAINLIT_URI}/verify_captcha",
             f"{CHAINLIT_URI}/verify_captcha_page",
             f"{CHAINLIT_URI}/static",
@@ -296,4 +297,3 @@ async def landing_page():
 
 # Ensure all other endpoints remain mounted
 mount_chainlit(app=app, target="bin/chat-chainlit.py", path=CHAINLIT_URI)
-
