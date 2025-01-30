@@ -80,11 +80,11 @@ async def message_rate_limited(config: Config | None) -> bool:
                 f"You are allowed a maximum of {rate_limit.max_messages} messages every {rate_limit.interval}."
             )
         else:
-            quota_message = "Public messages quota reached. "
+            quota_message = "Our servers are currently overloaded.\n"
             login_uri: str | None = os.getenv("CHAINLIT_URI_LOGIN", "")
             if login_uri:
                 quota_message += (
-                    f"[Log in]({login_uri}) to continue chatting with fewer limits."
+                    f"Please [log in]({login_uri}) to continue chatting and enjoy features like saved chat history and fewer limits."
                 )
             else:
                 quota_message += "Please try again later."
