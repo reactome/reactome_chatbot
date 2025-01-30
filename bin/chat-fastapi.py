@@ -172,7 +172,6 @@ async def verify_captcha(request: Request):
     return redirect_response
 
 
-# Landing page at /chat/
 @app.get("/chat/")
 async def landing_page():
     html_content = """
@@ -290,7 +289,7 @@ async def landing_page():
             </div>
         </div>
     </body>
-</html>
+    </html>
     """
     return HTMLResponse(content=html_content)
 
