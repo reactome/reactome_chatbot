@@ -279,14 +279,14 @@ async def landing_page():
                 <p class="description">
                     <strong>Personalized:</strong> Log into React-to-Me for enhanced features, such as an increased query allowance and securely stored chat history so you can revisit your conversations in the future.
                 </p>
-                <a class="button" href="/chat/personal" target="_blank">Personal</a>
+                <a class="button" href="/chat/personal/" target="_blank">Personal</a>
             </div>
 
             <div>
                 <p class="description">
                     <strong>Guest:</strong> Interact with React-to-Me as a guest. Your conversations will not be stored.
                 </p>
-                <a class="button" href="/chat/guest" target="_blank">Guest</a>
+                <a class="button" href="/chat/guest/" target="_blank">Guest</a>
             </div>
         </div>
     </body>
