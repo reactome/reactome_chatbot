@@ -14,6 +14,7 @@ load_dotenv()
 app = FastAPI()
 
 CHAINLIT_URI = os.getenv("CHAINLIT_URI")
+CHAINLIT_URL = os.getenv("CHAINLIT_URL")
 
 CLOUDFLARE_SECRET_KEY = os.getenv("CLOUDFLARE_SECRET_KEY")
 CLOUDFLARE_SITE_KEY = os.getenv("CLOUDFLARE_SITE_KEY")
@@ -161,7 +162,7 @@ async def verify_captcha(request: Request):
 
     # Set a signed cookie to mark CAPTCHA as verified
     cookie_value = create_secure_cookie(cf_turnstile_response)
-    redirect_response = RedirectResponse(url=f"{CHAINLIT_URI}", status_code=303)
+    redirect_response = RedirectResponse(url=f"{CHAINLIT_URI}/", status_code=303)
     redirect_response.set_cookie(
         key="captcha_verified",
         value=cookie_value,
@@ -175,7 +176,7 @@ async def verify_captcha(request: Request):
 
 @app.get("/chat/")
 async def landing_page():
-    html_content = """
+    html_content = Template("""
     <html>
     <head>
         <link rel="stylesheet" href="/static/chainlit.css">
@@ -279,19 +280,20 @@ async def landing_page():
                 <p class="description">
                     <strong>Personalized:</strong> Log into React-to-Me for enhanced features, such as an increased query allowance and securely stored chat history so you can revisit your conversations in the future.
                 </p>
-                <a class="button" href="/chat/personal/" target="_blank">Personal</a>
+                <a class="button" href="$CHAINLIT_URL/chat/personal/" target="_blank">Personal</a>
             </div>
 
             <div>
                 <p class="description">
                     <strong>Guest:</strong> Interact with React-to-Me as a guest. Your conversations will not be stored.
                 </p>
-                <a class="button" href="/chat/guest/" target="_blank">Guest</a>
+                <a class="button" href="$CHAINLIT_URL/chat/guest/" target="_blank">Guest</a>
             </div>
         </div>
     </body>
     </html>
-    """
+    """).substitute(CHAINLIT_URL=CHAINLIT_URL)
+
     return HTMLResponse(content=html_content)
 
 
