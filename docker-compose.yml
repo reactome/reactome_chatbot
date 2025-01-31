@@ -30,6 +30,7 @@ services:
     volumes:
       - ./embeddings:/app/embeddings
       - ./records:/app/records
+      - ./config.yml:/app/config.yml
 
   chainlit-no-login:
     image: ${CHAINLIT_IMAGE}
@@ -54,6 +55,7 @@ services:
         condition: service_healthy
     volumes:
       - ./embeddings:/app/embeddings
+      - ./config.yml:/app/config.yml
 
 
   postgres:
