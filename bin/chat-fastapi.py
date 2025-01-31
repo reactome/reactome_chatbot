@@ -186,6 +186,7 @@ async def landing_page():
         """
     <html>
     <head>
+        <link rel="icon" type="image/x-icon" href="https://reactome.org/templates/favourite/favicon.ico">
         <style>
             body {
                 display: flex;
