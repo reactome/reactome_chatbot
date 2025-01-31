@@ -184,7 +184,6 @@ async def landing_page():
     html_content = Template("""
     <html>
     <head>
-        <link rel="stylesheet" href="/static/chainlit.css">
         <style>
             body {
                 display: flex;
