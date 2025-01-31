@@ -60,7 +60,7 @@ def verify_secure_cookie(cookie_value: str) -> bool:
 async def verify_captcha_middleware(request: Request, call_next):
     if (
         CHAINLIT_URI
-        and request.url.path.startswith(CHAINLIT_URI)
+        and not request.url.path.startswith(CHAINLIT_URI)
         and request.url.path[-1] != "/"
     ):
         return RedirectResponse(url=f"{request.url.path}/")
@@ -75,6 +75,7 @@ async def verify_captcha_middleware(request: Request, call_next):
         ]
         or request.url.path.startswith("/static")
         or not os.getenv("CLOUDFLARE_SECRET_KEY")
+        or (CHAINLIT_URI and not request.url.path.startswith(CHAINLIT_URI))
     ):
         response = await call_next(request)
         return response
