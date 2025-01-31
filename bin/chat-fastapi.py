@@ -196,7 +196,7 @@ async def landing_page():
                 border-radius: 12px;
                 padding: 2rem;
                 background: white;
-                max-width: 600px;
+                max-width: 700px;
                 box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
             }
             .logo {
@@ -211,15 +211,21 @@ async def landing_page():
                 margin-bottom: 1rem;
                 color: #333;
             }
-            p {
+            .centered-text {
                 font-size: 1rem;
                 color: #444;
                 line-height: 1.6;
-                margin-bottom: 1rem;
+                margin-bottom: 1.5rem;
+                text-align: center;
+            }
+            .button-container {
+                display: flex;
+                justify-content: center;
+                gap: 10px;
+                margin-bottom: 1.5rem;
             }
             .button {
                 display: inline-block;
-                margin: 0.5rem 0;
                 padding: 0.75rem 1.5rem;
                 font-size: 1rem;
                 font-weight: bold;
@@ -237,28 +243,20 @@ async def landing_page():
                 transform: translateY(-2px);
                 box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
             }
-            .description {
-                font-size: 1rem;
-                color: #555;
-                margin-bottom: 1rem;
-            }
             .feedback-button {
-                display: inline-block;
-                margin-top: 1rem;
-                padding: 0.6rem 1.2rem;
-                font-size: 0.9rem;
-                font-weight: bold;
                 background-color: #28a745;
-                color: white;
-                border-radius: 8px;
-                text-decoration: none;
-                transition: all 0.3s ease;
-                box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
             }
             .feedback-button:hover {
                 background-color: #218838;
-                transform: translateY(-2px);
-                box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            }
+            .left-justified {
+                font-size: 1rem;
+                color: #555;
+                text-align: left;
+                margin-bottom: 1rem;
+            }
+            .left-justified strong {
+                font-weight: bold;
             }
         </style>
     </head>
@@ -268,27 +266,16 @@ async def landing_page():
                 <img src="https://reactome.org/templates/favourite/images/logo/logo.png" alt="Reactome Logo">
             </div>
             <h1>Meet the React-to-Me AI Chatbot!</h1>
-            <p>Your new guide to Reactome. Whether you’re looking for specific genes and pathways or just browsing, our AI Chatbot is here to assist you.</p>
-            <p>We created a model called React-to-Me which interacts in a conversational way, based on content in the Reactome Knowledgebase.</p>
-            <p>We are excited to introduce React-to-Me to get users’ feedback and learn about its strengths and weaknesses. Please try it now and provide us your feedback.</p>
+            <p class="centered-text">Your new guide to Reactome. Whether you're looking for specific genes and pathways or just browsing, our AI Chatbot is here to assist you!</p>
 
-            <a class="feedback-button" href="https://docs.google.com/forms/d/e/1FAIpQLSeWajgdJGV2gETj2bo-_jqU54Ryy6d7acJkvMo-KkflYUmfTg/viewform" target="_blank">
-                Provide Feedback
-            </a>
-
-            <div>
-                <p class="description">
-                    <strong>Personalized:</strong> Log into React-to-Me for enhanced features, such as an increased query allowance and securely stored chat history so you can revisit your conversations in the future.
-                </p>
-                <a class="button" href="$CHAINLIT_URL/chat/personal/" target="_blank">Personal</a>
+            <div class="button-container">
+                <a class="button" href="$CHAINLIT_URL/chat/guest/" target="_blank">Guest Access</a>
+                <a class="button" href="$CHAINLIT_URL/chat/personal/" target="_blank">Log In</a>
+                <a class="button feedback-button" href="https://docs.google.com/forms/d/e/1FAIpQLSeWajgdJGV2gETj2bo-_jqU54Ryy6d7acJkvMo-KkflYUmfTg/viewform" target="_blank">Feedback</a>
             </div>
 
-            <div>
-                <p class="description">
-                    <strong>Guest:</strong> Interact with React-to-Me as a guest. Your conversations will not be stored.
-                </p>
-                <a class="button" href="$CHAINLIT_URL/chat/guest/" target="_blank">Guest</a>
-            </div>
+            <p class="left-justified">Choose <strong>Guest Access</strong> to try the chatbot out. <strong>Log In</strong> will give an increased query allowance and securely stores your chat history so you can save and continue conversations.</p>
+            <p class="left-justified">We encourage you to use the <strong>Feedback</strong> button to tell us about your experience with the chatbot and help us improve it.</p>
         </div>
     </body>
     </html>
