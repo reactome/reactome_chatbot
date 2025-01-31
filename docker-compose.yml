@@ -18,6 +18,7 @@ services:
       - CHAINLIT_AUTH_SECRET=${CHAINLIT_AUTH_SECRET}
       - CHAINLIT_URI=${CHAINLIT_URI}
       - CHAINLIT_URL=${CHAINLIT_URL}
+      - CHAINLIT_ROOT_PATH=${CHAINLIT_ROOT_PATH}
       - TAVILY_API_KEY=${TAVILY_API_KEY}
     ports:
       - "8000:8000"
@@ -41,6 +42,7 @@ services:
       - CLOUDFLARE_SECRET_KEY=${CLOUDFLARE_SECRET_KEY}
       - CLOUDFLARE_SITE_KEY=${CLOUDFLARE_SITE_KEY}
       - CHAINLIT_URI=${CHAINLIT_URI_NO_LOGIN}
+      - CHAINLIT_URI_LOGIN=${CHAINLIT_URI}
       - CHAINLIT_URL=${CHAINLIT_URL}
       - TAVILY_API_KEY=${TAVILY_API_KEY}
     ports:
@@ -62,6 +64,7 @@ services:
       - "5432:5432"
     volumes:
       - ./initdb:/docker-entrypoint-initdb.d
+      - ./data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 10s

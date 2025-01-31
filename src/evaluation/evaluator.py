@@ -56,8 +56,6 @@ def load_dataset(testset_path):
         raise ValueError(f"Error reading the Excel file: {e}")
 
 
-memory = ChatHistoryMemory()
-
 
 def initialize_rag_chain_with_memory(embeddings_directory, model_name, rag_type):
     """Initialize the RAGChainWithMemory system."""

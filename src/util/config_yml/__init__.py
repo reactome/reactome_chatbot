@@ -53,12 +53,12 @@ class Config(BaseModel):
         self,
         user_id: str | None = None,
         message_times_queue: list[str] = [],
-    ) -> bool:
+    ) -> MessageRate | None:
         message_rate: MessageRate
         for message_rate in self.usage_limits.message_rates:
             if match_user(message_rate.users, user_id):
                 return message_rate.check_rate(message_times_queue)
-        return False  # not rate limited
+        return None  # not rate limited
 
     @classmethod
     def from_yaml(cls, config_yml: Path = CONFIG_YML) -> Self | None:
