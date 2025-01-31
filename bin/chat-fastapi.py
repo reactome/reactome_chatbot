@@ -58,6 +58,12 @@ def verify_secure_cookie(cookie_value: str) -> bool:
 
 @app.middleware("http")
 async def verify_captcha_middleware(request: Request, call_next):
+    if (
+        CHAINLIT_URI
+        and request.url.path.startswith(CHAINLIT_URI)
+        and request.url.path[-1] != "/"
+    ):
+        return RedirectResponse(url=f"{request.url.path}/")
     # Allow access to CAPTCHA pages and static files
     if (
         request.url.path
@@ -162,7 +168,7 @@ async def verify_captcha(request: Request):
 
     # Set a signed cookie to mark CAPTCHA as verified
     cookie_value = create_secure_cookie(cf_turnstile_response)
-    redirect_response = RedirectResponse(url=f"{CHAINLIT_URI}/", status_code=303)
+    redirect_response = RedirectResponse(url=f"{CHAINLIT_URI}/", status_code=302)
     redirect_response.set_cookie(
         key="captcha_verified",
         value=cookie_value,
@@ -176,10 +182,10 @@ async def verify_captcha(request: Request):
 
 @app.get("/chat/")
 async def landing_page():
-    html_content = Template("""
+    html_content = Template(
+        """
     <html>
     <head>
-        <link rel="stylesheet" href="/static/chainlit.css">
         <style>
             body {
                 display: flex;
@@ -279,7 +285,8 @@ async def landing_page():
         </div>
     </body>
     </html>
-    """).substitute(CHAINLIT_URL=CHAINLIT_URL)
+    """
+    ).substitute(CHAINLIT_URL=CHAINLIT_URL)
 
     return HTMLResponse(content=html_content)
 
