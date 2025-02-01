@@ -42,7 +42,7 @@ if os.getenv("POSTGRES_CHAINLIT_DB"):
 else:
     logging.warning("POSTGRES_CHAINLIT_DB undefined; Chainlit persistence disabled.")
 
-if os.getenv("OAUTH_AUTH0_CLIENT_ID"):
+if os.getenv("CHAINLIT_AUTH_SECRET"):
 
     @cl.oauth_callback
     def oauth_callback(

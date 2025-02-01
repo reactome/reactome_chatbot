@@ -58,6 +58,12 @@ def verify_secure_cookie(cookie_value: str) -> bool:
 
 @app.middleware("http")
 async def verify_captcha_middleware(request: Request, call_next):
+    if (
+        CHAINLIT_URI
+        and not request.url.path.startswith(CHAINLIT_URI)
+        and request.url.path[-1] != "/"
+    ):
+        return RedirectResponse(url=f"{request.url.path}/")
     # Allow access to CAPTCHA pages and static files
     if (
         request.url.path
@@ -69,6 +75,7 @@ async def verify_captcha_middleware(request: Request, call_next):
         ]
         or request.url.path.startswith("/static")
         or not os.getenv("CLOUDFLARE_SECRET_KEY")
+        or (CHAINLIT_URI and not request.url.path.startswith(CHAINLIT_URI))
     ):
         response = await call_next(request)
         return response
@@ -162,7 +169,11 @@ async def verify_captcha(request: Request):
 
     # Set a signed cookie to mark CAPTCHA as verified
     cookie_value = create_secure_cookie(cf_turnstile_response)
+<<<<<<< HEAD
     redirect_response = RedirectResponse(url=f"{CHAINLIT_URI}/", status_code=303)
+=======
+    redirect_response = RedirectResponse(url=f"{CHAINLIT_URI}/", status_code=302)
+>>>>>>> origin/main
     redirect_response.set_cookie(
         key="captcha_verified",
         value=cookie_value,
@@ -176,10 +187,18 @@ async def verify_captcha(request: Request):
 
 @app.get("/chat/")
 async def landing_page():
+<<<<<<< HEAD
     html_content = Template("""
     <html>
     <head>
         <link rel="stylesheet" href="/static/chainlit.css">
+=======
+    html_content = Template(
+        """
+    <html>
+    <head>
+        <link rel="icon" type="image/x-icon" href="https://reactome.org/templates/favourite/favicon.ico">
+>>>>>>> origin/main
         <style>
             body {
                 display: flex;
@@ -196,7 +215,11 @@ async def landing_page():
                 border-radius: 12px;
                 padding: 2rem;
                 background: white;
+<<<<<<< HEAD
                 max-width: 600px;
+=======
+                max-width: 700px;
+>>>>>>> origin/main
                 box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
             }
             .logo {
@@ -211,6 +234,7 @@ async def landing_page():
                 margin-bottom: 1rem;
                 color: #333;
             }
+<<<<<<< HEAD
             p {
                 font-size: 1rem;
                 color: #444;
@@ -220,6 +244,23 @@ async def landing_page():
             .button {
                 display: inline-block;
                 margin: 0.5rem 0;
+=======
+            .centered-text {
+                font-size: 1rem;
+                color: #444;
+                line-height: 1.6;
+                margin-bottom: 1.5rem;
+                text-align: center;
+            }
+            .button-container {
+                display: flex;
+                justify-content: center;
+                gap: 10px;
+                margin-bottom: 1.5rem;
+            }
+            .button {
+                display: inline-block;
+>>>>>>> origin/main
                 padding: 0.75rem 1.5rem;
                 font-size: 1rem;
                 font-weight: bold;
@@ -237,6 +278,7 @@ async def landing_page():
                 transform: translateY(-2px);
                 box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
             }
+<<<<<<< HEAD
             .description {
                 font-size: 1rem;
                 color: #555;
@@ -259,6 +301,22 @@ async def landing_page():
                 background-color: #218838;
                 transform: translateY(-2px);
                 box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+=======
+            .feedback-button {
+                background-color: #28a745;
+            }
+            .feedback-button:hover {
+                background-color: #218838;
+            }
+            .left-justified {
+                font-size: 1rem;
+                color: #555;
+                text-align: left;
+                margin-bottom: 1rem;
+            }
+            .left-justified strong {
+                font-weight: bold;
+>>>>>>> origin/main
             }
         </style>
     </head>
@@ -268,6 +326,7 @@ async def landing_page():
                 <img src="https://reactome.org/templates/favourite/images/logo/logo.png" alt="Reactome Logo">
             </div>
             <h1>Meet the React-to-Me AI Chatbot!</h1>
+<<<<<<< HEAD
             <p>Your new guide to Reactome. Whether you’re looking for specific genes and pathways or just browsing, our AI Chatbot is here to assist you.</p>
             <p>We created a model called React-to-Me which interacts in a conversational way, based on content in the Reactome Knowledgebase.</p>
             <p>We are excited to introduce React-to-Me to get users’ feedback and learn about its strengths and weaknesses. Please try it now and provide us your feedback.</p>
@@ -293,6 +352,23 @@ async def landing_page():
     </body>
     </html>
     """).substitute(CHAINLIT_URL=CHAINLIT_URL)
+=======
+            <p class="centered-text">Your new guide to Reactome. Whether you're looking for specific genes and pathways or just browsing, our AI Chatbot is here to assist you!</p>
+
+            <div class="button-container">
+                <a class="button" href="$CHAINLIT_URL/chat/guest/" target="_blank">Guest Access</a>
+                <a class="button" href="$CHAINLIT_URL/chat/personal/" target="_blank">Log In</a>
+                <a class="button feedback-button" href="https://docs.google.com/forms/d/e/1FAIpQLSeWajgdJGV2gETj2bo-_jqU54Ryy6d7acJkvMo-KkflYUmfTg/viewform" target="_blank">Feedback</a>
+            </div>
+
+            <p class="left-justified">Choose <strong>Guest Access</strong> to try the chatbot out. <strong>Log In</strong> will give an increased query allowance and securely stores your chat history so you can save and continue conversations.</p>
+            <p class="left-justified">We encourage you to use the <strong>Feedback</strong> button to tell us about your experience with the chatbot and help us improve it.</p>
+        </div>
+    </body>
+    </html>
+    """
+    ).substitute(CHAINLIT_URL=CHAINLIT_URL)
+>>>>>>> origin/main
 
     return HTMLResponse(content=html_content)
 
