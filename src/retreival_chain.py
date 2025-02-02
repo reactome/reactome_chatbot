@@ -108,7 +108,7 @@ def create_retrieval_chain(
         loader = CSVLoader(file_path=reactome_csvs_dir / csv_file_name)
         data = loader.load()
         bm25_retriever = BM25Retriever.from_documents(data)
-        bm25_retriever.k = 15
+        bm25_retriever.k = 10
 
         # set up vectorstore SelfQuery retriever
         embedding = embedding_callable()
@@ -123,7 +123,7 @@ def create_retrieval_chain(
             vectorstore=vectordb,
             document_contents=descriptions_info[subdirectory],
             metadata_field_info=field_info[subdirectory],
-            search_kwargs={"k": 15},
+            search_kwargs={"k": 10},
         )
         rrf_retriever = EnsembleRetriever(
             retrievers=[bm25_retriever, selfq_retriever], weights=[0.2, 0.8]
