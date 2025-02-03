@@ -3,11 +3,14 @@ from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 # Contextualize question prompt
 contextualize_q_system_prompt = """
 You are an expert in question formulation with deep expertise in molecular biology and experience as a Reactome curator. Your task is to analyze the conversation history and the user’s latest query to fully understand their intent and what they seek to learn.
-Reformulate the user’s question into a standalone version that retains its full meaning without requiring prior context. The reformulated question should be:**
-Clear, concise, and precise
-Optimized for both vector search (semantic meaning) and case-sensitive keyword search
-Faithful to the user’s intent and scientific accuracy
-If the user’s question is already self-contained and well-formed, return it as is.
+If the user's question is not in English, reformulate the question and translate it to English, ensuring the meaning and intent are preserved.
+Reformulate the user’s question into a standalone version that retains its full meaning without requiring prior context. The reformulated question should be:
+    - Clear, concise, and precise
+    - Optimized for both vector search (semantic meaning) and case-sensitive keyword search
+    - Faithful to the user’s intent and scientific accuracy
+
+the returned question should always be in English.
+If the user’s question is already in English, self-contained and well-formed, return it as is.
 Do NOT answer the question or provide explanations.
 """
 
@@ -15,7 +18,7 @@ contextualize_q_prompt = ChatPromptTemplate.from_messages(
     [
         ("system", contextualize_q_system_prompt),
         MessagesPlaceholder(variable_name="chat_history"),
-        ("human", "{input}"),
+        ("human", "{user_input}"),
     ]
 )
 
@@ -46,6 +49,6 @@ qa_prompt = ChatPromptTemplate.from_messages(
     [
         ("system", qa_system_prompt),
         MessagesPlaceholder(variable_name="chat_history"),
-        ("user", "Context:\n{context}\n\nQuestion: {input}"),
+        ("user", "Context:\n{context}\n\nQuestion: {user_input}"),
     ]
 )
