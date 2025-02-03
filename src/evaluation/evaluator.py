@@ -11,7 +11,8 @@ from langchain_community.document_loaders.csv_loader import CSVLoader
 from langchain_community.retrievers import BM25Retriever
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from ragas import evaluate
-from ragas.metrics import answer_relevancy, context_utilization, faithfulness, context_recall
+from ragas.metrics import (answer_relevancy, context_recall,
+                           context_utilization, faithfulness)
 
 from conversational_chain.chain import create_rag_chain
 from reactome.metadata_info import descriptions_info, field_info
@@ -54,7 +55,6 @@ def load_dataset(testset_path):
         raise FileNotFoundError(f"The file {testset_path} does not exist.")
     except ValueError as e:
         raise ValueError(f"Error reading the Excel file: {e}")
-
 
 
 def initialize_rag_chain_with_memory(embeddings_directory, model_name, rag_type):
@@ -103,7 +103,13 @@ def initialize_rag_chain_with_memory(embeddings_directory, model_name, rag_type)
 
 
 def process_testset(
-    testset_path, qa_system, embeddings_directory, response_dir, eval_dir, model_name, rag_type
+    testset_path,
+    qa_system,
+    embeddings_directory,
+    response_dir,
+    eval_dir,
+    model_name,
+    rag_type,
 ):
     """Process a single testset file."""
     testset = load_dataset(testset_path)
@@ -122,7 +128,7 @@ def process_testset(
     rag_eval_dir = os.path.join(eval_dir, rag_type)
     os.makedirs(rag_response_dir, exist_ok=True)
     os.makedirs(rag_eval_dir, exist_ok=True)
-    
+
     # Save responses to an Excel file
     data = {
         "question": questions,
@@ -167,7 +173,9 @@ def main():
 
     # Initialize RAG Chain
     embeddings_directory = "/Users/hmohammadi/Desktop/react_to_me_github/reactome_chatbot/embeddings/openai/text-embedding-3-large/reactome/Release90/summations"
-    qa_system = initialize_rag_chain_with_memory(embeddings_directory, model_name, rag_type)
+    qa_system = initialize_rag_chain_with_memory(
+        embeddings_directory, model_name, rag_type
+    )
 
     # Iterate over all .xlsx files in the directory
     for filename in os.listdir(args.testset_dir):

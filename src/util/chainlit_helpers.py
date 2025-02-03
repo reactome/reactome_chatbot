@@ -83,9 +83,7 @@ async def message_rate_limited(config: Config | None) -> bool:
             quota_message = "Our servers are currently overloaded.\n"
             login_uri: str | None = os.getenv("CHAINLIT_URI_LOGIN", "")
             if login_uri:
-                quota_message += (
-                    f"Please [log in]({login_uri}) to continue chatting and enjoy features like saved chat history and fewer limits."
-                )
+                quota_message += f"Please [log in]({login_uri}) to continue chatting and enjoy features like saved chat history and fewer limits."
             else:
                 quota_message += "Please try again later."
         await send_messages([quota_message])
