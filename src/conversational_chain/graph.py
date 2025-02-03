@@ -38,7 +38,7 @@ class AdditionalContent(TypedDict):
 
 class ChatState(TypedDict):
     user_input: str  # User input text
-    input: str  # LLM-generated query from user input
+    rephrased_input: str  # LLM-generated query from user input
     chat_history: Annotated[list[BaseMessage], add_messages]
     context: list[Document]
     answer: str  # primary LLM response that is streamed to the user
@@ -103,14 +103,14 @@ class RAGGraphWithMemory:
         self, state: ChatState, config: RunnableConfig
     ) -> dict[str, str]:
         query: str = await self.rephrase_chain.ainvoke(state, config)
-        return {"input": query}
+        return {"rephrased_input": query}
 
     async def call_model(
         self, state: ChatState, config: RunnableConfig
     ) -> dict[str, Any]:
         result: dict[str, Any] = await self.rag_chain.ainvoke(
             {
-                "input": state["input"],
+                "input": state["rephrased_input"],
                 "user_input": state["user_input"],
                 "chat_history": state["chat_history"],
             },
@@ -131,7 +131,7 @@ class RAGGraphWithMemory:
         search_results: list[WebSearchResult] = []
         if config["configurable"]["enable_postprocess"]:
             result: dict[str, Any] = await self.search_workflow.ainvoke(
-                {"question": state["input"], "generation": state["answer"]},
+                {"question": state["rephrased_input"], "generation": state["answer"]},
                 config=RunnableConfig(callbacks=config["callbacks"]),
             )
             search_results = result["search_results"]
