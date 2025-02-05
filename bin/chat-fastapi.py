@@ -33,6 +33,8 @@ ERROR_PAGE_TEMPLATE = Template(
 """
 )
 
+HEADER_DONT_CACHE = {"Cache-Control": "no-store"}
+
 
 def make_signature(value: str) -> str:
     if CLOUDFLARE_SECRET_KEY is None:
@@ -82,8 +84,10 @@ async def verify_captcha_middleware(request: Request, call_next):
 
     host = request.headers.get("referer")
     if host and host.startswith("http:"):
-        url = request.url.replace(scheme="https")
-        return RedirectResponse(url=str(url))
+        error_html = ERROR_PAGE_TEMPLATE.substitute(
+            error_title="HTTPS is required for accessing this site",
+        )
+        return Response(content=error_html, status_code=400, media_type="text/html")
 
     # Check if the user has completed the CAPTCHA verification
     captcha_verified = request.cookies.get("captcha_verified")
@@ -109,17 +113,13 @@ async def captcha_page():
                 <div class="cf-turnstile" data-sitekey="{os.getenv('CLOUDFLARE_SITE_KEY')}" data-callback="onSubmit"></div>
             </form>
             <script>
-                // Function called when CAPTCHA is completed
+                let formSubmitted = false;
                 function onSubmit(token) {{
-                    document.getElementById('captcha-form').submit();  // Auto-submit form once CAPTCHA is validated
+                    if (!formSubmitted) {{
+                        formSubmitted = true;
+                        document.getElementById('captcha-form').submit();
+                    }}
                 }}
-
-                // Optional: Automatically trigger Turnstile verification when the page loads
-                window.onload = function() {{
-                    setTimeout(function() {{
-                        turnstile.execute();
-                    }}, 1000);  // Trigger after 1 second (adjust as needed)
-                }};
             </script>
         </body>
     </html>
@@ -135,7 +135,12 @@ async def verify_captcha(request: Request):
         error_html = ERROR_PAGE_TEMPLATE.substitute(
             error_title="CAPTCHA response is invalid",
         )
-        return Response(content=error_html, media_type="text/html", status_code=400)
+        return Response(
+            content=error_html,
+            status_code=400,
+            headers=HEADER_DONT_CACHE,
+            media_type="text/html",
+        )
 
     client_ip: str
     if request.client:
@@ -146,7 +151,12 @@ async def verify_captcha(request: Request):
         error_html = ERROR_PAGE_TEMPLATE.substitute(
             error_title="Could not determine client host",
         )
-        return Response(content=error_html, media_type="text/html", status_code=400)
+        return Response(
+            content=error_html,
+            status_code=400,
+            headers=HEADER_DONT_CACHE,
+            media_type="text/html",
+        )
 
     # Verify the CAPTCHA with Cloudflare
     url = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
@@ -165,11 +175,18 @@ async def verify_captcha(request: Request):
         error_html = ERROR_PAGE_TEMPLATE.substitute(
             error_title="CAPTCHA verification failed",
         )
-        return Response(content=error_html, media_type="text/html", status_code=400)
+        return Response(
+            content=error_html,
+            status_code=400,
+            headers=HEADER_DONT_CACHE,
+            media_type="text/html",
+        )
 
     # Set a signed cookie to mark CAPTCHA as verified
     cookie_value = create_secure_cookie(cf_turnstile_response)
-    redirect_response = RedirectResponse(url=f"{CHAINLIT_URI}/", status_code=302)
+    redirect_response = RedirectResponse(
+        url=f"{CHAINLIT_URI}/", status_code=302, headers=HEADER_DONT_CACHE
+    )
     redirect_response.set_cookie(
         key="captcha_verified",
         value=cookie_value,
