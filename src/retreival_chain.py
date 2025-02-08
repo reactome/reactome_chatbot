@@ -17,9 +17,8 @@ from langchain_core.retrievers import BaseRetriever
 from langchain_huggingface import (HuggingFaceEmbeddings,
                                    HuggingFaceEndpointEmbeddings)
 from langchain_ollama.chat_models import ChatOllama
-from langchain_openai.chat_models.base import BaseChatOpenAI, ChatOpenAI
+from langchain_openai.chat_models.base import ChatOpenAI
 from langchain_openai.embeddings import OpenAIEmbeddings
-from pydantic import SecretStr
 
 from conversational_chain.graph import RAGGraphWithMemory
 from reactome.metadata_info import descriptions_info, field_info
