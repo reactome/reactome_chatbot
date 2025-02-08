@@ -63,7 +63,7 @@ def create_retrieval_chain(
     ollama_model: Optional[str] = None,
     ollama_url: str = "http://localhost:11434",
     hf_model: Optional[str] = None,
-    ds_model: Optional[str] = None,
+    oai_model: Optional[str] = "gpt-4o-mini",
     device: str = "cpu",
 ) -> RAGGraphWithMemory:
     callbacks: list[BaseCallbackHandler] = []
@@ -71,21 +71,12 @@ def create_retrieval_chain(
         callbacks = [StreamingStdOutCallbackHandler()]
 
     llm: BaseChatModel
-    if ds_model and "DEEPSEEK_API_KEY" in os.environ:
-        llm = BaseChatOpenAI(
-            model=ds_model,
-            api_key=SecretStr(os.environ["DEEPSEEK_API_KEY"]),
-            base_url="https://api.deepseek.com",
-            temperature=0.0,
-            callbacks=callbacks,
-            verbose=verbose,
-        )
-    elif ollama_model is None:  # Use OpenAI when Ollama not specified
+    if ollama_model is None and oai_model:  # Use OpenAI when Ollama not specified
         llm = ChatOpenAI(
             temperature=0.0,
             callbacks=callbacks,
             verbose=verbose,
-            model="gpt-4o-mini",
+            model=oai_model,
         )
     else:  # Otherwise use Ollama
         llm = ChatOllama(
