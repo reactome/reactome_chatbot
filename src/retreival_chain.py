@@ -62,7 +62,7 @@ def create_retrieval_chain(
     ollama_model: Optional[str] = None,
     ollama_url: str = "http://localhost:11434",
     hf_model: Optional[str] = None,
-    oai_model: Optional[str] = "gpt-4o-mini",
+    oai_model: str = "gpt-4o-mini",
     device: str = "cpu",
 ) -> RAGGraphWithMemory:
     callbacks: list[BaseCallbackHandler] = []
