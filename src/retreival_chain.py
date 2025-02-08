@@ -70,7 +70,7 @@ def create_retrieval_chain(
         callbacks = [StreamingStdOutCallbackHandler()]
 
     llm: BaseChatModel
-    if ollama_model is None and oai_model:  # Use OpenAI when Ollama not specified
+    if ollama_model is None:  # Use OpenAI when Ollama not specified
         llm = ChatOpenAI(
             temperature=0.0,
             callbacks=callbacks,
