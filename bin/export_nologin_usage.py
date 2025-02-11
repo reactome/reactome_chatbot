@@ -20,8 +20,8 @@ def build_query() -> str:
         FROM
             checkpoints
         WHERE
-            checkpoint_ns = '' AND
-            parent_checkpoint_id IS NULL
+            metadata->>'source' = 'input' AND
+            NOT (metadata ? 'langgraph_node')
         ORDER BY
             checkpoint->'ts';
     """
