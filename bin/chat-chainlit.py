@@ -30,6 +30,7 @@ llm_graph: RAGGraphWithMemory = create_retrieval_chain(
     ENV,
     EmbeddingEnvironment.get_dir(ENV),
     hf_model=EmbeddingEnvironment.get_model(ENV),
+    oai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
 )
 
 if os.getenv("POSTGRES_CHAINLIT_DB"):
