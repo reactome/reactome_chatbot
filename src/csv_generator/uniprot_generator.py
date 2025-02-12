@@ -77,7 +77,6 @@ class UniProtDataCleaner:
         self.df['Protein names'] = self.df['Protein names'].apply(
             lambda x: '; '.join([item.strip() for item in re.split(r'\) \(', x.replace('(', '; ').replace(')', ''))]))
 
-
     def format_mass(self):
         """Format the 'Mass' column by appending ' Da' to each mass value."""
         if 'Mass' in self.df.columns:
@@ -102,7 +101,7 @@ class UniProtDataCleaner:
                 return entry
             pattern = r"MOTIF (\d+\.\.\d+); /note=\"([^\"]*)\"; /evidence=\"[^\"]*\""
             matches = re.findall(pattern, entry)
-            return '; '.join([f"Has a {note} motif at position {pos.replace('..', '-')}" for pos, note in matches])
+            return '; '.join([f"Has a {note}  at position {pos.replace('..', '-')}" for pos, note in matches])
 
         def reformat_domain(entry):
             if pd.isna(entry):
@@ -113,7 +112,6 @@ class UniProtDataCleaner:
         
         self.df['Motif'] = self.df['Motif'].apply(reformat_motif)
         self.df['Domain [FT]'] = self.df['Domain [FT]'].apply(reformat_domain)
-
 
     def rename_columns(self):
         """Rename columns as specified."""
