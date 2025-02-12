@@ -5,73 +5,27 @@ import pandas as pd
 import requests
 from requests.adapters import HTTPAdapter, Retry
 import re
-import shutil
+from src.uniprot.api_connector import UniProtAPIConnector
 
 class UniProtDataCleaner:
-    def __init__(self, download_url: str, version: str):
-        self.download_url = download_url
+    def __init__(self, version: str):
         self.version = version
+        self.download_url = UniProtAPIConnector.get_download_url()  # ✅ Get URL dynamically
         self.file_path = f"src/uniprot/embeddings/{version}/uniprot_data.xlsx"
         self.csv_path = self.file_path.replace('.xlsx', '.csv')
         self.df = None
-        self.session = self._initialize_session()
+        self.api = UniProtAPIConnector()
         os.makedirs(os.path.dirname(self.file_path), exist_ok=True)
 
-    def _initialize_session(self):
-        """
-        Creates a session with retry logic for robust downloading.
-        """
-        retries = Retry(total=5, backoff_factor=0.25, status_forcelist=[500, 502, 503, 504])
-        session = requests.Session()
-        session.mount("https://", HTTPAdapter(max_retries=retries))
-        return session
-
-    def get_next_link(self, headers):
-        """
-        Parses the 'Link' header to find the URL for the next batch of data.
-
-        Args:
-        headers (dict): HTTP headers from the response.
-
-        Returns:
-        str: URL of the next batch or None if there is no next batch.
-        """
-        re_next_link = re.compile(r'<(.+)>; rel="next"')
-        if "Link" in headers:
-            match = re_next_link.match(headers["Link"])
-            if match:
-                return match.group(1)
-        return None
-
-    def get_batch(self, batch_url):
-        """
-        Generator to download data in batches.
-
-        Args:
-        batch_url (str): URL to start downloading batches from.
-
-        Yields:
-        tuple: The response object and the total number of results.
-        """
-        while batch_url:
-            response = self.session.get(batch_url)
-            response.raise_for_status()  # Ensure we stop on HTTP errors
-            total = response.headers.get("x-total-results", 0)
-            yield response, total
-            batch_url = self.get_next_link(response.headers)
-
     def download_data(self, force: bool = False):
-        """
-        Downloads data batch by batch, updating each batch to an Excel file until complete.
-        """
+        """Downloads data batch by batch using UniProt API connector."""
         progress = 0
         with open(self.file_path, 'wb') as f:
-            for response, total in self.get_batch(self.download_url):
+            for response, total in self.api.get_batch(self.download_url):
                 f.write(response.content)
-                progress += 1  # Increment progress per batch (adjust if you know the batch size)
+                progress += 1
                 print(f"Downloaded {progress} batches; Total: {total}")
-
-        print(f"UniProt data downloaded successfully to {self.file_path}")
+        print(f"✅ UniProt data downloaded successfully to {self.file_path}")
 
     def load_data(self):
         """Loads data from Excel file into a DataFrame."""
@@ -186,7 +140,7 @@ class UniProtDataCleaner:
         self.df.rename(columns=new_column_names, inplace=True)
 
 def generate_uniprot_csv(version: str, download_url: str, force: bool = False) -> str:
-    cleaner = UniProtDataCleaner(download_url, version)
+    cleaner = UniProtDataCleaner(version)
     cleaner.download_data(force)
     cleaner.clean_data()
     return cleaner.csv_path
