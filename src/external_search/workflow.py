@@ -2,7 +2,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from external_search.completeness_grader import CompletenessGrader
+from system_prompt.completeness_grader import CompletenessGrader
 from external_search.state import GraphState
 from external_search.tavily_wrapper import TavilyWrapper
 
