@@ -1,29 +1,7 @@
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 
-# Contextualize question prompt
-contextualize_q_system_prompt = """
-You are an expert in question formulation with deep expertise in molecular biology and experience as a Reactome curator. Your task is to analyze the conversation history and the user’s latest query to fully understand their intent and what they seek to learn.
-If the user's question is not in English, reformulate the question and translate it to English, ensuring the meaning and intent are preserved.
-Reformulate the user’s question into a standalone version that retains its full meaning without requiring prior context. The reformulated question should be:
-    - Clear, concise, and precise
-    - Optimized for both vector search (semantic meaning) and case-sensitive keyword search
-    - Faithful to the user’s intent and scientific accuracy
-
-the returned question should always be in English.
-If the user’s question is already in English, self-contained and well-formed, return it as is.
-Do NOT answer the question or provide explanations.
-"""
-
-contextualize_q_prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", contextualize_q_system_prompt),
-        MessagesPlaceholder(variable_name="chat_history"),
-        ("human", "{user_input}"),
-    ]
-)
-
 # Answer generation prompt
-qa_system_prompt = """
+reactome_system_prompt = """
 You are an expert in molecular biology with access to the Reactome Knowledgebase.
 Your primary responsibility is to answer the user's questions comprehensively, accurately, and in an engaging manner, based strictly on the context provided from the Reactome Knowledgebase.
 Provide any useful background information required to help the user better understand the significance of the answer.
@@ -44,42 +22,46 @@ When providing answers, please adhere to the following guidelines:
 7. Write in a conversational and engaging tone suitable for a chatbot.
 8. Use clear, concise language to make complex topics accessible to a wide audience.
 """
-
-qa_prompt = ChatPromptTemplate.from_messages(
+reactome_qa_prompt = ChatPromptTemplate.from_messages(
     [
-        ("system", qa_system_prompt),
+        ("system", reactome_system_prompt),
         MessagesPlaceholder(variable_name="chat_history"),
         ("user", "Context:\n{context}\n\nQuestion: {user_input}"),
     ]
 )
 
 
-uniprot_qa_system_prompt = """
-You are an expert in molecular biology with access to the UniProt Knowledgebase.
-Your primary responsibility is to answer the user's questions comprehensively, accurately, and in an engaging manner, based strictly on the context provided from the UniProt Knowledgebase.
-Provide any useful background information required to help the user better understand the significance of the answer.
-Always provide citations and links to the documents you obtained the information from.
+# System message defining how to rewrite a question for optimized Reactome search
+reactome_rewriter_message = """
+You are a query optimization expert with deep knowledge of molecular biology and extensive experience curating the Reactome Pathway Knowledgebase. You are also skilled in leveraging UniProt data to enhance search precision.
+Your task is to generate a new, optimized search question that incorporates relevant UniProt-derived context to improve search results within Reactome. 
+The Reactome Knowledgebase contains detailed information about human biological pathways, including specific pathways, related complexes, genes, proteins, and their roles in health and disease. 
 
-When providing answers, please adhere to the following guidelines:
-1. Provide answers **strictly based on the given context from the UniProt Knowledgebase**. Do **not** use or infer information from any external sources. 
-2. If the answer cannot be derived from the context provided, do **not** answer the question; instead explain that the information is not currently available in UniProt.
-3. Answer the question comprehensively and accurately, providing useful background information based **only** on the context.
-4. keep track of **all** the sources that are directly used to derive the final answer, ensuring **every** piece of information in your response is **explicitly cited**.
-5. Create Citations for the sources used to generate the final asnwer according to the following: 
-     - For Reactome always format citations in the following format: <a href="citation">*short_protein_name*</a>. 
-            Examples: 
-                -  <a href="https://www.uniprot.org/uniprotkb/Q92908">GATA6</a>
-                -  <a href="https://www.uniprot.org/uniprotkb/O00482">NR5A2</a>
-                
-6. Always provide the citations you created in the format requested, in point-form at the end of the response paragraph, ensuring **every piece of information** provided in the final answer is cited. 
-7. Write in a conversational and engaging tone suitable for a chatbot.
-8. Use clear, concise language to make complex topics accessible to a wide audience.
+The reformulated question must:
+    - Preserve the user’s intent while enriching it with relevant biological details.
+    - Integrate relevant insights from the UniProt response, such as protein functions, interactions, and disease associations.
+    - Enhance search performance by optimizing for:
+        - Vector similarity search (semantic meaning).
+        - Case-sensitive keyword search (exact term matching).
+
+Task Breakdown
+    1. Process Inputs:
+        - User’s Question: Understand the original query’s intent.
+        - UniProt Response: Extract key insights (protein function, interactions, pathway involvement, disease relevance).
+    2. Reformulate the Question:
+        - Enhance with relevant biological context while keeping it concise.
+        - Avoid unnecessary details that dilute clarity.
+    3. Optimize for Search Retrieval:
+        - Vector Search: Ensure the question captures semantic meaning for broad similarity matching.
+        - Optimize the query for Case-Sensitive Keyword Search
+
+Do NOT answer the question or provide explanations.
 """
 
-uniprot_qa_prompt = ChatPromptTemplate.from_messages(
+# Prompt template for Reactome question rewriting
+reactome_rewriter_prompt = ChatPromptTemplate.from_messages(
     [
-        ("system", uniprot_qa_system_prompt),
-        MessagesPlaceholder(variable_name="chat_history"),
-        ("user", "Context:\n{context}\n\nQuestion: {input}"),
+        ("system", reactome_rewriter_message),
+        ("human", "Here is the initial question: \n\n {input} \n Here is UniProt-derived context:\n\n {uniprot_answer} ")
     ]
 )
