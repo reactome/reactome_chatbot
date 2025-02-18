@@ -20,9 +20,10 @@ from langchain_ollama.chat_models import ChatOllama
 from langchain_openai.chat_models.base import BaseChatOpenAI, ChatOpenAI
 from langchain_openai.embeddings import OpenAIEmbeddings
 from pydantic import SecretStr
+from langchain_core.prompts import ChatPromptTemplate
+
 
 from conversational_chain.graph import RAGGraphWithMemory
-from reactome.metadata_info import descriptions_info, field_info
 
 chroma_settings = chromadb.config.Settings(anonymized_telemetry=False)
 
@@ -57,6 +58,9 @@ def get_embedding(
 def create_retrieval_chain(
     env: str,
     embeddings_directory: Path,
+    descriptions_info: dict,
+    field_info: dict,
+    qa_prompt: ChatPromptTemplate,
     *,
     commandline: bool = False,
     verbose: bool = False,
@@ -130,11 +134,12 @@ def create_retrieval_chain(
         )
         retriever_list.append(rrf_retriever)
 
-    reactome_retriever = MergerRetriever(retrievers=retriever_list)
+    retriever = MergerRetriever(retrievers=retriever_list)
 
     qa = RAGGraphWithMemory(
-        retriever=reactome_retriever,
+        retriever=retriever,
         llm=llm,
+        prompt=qa_prompt,
     )
 
     return qa
