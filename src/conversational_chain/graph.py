@@ -20,6 +20,7 @@ from conversational_chain.chain import create_rag_chain, create_rephrase_chain
 from external_search.state import WebSearchResult
 from external_search.workflow import create_search_workflow
 from util.logging import logging
+from langchain_core.prompts import ChatPromptTemplate
 
 LANGGRAPH_DB_URI = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_LANGGRAPH_DB')}?sslmode=disable"
 
@@ -48,9 +49,9 @@ class ChatState(TypedDict):
 
 
 class RAGGraphWithMemory:
-    def __init__(self, retriever: BaseRetriever, llm: BaseChatModel) -> None:
+    def __init__(self, retriever: BaseRetriever, llm: BaseChatModel, prompt: ChatPromptTemplate) -> None:
         # Set up runnables
-        self.rag_chain: Runnable = create_rag_chain(llm, retriever)
+        self.rag_chain: Runnable = create_rag_chain(llm, retriever, prompt)
         self.rephrase_chain: Runnable = create_rephrase_chain(llm)
         self.search_workflow: CompiledStateGraph = create_search_workflow(llm)
 

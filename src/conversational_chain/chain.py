@@ -4,8 +4,11 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.runnables import Runnable
+from langchain_core.prompts import ChatPromptTemplate
 
-from system_prompt.reactome_prompt import contextualize_q_prompt, qa_prompt
+
+from src.system_prompt.prerocess_prompt import contextualize_q_prompt
+
 
 
 def create_rephrase_chain(llm: BaseChatModel) -> Runnable:
@@ -14,11 +17,11 @@ def create_rephrase_chain(llm: BaseChatModel) -> Runnable:
     )
 
 
-def create_rag_chain(llm: BaseChatModel, retriever: BaseRetriever) -> Runnable:
+def create_rag_chain(llm: BaseChatModel, retriever: BaseRetriever, prompt: ChatPromptTemplate ) -> Runnable:
     # Create the documents chain
     question_answer_chain: Runnable = create_stuff_documents_chain(
         llm=llm.model_copy(update={"streaming": True}),
-        prompt=qa_prompt,
+        prompt=prompt,
     )
 
     # Create the retrieval chain
