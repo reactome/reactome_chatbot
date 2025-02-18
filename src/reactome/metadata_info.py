@@ -7,7 +7,7 @@ pathway_name_description = "The name of the biological pathway, indicating a spe
                 The relationship between 'reaction_name' and 'pathway_name' is foundational, with each reaction serving as a step or component within the overarching pathway, contributing to its completion and functional outcome.\
                 This relationship is critical to understanding the biological processes and mechanisms within the Reactome Database."
 
-descriptions_info: dict[str, str] = {
+reactome_descriptions_info: dict[str, str] = {
     "ewas": "Contains data on proteins and nucleic acids with known sequences. Includes entity names, IDs, canonical and synonymous gene names, and functions.",
     "complexes": "Catalogs biological complexes, listing complex names and IDs along with the names and IDs of their components. ",
     "reactions": "Documents biological pathways and their constituent reactions, detailing pathway and reaction names and IDs. It includes information on the inputs, outputs, and catalysts for each reaction, emphasizing the interconnected nature of cellular processes. Inputs and outputs, critical to the initiation and conclusion of reactions, along with catalysts that facilitate these processes, are cataloged to highlight their roles across various reactions and pathways",
@@ -15,7 +15,7 @@ descriptions_info: dict[str, str] = {
 }
 
 
-field_info: dict[str, list[AttributeInfo]] = {
+reactome_field_info: dict[str, list[AttributeInfo]] = {
     "summations": [
         AttributeInfo(
             name="st_id",
