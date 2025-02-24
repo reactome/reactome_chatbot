@@ -17,11 +17,11 @@ def create_rephrase_chain(llm: BaseChatModel) -> Runnable:
     )
 
 
-def create_rag_chain(llm: BaseChatModel, retriever: BaseRetriever, prompt: ChatPromptTemplate ) -> Runnable:
+def create_rag_chain(llm: BaseChatModel, retriever: BaseRetriever, qa_prompt: ChatPromptTemplate ) -> Runnable:
     # Create the documents chain
     question_answer_chain: Runnable = create_stuff_documents_chain(
-        llm=llm.model_copy(update={"streaming": True}),
-        prompt=prompt,
+        llm=llm,
+        prompt=qa_prompt,
     )
 
     # Create the retrieval chain
