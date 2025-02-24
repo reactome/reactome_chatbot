@@ -7,7 +7,7 @@ from langchain_core.runnables import Runnable
 from langchain_core.prompts import ChatPromptTemplate
 
 
-from src.system_prompt.prerocess_prompt import contextualize_q_prompt
+from system_prompt.prerocess_prompt import contextualize_q_prompt
 
 
 
