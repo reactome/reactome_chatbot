@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from langchain_community.callbacks import OpenAICallbackHandler
 
 from conversational_chain.graph import RAGGraphWithMemory
-from retreival_chain import create_retrieval_chain
+from retreival_chain import create_retriever
 from util.chainlit_helpers import (is_feature_enabled, message_rate_limited,
                                    save_openai_metrics, static_messages,
                                    update_search_results)

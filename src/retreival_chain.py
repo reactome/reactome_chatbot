@@ -55,12 +55,10 @@ def get_embedding(
         )
 
 
-def create_retrieval_chain(
-    env: str,
+def create_retriever(
     embeddings_directory: Path,
     descriptions_info: dict,
     field_info: dict,
-    qa_prompt: ChatPromptTemplate,
     *,
     commandline: bool = False,
     verbose: bool = False,
@@ -69,7 +67,7 @@ def create_retrieval_chain(
     hf_model: Optional[str] = None,
     ds_model: Optional[str] = None,
     device: str = "cpu",
-) -> RAGGraphWithMemory:
+) -> BaseRetriever:
     callbacks: list[BaseCallbackHandler] = []
     if commandline:
         callbacks = [StreamingStdOutCallbackHandler()]
@@ -134,12 +132,6 @@ def create_retrieval_chain(
         )
         retriever_list.append(rrf_retriever)
 
-    retriever = MergerRetriever(retrievers=retriever_list)
+    final_retriever = MergerRetriever(retrievers=retriever_list)
 
-    qa = RAGGraphWithMemory(
-        retriever=retriever,
-        llm=llm,
-        prompt=qa_prompt,
-    )
-
-    return qa
+    return final_retriever
