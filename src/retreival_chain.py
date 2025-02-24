@@ -56,6 +56,7 @@ def get_embedding(
 
 
 def create_retriever(
+    env: str,
     embeddings_directory: Path,
     descriptions_info: dict,
     field_info: dict,
