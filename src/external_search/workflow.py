@@ -8,7 +8,8 @@ from external_search.tavily_wrapper import TavilyWrapper
 
 
 def decide_next_steps(state: GraphState) -> str:
-    if state["external_search"] == "Yes":
+    if state["complete"] == "No":
+        print("Response is incomplete. Performing web search.")
         return "perform_web_search"
     else:
         return "no_search"

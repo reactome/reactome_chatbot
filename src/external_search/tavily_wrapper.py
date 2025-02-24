@@ -65,7 +65,7 @@ class TavilyWrapper:
         ]
 
     async def ainvoke(self, state: GraphState) -> dict[str, list[WebSearchResult]]:
-        query: str = state["question"]
+        query: str = state["input"]
         search_results: list[WebSearchResult] = await self.search(query)
         return {"search_results": search_results}
 
