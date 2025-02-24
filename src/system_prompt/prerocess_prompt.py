@@ -3,6 +3,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable, RunnableConfig
 from pydantic import BaseModel, Field
+from langchain_core.output_parsers import StrOutputParser
 
 from src.external_search.state import GraphState
 
@@ -19,7 +20,7 @@ No: The question is harmful, offensive, inappropriate, or unethical.
 safety_check_prompt = ChatPromptTemplate.from_messages(
     [
         ("system", safety_check_message),
-        ("human", "User question: \n\n {user_input}"),
+        ("human", "User question: \n\n {input}"),
     ]
 )
 
@@ -43,11 +44,11 @@ class SafetyChecker:
     ) -> dict[str, str]:
         result: SafetyCheck = await self.runnable.ainvoke(
             {
-                "user_input": state["user_input"],
+                "input": state["input"],
             },
             config,
         )
-        return {"safety_check": result.binary_score}
+        return {"safety": result.binary_score}
 
 
 
@@ -67,6 +68,9 @@ language_detection_prompt = ChatPromptTemplate.from_messages(
     ]
 )
 
+def detect_language(llm: BaseChatModel) -> Runnable:
+    return language_detection_prompt | llm | StrOutputParser().with_config(run_name="detect_language")
+
 # Contextualize question prompt
 contextualize_q_system_prompt = """
 You are an expert in question formulation with deep expertise in molecular biology and experience as a Reactome curator. Your task is to analyze the conversation history and the user’s latest query to fully understand their intent and what they seek to learn.
@@ -78,7 +82,7 @@ Reformulate the user’s question into a standalone version that retains its ful
 
 the returned question should always be in English.
 If the user’s question is already in English, self-contained and well-formed, return it as is.
-Do NOT answer the question or provide explanations.
+Do NOT answer the question, provide explanations or owrry about question harmfulness and appropriateness, just reformualte the question as best as you can.
 """
 
 contextualize_q_prompt = ChatPromptTemplate.from_messages(

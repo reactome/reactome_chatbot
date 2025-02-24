@@ -1,4 +1,9 @@
-from langchain.prompts import ChatPromptTemplate
+from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import Runnable, RunnableConfig
+from pydantic import BaseModel, Field
+from langchain_core.output_parsers import StrOutputParser
 
 # System message defining the rules for merging Reactome & UniProt responses
 summarization_message = """
@@ -36,3 +41,6 @@ summarizer_prompt = ChatPromptTemplate.from_messages(
         ("human", "User question: {input} \n\n Language: {query_language} \n\n Reactome-drived information: \n {reactome_answer} \n\n UniProt-drived infromation: \n {uniprot_answer}.")
     ]
 )
+
+def create_summarization_chain(llm: BaseChatModel) -> Runnable:
+    return (summarizer_prompt | llm | StrOutputParser()).with_config(run_name = "summarize_answer")

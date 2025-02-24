@@ -1,4 +1,9 @@
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import Runnable, RunnableConfig
+from pydantic import BaseModel, Field
+from langchain_core.output_parsers import StrOutputParser
 
 
 uniprot_system_prompt = """
@@ -42,7 +47,6 @@ The reformulated question must:
     - Incorporate Reactome-derived insights, such as:
             - Protein names and functions
             - Molecular interactions
-            - Biological Pathway involvement
             - Disease associations
     -Optimizes for UniProt’s search retrieval, ensuring:
             - Vector Similarity Search: Captures semantic meaning for broad relevance.
@@ -68,3 +72,6 @@ uniprot_rewriter_prompt = ChatPromptTemplate.from_messages(
         ("human", "Here is the initial question: \n\n {input} \n Here is Reactome-derived context: \n\n{reactome_answer}")
     ]
 )
+
+def rewrite_uniprot_query(llm: BaseChatModel) -> Runnable:
+    return (uniprot_rewriter_prompt | llm | StrOutputParser()).with_config(run_name="rewrite_uniprot_query")

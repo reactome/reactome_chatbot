@@ -1,4 +1,9 @@
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import Runnable, RunnableConfig
+from pydantic import BaseModel, Field
+from langchain_core.output_parsers import StrOutputParser
 
 # Answer generation prompt
 reactome_system_prompt = """
@@ -26,10 +31,12 @@ reactome_qa_prompt = ChatPromptTemplate.from_messages(
     [
         ("system", reactome_system_prompt),
         MessagesPlaceholder(variable_name="chat_history"),
-        ("user", "Context:\n{context}\n\nQuestion: {user_input}"),
+        ("user", "Context:\n{context}\n\nQuestion: {input}"),
     ]
 )
 
+def generate_reactome_answer(llm: BaseChatModel) -> Runnable:
+    return (reactome_qa_prompt | llm | StrOutputParser()).with_config(run_name="generate_reactome_answer")
 
 # System message defining how to rewrite a question for optimized Reactome search
 reactome_rewriter_message = """
@@ -39,7 +46,7 @@ The Reactome Knowledgebase contains detailed information about human biological 
 
 The reformulated question must:
     - Preserve the user’s intent while enriching it with relevant biological details.
-    - Integrate relevant insights from the UniProt response, such as protein functions, interactions, and disease associations.
+    - Integrate relevant insights from the UniProt response, such as protein names, functions, interactions, biological pathways and disease associations.
     - Enhance search performance by optimizing for:
         - Vector similarity search (semantic meaning).
         - Case-sensitive keyword search (exact term matching).
@@ -65,3 +72,6 @@ reactome_rewriter_prompt = ChatPromptTemplate.from_messages(
         ("human", "Here is the initial question: \n\n {input} \n Here is UniProt-derived context:\n\n {uniprot_answer} ")
     ]
 )
+
+def rewrite_reactome_query(llm: BaseChatModel) -> Runnable:
+    return (reactome_rewriter_prompt | llm | StrOutputParser()).with_config(run_name="rewrite_reactome_query")
