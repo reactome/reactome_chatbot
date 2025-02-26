@@ -4,9 +4,9 @@ from typing import Annotated, Any, TypedDict
 
 from langchain_core.callbacks.base import Callbacks
 from langchain_core.documents import Document
+from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from langchain_core.retrievers import BaseRetriever
 from langchain_core.runnables import Runnable, RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
@@ -16,17 +16,14 @@ from langgraph.graph.state import CompiledStateGraph, StateGraph
 from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
-from conversational_chain.chain import create_rag_chain, create_rephrase_chain
-from external_search.state import WebSearchResult
-from external_search.workflow import create_search_workflow
+from agent.models import get_embedding, get_llm
+from agent.tasks.rephrase import create_rephrase_chain
+from retrievers.reactome.rag import create_reactome_rag
+from tools.external_search.state import WebSearchResult
+from tools.external_search.workflow import create_search_workflow
 from util.logging import logging
 
 LANGGRAPH_DB_URI = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_LANGGRAPH_DB')}?sslmode=disable"
-
-connection_kwargs = {
-    "autocommit": True,
-    "prepare_threshold": 0,
-}
 
 if not os.getenv("POSTGRES_LANGGRAPH_DB"):
     logging.warning("POSTGRES_LANGGRAPH_DB undefined; falling back to MemorySaver.")
@@ -36,26 +33,30 @@ class AdditionalContent(TypedDict):
     search_results: list[WebSearchResult]
 
 
-class ChatState(TypedDict):
+class AgentState(TypedDict):
     user_input: str  # User input text
     rephrased_input: str  # LLM-generated query from user input
     chat_history: Annotated[list[BaseMessage], add_messages]
     context: list[Document]
     answer: str  # primary LLM response that is streamed to the user
-    additional_content: (
-        AdditionalContent  # additional content to send after graph completes
-    )
+    additional_content: AdditionalContent  # sends on graph completion
 
 
-class RAGGraphWithMemory:
-    def __init__(self, retriever: BaseRetriever, llm: BaseChatModel) -> None:
-        # Set up runnables
-        self.rag_chain: Runnable = create_rag_chain(llm, retriever)
+class AgentGraph:
+    def __init__(self) -> None:
+        # Get base models
+        llm: BaseChatModel = get_llm("openai", "gpt-4o-mini")
+        embedding: Embeddings = get_embedding("openai", "text-embedding-3-large")
+
+        # Create runnables (tasks & tools)
+        self.reactome_rag: Runnable = create_reactome_rag(
+            llm, embedding, streaming=True
+        )
         self.rephrase_chain: Runnable = create_rephrase_chain(llm)
         self.search_workflow: CompiledStateGraph = create_search_workflow(llm)
 
         # Create graph
-        state_graph: StateGraph = StateGraph(ChatState)
+        state_graph = StateGraph(AgentState)
         # Set up nodes
         state_graph.add_node("preprocess", self.preprocess)
         state_graph.add_node("model", self.call_model)
@@ -88,7 +89,10 @@ class RAGGraphWithMemory:
             max_size=20,
             open=False,
             timeout=30,
-            kwargs=connection_kwargs,
+            kwargs={
+                "autocommit": True,
+                "prepare_threshold": 0,
+            },
         )
         await self.pool.open()
         checkpointer = AsyncPostgresSaver(self.pool)
@@ -100,15 +104,15 @@ class RAGGraphWithMemory:
             await self.pool.close()
 
     async def preprocess(
-        self, state: ChatState, config: RunnableConfig
+        self, state: AgentState, config: RunnableConfig
     ) -> dict[str, str]:
         query: str = await self.rephrase_chain.ainvoke(state, config)
         return {"rephrased_input": query}
 
     async def call_model(
-        self, state: ChatState, config: RunnableConfig
+        self, state: AgentState, config: RunnableConfig
     ) -> dict[str, Any]:
-        result: dict[str, Any] = await self.rag_chain.ainvoke(
+        result: dict[str, Any] = await self.reactome_rag.ainvoke(
             {
                 "input": state["rephrased_input"],
                 "user_input": state["user_input"],
@@ -126,7 +130,7 @@ class RAGGraphWithMemory:
         }
 
     async def postprocess(
-        self, state: ChatState, config: RunnableConfig
+        self, state: AgentState, config: RunnableConfig
     ) -> dict[str, dict[str, list[WebSearchResult]]]:
         search_results: list[WebSearchResult] = []
         if config["configurable"]["enable_postprocess"]:

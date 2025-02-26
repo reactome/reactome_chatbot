@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from tavily import AsyncTavilyClient, MissingAPIKeyError
 
-from external_search.state import GraphState, WebSearchResult
+from tools.external_search.state import GraphState, WebSearchResult
 from util.logging import logging
 
 

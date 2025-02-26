@@ -8,9 +8,9 @@ from langchain_huggingface import (HuggingFaceEmbeddings,
                                    HuggingFaceEndpointEmbeddings)
 from langchain_openai import OpenAIEmbeddings
 
-from csv_generator.reactome_generator import generate_all_csvs
-from metadata_csv_loader import MetaDataCSVLoader
-from reactome.neo4j_connector import Neo4jConnector
+from data_generation.metadata_csv_loader import MetaDataCSVLoader
+from data_generation.reactome.csv_generator import generate_all_csvs
+from data_generation.reactome.neo4j_connector import Neo4jConnector
 
 
 def upload_to_chromadb(

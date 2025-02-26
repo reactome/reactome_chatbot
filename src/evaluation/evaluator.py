@@ -14,8 +14,9 @@ from ragas import evaluate
 from ragas.metrics import (answer_relevancy, context_recall,
                            context_utilization, faithfulness)
 
-from conversational_chain.chain import create_rag_chain
-from reactome.metadata_info import descriptions_info, field_info
+from retrievers.rag_chain import create_rag_chain
+from retrievers.reactome.metadata_info import descriptions_info, field_info
+from retrievers.reactome.prompt import qa_prompt
 
 
 def parse_arguments():
@@ -98,6 +99,7 @@ def initialize_rag_chain_with_memory(embeddings_directory, model_name, rag_type)
     qa = create_rag_chain(
         retriever=reactome_retriever,
         llm=llm,
+        qa_prompt=qa_prompt,
     )
     return qa
 
