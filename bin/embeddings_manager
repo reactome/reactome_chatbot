@@ -14,6 +14,7 @@ from botocore.client import Config
 
 from data_generation.alliance import generate_alliance_embeddings
 from data_generation.reactome import generate_reactome_embeddings
+from data_generation.uniprot import generate_uniprot_embeddings
 from util.embedding_environment import EM_ARCHIVE, EmbeddingEnvironment
 
 S3_BUCKET = "download.reactome.org"
@@ -86,6 +87,8 @@ def make(
         os.environ["HUGGINGFACEHUB_API_TOKEN"] = hf_key
     if embedding.db == "reactome":
         generate_reactome_embeddings(str(embedding_path), hf_model=embedding.model, **kwargs)
+    elif embedding.db == "uniprot":
+        generate_uniprot_embeddings(embedding_path, hf_model=embedding.model, **kwargs)
     elif embedding.db == "alliance":
         generate_alliance_embeddings(str(embedding_path), hf_model=embedding.model, **kwargs)
     else:

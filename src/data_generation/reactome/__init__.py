@@ -52,9 +52,14 @@ def upload_to_chromadb(
     docs = loader.load()
     embeddings_instance: Embeddings
     if hf_model is None:  # Use OpenAI
-        embeddings_instance = OpenAIEmbeddings()
+        embeddings_instance = OpenAIEmbeddings(
+            show_progress_bar=True,
+        )
     elif hf_model.startswith("openai/text-embedding-"):
-        embeddings_instance = OpenAIEmbeddings(model=hf_model[len("openai/") :])
+        embeddings_instance = OpenAIEmbeddings(
+            model=hf_model[len("openai/") :],
+            show_progress_bar=True,
+        )
     elif "HUGGINGFACEHUB_API_TOKEN" in os.environ:
         embeddings_instance = HuggingFaceEndpointEmbeddings(
             huggingfacehub_api_token=os.environ["HUGGINGFACEHUB_API_TOKEN"],

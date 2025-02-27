@@ -1,12 +1,17 @@
 import os
+from pathlib import Path
 from typing import Optional
+
 import torch
 from langchain_community.vectorstores import Chroma
 from langchain_core.embeddings import Embeddings
-from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
+from langchain_huggingface import (HuggingFaceEmbeddings,
+                                   HuggingFaceEndpointEmbeddings)
 from langchain_openai import OpenAIEmbeddings
-from metadata_csv_loader import MetaDataCSVLoader
-from csv_generator.uniprot_generator import generate_uniprot_csv
+
+from data_generation.metadata_csv_loader import MetaDataCSVLoader
+from data_generation.uniprot.csv_generator import generate_uniprot_csv
+
 
 def upload_to_chromadb(
     embeddings_dir: str,
@@ -16,13 +21,13 @@ def upload_to_chromadb(
     device: Optional[str] = None,
 ) -> Chroma:
     metadata_columns: dict[str, list] = {
-        'uniprot_data':[
-            "gene_names", 
-            "short_protein_name", 
+        "uniprot_data": [
+            "gene_names",
+            "short_protein_name",
             "full_protein_name",
             "protein_family",
             "biological_pathways",
-            ],
+        ],
     }
 
     loader = MetaDataCSVLoader(
@@ -30,16 +35,24 @@ def upload_to_chromadb(
         metadata_columns=metadata_columns[embedding_table],
         encoding="utf-8",
     )
-    
+
     docs = loader.load()
     print(f"Loaded {len(docs)} documents from {file}")
 
     embeddings_instance: Embeddings
     if hf_model is None:  # Use OpenAI
         print("Using OpenAI embeddings")
-        embeddings_instance = OpenAIEmbeddings(model="text-embedding-3-large", chunk_size=800, show_progress_bar=True, )
+        embeddings_instance = OpenAIEmbeddings(
+            model="text-embedding-3-large",
+            chunk_size=800,
+            show_progress_bar=True,
+        )
     elif hf_model.startswith("openai/text-embedding-"):
-        embeddings_instance = OpenAIEmbeddings(model=hf_model[len("openai/") :])
+        embeddings_instance = OpenAIEmbeddings(
+            model=hf_model[len("openai/") :],
+            chunk_size=800,
+            show_progress_bar=True,
+        )
     elif "HUGGINGFACEHUB_API_TOKEN" in os.environ:
         embeddings_instance = HuggingFaceEndpointEmbeddings(
             huggingfacehub_api_token=os.environ["HUGGINGFACEHUB_API_TOKEN"],
@@ -59,14 +72,16 @@ def upload_to_chromadb(
         embedding=embeddings_instance,
         persist_directory=os.path.join(embeddings_dir, embedding_table),
     )
+
+
 def generate_uniprot_embeddings(
-        embeddings_dir: str, 
-        version: str, 
-        download_url: str, 
-        force: bool = False, 
-        hf_model: Optional[str] = None, 
-        device: Optional[str] = None
-        ) -> None:
-    csv_file = generate_uniprot_csv(version, download_url, force)
-    db = upload_to_chromadb(embeddings_dir, csv_file,'uniprot_data',  hf_model, device)
-    print(f"UniProt embeddings stored in {db._persist_directory}")
+    embedding_path: Path,
+    hf_model: Optional[str] = None,
+    device: Optional[str] = None,
+    **_,
+) -> None:
+    csv_path = generate_uniprot_csv(embedding_path)
+    db = upload_to_chromadb(
+        str(embedding_path), str(csv_path), "uniprot_data", hf_model, device
+    )
+    print(db._collection.count())

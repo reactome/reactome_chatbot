@@ -1,6 +1,8 @@
-import requests
 import re
+
+import requests
 from requests.adapters import HTTPAdapter, Retry
+
 
 class UniProtAPIConnector:
     BASE_URL = "https://rest.uniprot.org/uniprotkb/stream"
@@ -24,7 +26,9 @@ class UniProtAPIConnector:
 
     def _initialize_session(self):
         """Creates a session with retry logic for robust downloading."""
-        retries = Retry(total=5, backoff_factor=0.25, status_forcelist=[500, 502, 503, 504])
+        retries = Retry(
+            total=5, backoff_factor=0.25, status_forcelist=[500, 502, 503, 504]
+        )
         session = requests.Session()
         session.mount("https://", HTTPAdapter(max_retries=retries))
         return session
