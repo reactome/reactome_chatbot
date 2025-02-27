@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from langchain_community.callbacks import OpenAICallbackHandler
 
 from agent.graph import AgentGraph
+from agent.profiles import CHAT_PROFILES
 from util.chainlit_helpers import (is_feature_enabled, message_rate_limited,
                                    save_openai_metrics, static_messages,
                                    update_search_results)
@@ -18,7 +19,9 @@ from util.logging import logging
 load_dotenv()
 config: Config | None = Config.from_yaml()
 
-llm_graph = AgentGraph()
+profiles = ["React-to-Me"]
+
+llm_graph = AgentGraph(profiles)
 
 if os.getenv("POSTGRES_CHAINLIT_DB"):
     CHAINLIT_DB_URI = f"postgresql+psycopg://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_CHAINLIT_DB')}?sslmode=disable"
@@ -43,12 +46,13 @@ if os.getenv("CHAINLIT_AUTH_SECRET"):
 
 
 @cl.set_chat_profiles
-async def chat_profile() -> list[cl.ChatProfile]:
+async def chat_profiles() -> list[cl.ChatProfile]:
     return [
         cl.ChatProfile(
-            name="React-to-me",
-            markdown_description="An AI assistant specialized in exploring **Reactome** biological pathways and processes.",
+            name=CHAT_PROFILES[profile].name,
+            markdown_description=CHAT_PROFILES[profile].description,
         )
+        for profile in profiles
     ]
 
 
@@ -79,6 +83,7 @@ async def main(message: cl.Message) -> None:
     message_count: int = cl.user_session.get("message_count", 0) + 1
     cl.user_session.set("message_count", message_count)
 
+    chat_profile: str = cl.user_session.get("chat_profile")
     thread_id: str = cl.user_session.get("thread_id")
 
     chainlit_cb = cl.AsyncLangchainCallbackHandler(
@@ -90,6 +95,7 @@ async def main(message: cl.Message) -> None:
     enable_postprocess: bool = is_feature_enabled(config, "postprocessing")
     result: dict[str, Any] = await llm_graph.ainvoke(
         message.content,
+        chat_profile,
         callbacks=[chainlit_cb, openai_cb],
         thread_id=thread_id,
         enable_postprocess=enable_postprocess,
