@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import os
 from typing import Any
 
@@ -10,34 +8,17 @@ from chainlit.types import ThreadDict
 from dotenv import load_dotenv
 from langchain_community.callbacks import OpenAICallbackHandler
 
-from conversational_chain.graph import RAGGraphWithMemory
-from retreival_chain import create_retriever
+from agent.graph import AgentGraph
 from util.chainlit_helpers import (is_feature_enabled, message_rate_limited,
                                    save_openai_metrics, static_messages,
                                    update_search_results)
 from util.config_yml import Config, TriggerEvent
-from util.embedding_environment import EmbeddingEnvironment
 from util.logging import logging
-
-from reactome.metadata_info import reactome_descriptions_info, reactome_field_info
-from system_prompt.reactome_prompt import reactome_qa_prompt
-
 
 load_dotenv()
 config: Config | None = Config.from_yaml()
 
-
-ENV = os.getenv("CHAT_ENV", "reactome")
-logging.info(f"Selected environment: {ENV}")
-
-llm_graph: RAGGraphWithMemory = create_retrieval_chain(
-    ENV,
-    EmbeddingEnvironment.get_dir(ENV),
-    descriptions_info=reactome_descriptions_info, 
-    field_info=reactome_field_info,
-    qa_prompt=reactome_qa_prompt,
-    hf_model=EmbeddingEnvironment.get_model(ENV),
-)
+llm_graph = AgentGraph()
 
 if os.getenv("POSTGRES_CHAINLIT_DB"):
     CHAINLIT_DB_URI = f"postgresql+psycopg://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_CHAINLIT_DB')}?sslmode=disable"

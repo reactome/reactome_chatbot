@@ -5,7 +5,7 @@ import pandas as pd
 from dotenv import load_dotenv
 from langchain_community.document_loaders import DirectoryLoader
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from ragas.testset.generator import TestsetGenerator
+from ragas.testset.synthesizers.generate import TestsetGenerator
 
 
 def parse_arguments():

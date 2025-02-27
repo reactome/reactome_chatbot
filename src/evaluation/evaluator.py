@@ -11,10 +11,15 @@ from langchain_community.document_loaders.csv_loader import CSVLoader
 from langchain_community.retrievers import BM25Retriever
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from ragas import evaluate
-from ragas.metrics import answer_relevancy, context_utilization, faithfulness, context_recall
+from ragas.metrics import (ContextUtilization, answer_relevancy,
+                           context_recall, faithfulness)
 
-from conversational_chain.chain import create_rag_chain
-from reactome.metadata_info import descriptions_info, field_info
+from retrievers.rag_chain import create_rag_chain
+from retrievers.reactome.metadata_info import (reactome_descriptions_info,
+                                               reactome_field_info)
+from retrievers.reactome.prompt import reactome_qa_prompt
+
+context_utilization = ContextUtilization()
 
 
 def parse_arguments():
@@ -56,7 +61,6 @@ def load_dataset(testset_path):
         raise ValueError(f"Error reading the Excel file: {e}")
 
 
-
 def initialize_rag_chain_with_memory(embeddings_directory, model_name, rag_type):
     """Initialize the RAGChainWithMemory system."""
     llm = ChatOpenAI(temperature=0.0, verbose=True, model=model_name)
@@ -81,8 +85,8 @@ def initialize_rag_chain_with_memory(embeddings_directory, model_name, rag_type)
     selfq_retriever = SelfQueryRetriever.from_llm(
         llm=llm,
         vectorstore=vectordb,
-        document_contents=descriptions_info["summations"],
-        metadata_field_info=field_info["summations"],
+        document_contents=reactome_descriptions_info["summations"],
+        metadata_field_info=reactome_field_info["summations"],
         search_kwargs={"k": 7},
     )
     rrf_retriever = EnsembleRetriever(
@@ -98,12 +102,19 @@ def initialize_rag_chain_with_memory(embeddings_directory, model_name, rag_type)
     qa = create_rag_chain(
         retriever=reactome_retriever,
         llm=llm,
+        qa_prompt=reactome_qa_prompt,
     )
     return qa
 
 
 def process_testset(
-    testset_path, qa_system, embeddings_directory, response_dir, eval_dir, model_name, rag_type
+    testset_path,
+    qa_system,
+    embeddings_directory,
+    response_dir,
+    eval_dir,
+    model_name,
+    rag_type,
 ):
     """Process a single testset file."""
     testset = load_dataset(testset_path)
@@ -122,7 +133,7 @@ def process_testset(
     rag_eval_dir = os.path.join(eval_dir, rag_type)
     os.makedirs(rag_response_dir, exist_ok=True)
     os.makedirs(rag_eval_dir, exist_ok=True)
-    
+
     # Save responses to an Excel file
     data = {
         "question": questions,
@@ -167,7 +178,9 @@ def main():
 
     # Initialize RAG Chain
     embeddings_directory = "/Users/hmohammadi/Desktop/react_to_me_github/reactome_chatbot/embeddings/openai/text-embedding-3-large/reactome/Release90/summations"
-    qa_system = initialize_rag_chain_with_memory(embeddings_directory, model_name, rag_type)
+    qa_system = initialize_rag_chain_with_memory(
+        embeddings_directory, model_name, rag_type
+    )
 
     # Iterate over all .xlsx files in the directory
     for filename in os.listdir(args.testset_dir):

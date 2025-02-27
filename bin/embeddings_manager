@@ -12,8 +12,8 @@ import boto3
 from botocore import UNSIGNED
 from botocore.client import Config
 
-from embeddings.alliance_generator import generate_alliance_embeddings
-from embeddings.reactome_generator import generate_reactome_embeddings
+from data_generation.alliance import generate_alliance_embeddings
+from data_generation.reactome import generate_reactome_embeddings
 from util.embedding_environment import EM_ARCHIVE, EmbeddingEnvironment
 
 S3_BUCKET = "download.reactome.org"
