@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from langchain_community.callbacks import OpenAICallbackHandler
 
 from agent.graph import AgentGraph
-from agent.profiles import CHAT_PROFILES
+from agent.profiles import ProfileName, get_chat_profiles
 from util.chainlit_helpers import (is_feature_enabled, message_rate_limited,
                                    save_openai_metrics, static_messages,
                                    update_search_results)
@@ -19,8 +19,7 @@ from util.logging import logging
 load_dotenv()
 config: Config | None = Config.from_yaml()
 
-profiles = ["React-to-Me"]
-
+profiles: list[ProfileName] = config.profiles if config else [ProfileName.React_to_Me]
 llm_graph = AgentGraph(profiles)
 
 if os.getenv("POSTGRES_CHAINLIT_DB"):
@@ -49,10 +48,10 @@ if os.getenv("CHAINLIT_AUTH_SECRET"):
 async def chat_profiles() -> list[cl.ChatProfile]:
     return [
         cl.ChatProfile(
-            name=CHAT_PROFILES[profile].name,
-            markdown_description=CHAT_PROFILES[profile].description,
+            name=profile.name,
+            markdown_description=profile.description,
         )
-        for profile in profiles
+        for profile in get_chat_profiles(profiles)
     ]
 
 
@@ -83,7 +82,8 @@ async def main(message: cl.Message) -> None:
     message_count: int = cl.user_session.get("message_count", 0) + 1
     cl.user_session.set("message_count", message_count)
 
-    chat_profile: str = cl.user_session.get("chat_profile")
+    chat_profile = ProfileName(cl.user_session.get("chat_profile"))
+
     thread_id: str = cl.user_session.get("thread_id")
 
     chainlit_cb = cl.AsyncLangchainCallbackHandler(

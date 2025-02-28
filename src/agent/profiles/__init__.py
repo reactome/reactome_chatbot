@@ -1,3 +1,4 @@
+from enum import StrEnum
 from typing import Callable, NamedTuple
 
 from langchain_core.embeddings import Embeddings
@@ -7,15 +8,20 @@ from langgraph.graph.state import StateGraph
 from agent.profiles.react_to_me import create_reacttome_graph
 
 
+class ProfileName(StrEnum):
+    # These should exactly match names in .config.schema.yaml
+    React_to_Me = "React-to-Me"
+
+
 class Profile(NamedTuple):
-    name: str
+    name: ProfileName
     description: str
     graph_builder: Callable[[BaseChatModel, Embeddings], StateGraph]
 
 
-CHAT_PROFILES: dict[str, Profile] = {
-    "React-to-Me": Profile(
-        name="React-to-Me",
+CHAT_PROFILES: dict[ProfileName, Profile] = {
+    ProfileName.React_to_Me: Profile(
+        name=ProfileName.React_to_Me,
         description="An AI assistant specialized in exploring **Reactome** biological pathways and processes.",
         graph_builder=create_reacttome_graph,
     ),
@@ -23,7 +29,7 @@ CHAT_PROFILES: dict[str, Profile] = {
 
 
 def create_profile_graphs(
-    profiles: list[str],
+    profiles: list[ProfileName],
     llm: BaseChatModel,
     embedding: Embeddings,
 ) -> dict[str, StateGraph]:
@@ -31,3 +37,7 @@ def create_profile_graphs(
         profile: CHAT_PROFILES[profile].graph_builder(llm, embedding)
         for profile in profiles
     }
+
+
+def get_chat_profiles(profiles: list[ProfileName]) -> list[Profile]:
+    return [CHAT_PROFILES[profile] for profile in profiles]

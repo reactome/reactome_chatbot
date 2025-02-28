@@ -14,7 +14,7 @@ from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
 from agent.models import get_embedding, get_llm
-from agent.profiles import create_profile_graphs
+from agent.profiles import ProfileName, create_profile_graphs
 from util.logging import logging
 
 LANGGRAPH_DB_URI = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_LANGGRAPH_DB')}?sslmode=disable"
@@ -26,7 +26,7 @@ if not os.getenv("POSTGRES_LANGGRAPH_DB"):
 class AgentGraph:
     def __init__(
         self,
-        profiles: list[str],
+        profiles: list[ProfileName],
     ) -> None:
         # Get base models
         llm: BaseChatModel = get_llm("openai", "gpt-4o-mini")
@@ -76,7 +76,7 @@ class AgentGraph:
     async def ainvoke(
         self,
         user_input: str,
-        profile: str,
+        profile: ProfileName,
         *,
         callbacks: Callbacks,
         thread_id: str,
