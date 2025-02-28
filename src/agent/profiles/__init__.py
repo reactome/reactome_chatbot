@@ -19,8 +19,8 @@ class Profile(NamedTuple):
     graph_builder: Callable[[BaseChatModel, Embeddings], StateGraph]
 
 
-CHAT_PROFILES: dict[ProfileName, Profile] = {
-    ProfileName.React_to_Me: Profile(
+CHAT_PROFILES: dict[str, Profile] = {
+    ProfileName.React_to_Me.lower(): Profile(
         name=ProfileName.React_to_Me,
         description="An AI assistant specialized in exploring **Reactome** biological pathways and processes.",
         graph_builder=create_reacttome_graph,
@@ -35,9 +35,9 @@ def create_profile_graphs(
 ) -> dict[str, StateGraph]:
     return {
         profile: CHAT_PROFILES[profile].graph_builder(llm, embedding)
-        for profile in profiles
+        for profile in map(str.lower, profiles)
     }
 
 
 def get_chat_profiles(profiles: list[ProfileName]) -> list[Profile]:
-    return [CHAT_PROFILES[profile] for profile in profiles]
+    return [CHAT_PROFILES[profile.lower()] for profile in profiles]

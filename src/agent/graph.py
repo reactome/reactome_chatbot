@@ -76,7 +76,7 @@ class AgentGraph:
     async def ainvoke(
         self,
         user_input: str,
-        profile: ProfileName,
+        profile: str,
         *,
         callbacks: Callbacks,
         thread_id: str,
@@ -84,6 +84,8 @@ class AgentGraph:
     ) -> dict[str, Any]:
         if self.graph is None:
             self.graph = await self.initialize()
+        if profile not in self.graph:
+            return {}
         result: dict[str, Any] = await self.graph[profile].ainvoke(
             {"user_input": user_input},
             config=RunnableConfig(

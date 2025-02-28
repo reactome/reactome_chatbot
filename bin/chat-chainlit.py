@@ -82,7 +82,7 @@ async def main(message: cl.Message) -> None:
     message_count: int = cl.user_session.get("message_count", 0) + 1
     cl.user_session.set("message_count", message_count)
 
-    chat_profile = ProfileName(cl.user_session.get("chat_profile"))
+    chat_profile: str = cl.user_session.get("chat_profile")
 
     thread_id: str = cl.user_session.get("thread_id")
 
@@ -95,7 +95,7 @@ async def main(message: cl.Message) -> None:
     enable_postprocess: bool = is_feature_enabled(config, "postprocessing")
     result: dict[str, Any] = await llm_graph.ainvoke(
         message.content,
-        chat_profile,
+        chat_profile.lower(),
         callbacks=[chainlit_cb, openai_cb],
         thread_id=thread_id,
         enable_postprocess=enable_postprocess,
