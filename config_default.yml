@@ -1,5 +1,8 @@
 # yaml-language-server: $schema=./.config.schema.yaml
 
+profiles:
+  - React-to-Me
+
 features:
   postprocessing:  # external web search feature
     enabled: true
