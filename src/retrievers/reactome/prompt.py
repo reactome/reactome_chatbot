@@ -26,6 +26,6 @@ reactome_qa_prompt = ChatPromptTemplate.from_messages(
     [
         ("system", reactome_system_prompt),
         MessagesPlaceholder(variable_name="chat_history"),
-        ("user", "Context:\n{context}\n\nQuestion: {user_input}"),
+        ("user", "Context:\n{context}\n\nQuestion: {input}"),
     ]
 )

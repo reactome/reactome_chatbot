@@ -64,10 +64,10 @@ class TavilyWrapper:
             if all(key in result for key in ["title", "url"])
         ]
 
-    async def ainvoke(self, state: GraphState) -> dict[str, list[WebSearchResult]]:
+    async def ainvoke(self, state: GraphState) -> GraphState:
         query: str = state["input"]
         search_results: list[WebSearchResult] = await self.search(query)
-        return {"search_results": search_results}
+        return GraphState(search_results=search_results)
 
     @staticmethod
     def format_results(web_search_results: list[WebSearchResult]) -> str:

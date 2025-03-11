@@ -6,15 +6,15 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import Runnable, RunnableConfig
 from langgraph.graph.state import CompiledStateGraph, StateGraph
 
-from agent.profiles.base import BaseGraphBuilder, BaseState
-from agent.tasks.rephrase import create_rephrase_chain
+from agent.profiles.base import (AdditionalContent, BaseGraphBuilder,
+                                 BaseState, InputState, OutputState)
 from retrievers.reactome.rag import create_reactome_rag
 from tools.external_search.state import WebSearchResult
 from tools.external_search.workflow import create_search_workflow
 
 
 class ReactToMeState(BaseState):
-    rephrased_input: str  # LLM-generated query from user input
+    pass
 
 
 class ReactToMeGraphBuilder(BaseGraphBuilder):
@@ -23,15 +23,16 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         llm: BaseChatModel,
         embedding: Embeddings,
     ) -> None:
+        super().__init__(llm, embedding)
+
         # Create runnables (tasks & tools)
         self.reactome_rag: Runnable = create_reactome_rag(
             llm, embedding, streaming=True
         )
-        self.rephrase_chain: Runnable = create_rephrase_chain(llm)
         self.search_workflow: CompiledStateGraph = create_search_workflow(llm)
 
         # Create graph
-        state_graph = StateGraph(ReactToMeState)
+        state_graph = StateGraph(ReactToMeState, input=InputState, output=OutputState)
         # Set up nodes
         state_graph.add_node("preprocess", self.preprocess)
         state_graph.add_node("model", self.call_model)
@@ -44,35 +45,26 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
 
         self.uncompiled_graph: StateGraph = state_graph
 
-    async def preprocess(
-        self, state: ReactToMeState, config: RunnableConfig
-    ) -> dict[str, str]:
-        query: str = await self.rephrase_chain.ainvoke(state, config)
-        return {"rephrased_input": query}
-
     async def call_model(
         self, state: ReactToMeState, config: RunnableConfig
-    ) -> dict[str, Any]:
+    ) -> ReactToMeState:
         result: dict[str, Any] = await self.reactome_rag.ainvoke(
             {
                 "input": state["rephrased_input"],
-                "user_input": state["user_input"],
-                "chat_history": state["chat_history"],
             },
             config,
         )
-        return {
-            "chat_history": [
+        return ReactToMeState(
+            chat_history=[
                 HumanMessage(state["user_input"]),
                 AIMessage(result["answer"]),
             ],
-            "context": result["context"],
-            "answer": result["answer"],
-        }
+            answer=result["answer"],
+        )
 
     async def postprocess(
         self, state: ReactToMeState, config: RunnableConfig
-    ) -> dict[str, dict[str, list[WebSearchResult]]]:
+    ) -> ReactToMeState:
         search_results: list[WebSearchResult] = []
         if config["configurable"]["enable_postprocess"]:
             result: dict[str, Any] = await self.search_workflow.ainvoke(
@@ -80,12 +72,12 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
                 config=RunnableConfig(callbacks=config["callbacks"]),
             )
             search_results = result["search_results"]
-        return {
-            "additional_content": {"search_results": search_results},
-        }
+        return ReactToMeState(
+            additional_content=AdditionalContent(search_results=search_results)
+        )
 
 
-def create_reacttome_graph(
+def create_reactome_graph(
     llm: BaseChatModel,
     embedding: Embeddings,
 ) -> StateGraph:
