@@ -13,7 +13,7 @@ Reformulate the user’s question into a standalone version that retains its ful
 
 the returned question should always be in English.
 If the user’s question is already in English, self-contained and well-formed, return it as is.
-Do NOT answer the question, provide explanations or worry about question harmfulness and appropriateness, just reformualte the question as best as you can.
+Do NOT answer the question or provide explanations.
 """
 
 contextualize_q_prompt = ChatPromptTemplate.from_messages(

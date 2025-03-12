@@ -8,25 +8,25 @@ from langgraph.utils.runnable import RunnableLike
 
 from agent.tasks.completeness_grader import (CompletenessGrade,
                                              create_completeness_grader)
-from tools.external_search.state import GraphState
+from tools.external_search.state import SearchState
 from tools.external_search.tavily_wrapper import TavilyWrapper
 
 
-def decide_next_steps(state: GraphState) -> Literal["perform_web_search", "no_search"]:
+def decide_next_steps(state: SearchState) -> Literal["perform_web_search", "no_search"]:
     if state["complete"] == "No":
         return "perform_web_search"
     else:
         return "no_search"
 
 
-def no_search(_) -> GraphState:
-    return GraphState(search_results=[])
+def no_search(_) -> SearchState:
+    return SearchState(search_results=[])
 
 
 def run_completeness_grader(grader: Runnable) -> RunnableLike:
     async def _run_completeness_grader(
-        state: GraphState, config: RunnableConfig
-    ) -> GraphState:
+        state: SearchState, config: RunnableConfig
+    ) -> SearchState:
         result: CompletenessGrade = await grader.ainvoke(
             {
                 "input": state["input"],
@@ -34,7 +34,7 @@ def run_completeness_grader(grader: Runnable) -> RunnableLike:
             },
             config,
         )
-        return GraphState(complete=result.binary_score)
+        return SearchState(complete=result.binary_score)
 
     return _run_completeness_grader
 
@@ -45,7 +45,7 @@ def create_search_workflow(
     completeness_grader: Runnable = create_completeness_grader(llm)
     tavily_wrapper = TavilyWrapper(max_results=max_results)
 
-    workflow = StateGraph(GraphState)
+    workflow = StateGraph(SearchState)
 
     # Add nodes
     workflow.add_node(

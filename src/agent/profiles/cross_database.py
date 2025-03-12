@@ -2,11 +2,11 @@ from typing import Any, Literal
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import Runnable, RunnableConfig
 from langgraph.graph.state import CompiledStateGraph, StateGraph
 
-from agent.profiles.base import (AdditionalContent, BaseGraphBuilder,
-                                 BaseState, InputState, OutputState)
+from agent.profiles.base import AdditionalContent, BaseGraphBuilder, BaseState
 from agent.tasks.completeness_grader import (CompletenessGrade,
                                              create_completeness_grader)
 from agent.tasks.cross_database.rewrite_reactome_with_uniprot import \
@@ -19,7 +19,7 @@ from agent.tasks.detect_language import create_language_detector
 from agent.tasks.safety_checker import SafetyCheck, create_safety_checker
 from retrievers.reactome.rag import create_reactome_rag
 from retrievers.uniprot.rag import create_uniprot_rag
-from tools.external_search.state import WebSearchResult
+from tools.external_search.state import SearchState, WebSearchResult
 from tools.external_search.workflow import create_search_workflow
 
 
@@ -46,8 +46,8 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
 
         # Create runnables (tasks & tools)
         self.search_workflow: CompiledStateGraph = create_search_workflow(llm)
-        self.reactome_chain: Runnable = create_reactome_rag(llm, embedding)
-        self.uniprot_chain: Runnable = create_uniprot_rag(llm, embedding)
+        self.reactome_rag: Runnable = create_reactome_rag(llm, embedding)
+        self.uniprot_rag: Runnable = create_uniprot_rag(llm, embedding)
 
         self.safety_checker = create_safety_checker(llm)
         self.completeness_checker = create_completeness_grader(llm)
@@ -59,9 +59,7 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
         )
 
         # Create graph
-        state_graph = StateGraph(
-            CrossDatabaseState, input=InputState, output=OutputState
-        )
+        state_graph = StateGraph(CrossDatabaseState)
         # Set up nodes
         state_graph.add_node("check_question_safety", self.check_question_safety)
         state_graph.add_node("preprocess_question", self.preprocess)
@@ -151,9 +149,10 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
     async def generate_reactome_answer(
         self, state: CrossDatabaseState, config: RunnableConfig
     ) -> CrossDatabaseState:
-        reactome_answer: dict[str, Any] = await self.reactome_chain.ainvoke(
+        reactome_answer: dict[str, Any] = await self.reactome_rag.ainvoke(
             {
                 "input": state["rephrased_input"],
+                "chat_history": state["chat_history"],
             },
             config,
         )
@@ -162,9 +161,10 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
     async def generate_uniprot_answer(
         self, state: CrossDatabaseState, config: RunnableConfig
     ) -> CrossDatabaseState:
-        uniprot_answer: dict[str, Any] = await self.uniprot_chain.ainvoke(
+        uniprot_answer: dict[str, Any] = await self.uniprot_rag.ainvoke(
             {
                 "input": state["rephrased_input"],
+                "chat_history": state["chat_history"],
             },
             config,
         )
@@ -197,9 +197,10 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
     async def rewrite_reactome_answer(
         self, state: CrossDatabaseState, config: RunnableConfig
     ) -> CrossDatabaseState:
-        rewritten_answer: dict[str, Any] = await self.reactome_chain.ainvoke(
+        rewritten_answer: dict[str, Any] = await self.reactome_rag.ainvoke(
             {
                 "input": state["reactome_query"],
+                "chat_history": state["chat_history"],
             },
             config,
         )
@@ -208,9 +209,10 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
     async def rewrite_uniprot_answer(
         self, state: CrossDatabaseState, config: RunnableConfig
     ) -> CrossDatabaseState:
-        rewritten_answer: dict[str, Any] = await self.uniprot_chain.ainvoke(
+        rewritten_answer: dict[str, Any] = await self.uniprot_rag.ainvoke(
             {
                 "input": state["uniprot_query"],
+                "chat_history": state["chat_history"],
             },
             config,
         )
@@ -254,7 +256,7 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
     async def generate_final_response(
         self, state: CrossDatabaseState, config: RunnableConfig
     ) -> CrossDatabaseState:
-        final_response = await self.summarize_final_answer.ainvoke(
+        final_response: str = await self.summarize_final_answer.ainvoke(
             {
                 "input": state["rephrased_input"],
                 "query_language": state["query_language"],
@@ -263,19 +265,28 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
             },
             config,
         )
-        return CrossDatabaseState(answer=final_response)
+        return CrossDatabaseState(
+            chat_history=[
+                HumanMessage(state["user_input"]),
+                AIMessage(final_response),
+            ],
+            answer=final_response,
+        )
 
     async def postprocess(
         self, state: CrossDatabaseState, config: RunnableConfig
-    ) -> OutputState:
+    ) -> CrossDatabaseState:
         search_results: list[WebSearchResult] = []
         if config["configurable"]["enable_postprocess"]:
-            result: dict[str, Any] = await self.search_workflow.ainvoke(
-                {"question": state["rephrased_input"], "generation": state["answer"]},
+            result: SearchState = await self.search_workflow.ainvoke(
+                SearchState(
+                    input=state["rephrased_input"],
+                    generation=state["answer"],
+                ),
                 config=RunnableConfig(callbacks=config["callbacks"]),
             )
             search_results = result["search_results"]
-        return OutputState(
+        return CrossDatabaseState(
             additional_content=AdditionalContent(search_results=search_results)
         )
 

@@ -6,10 +6,9 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import Runnable, RunnableConfig
 from langgraph.graph.state import CompiledStateGraph, StateGraph
 
-from agent.profiles.base import (AdditionalContent, BaseGraphBuilder,
-                                 BaseState, InputState, OutputState)
+from agent.profiles.base import AdditionalContent, BaseGraphBuilder, BaseState
 from retrievers.reactome.rag import create_reactome_rag
-from tools.external_search.state import WebSearchResult
+from tools.external_search.state import SearchState, WebSearchResult
 from tools.external_search.workflow import create_search_workflow
 
 
@@ -32,7 +31,7 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         self.search_workflow: CompiledStateGraph = create_search_workflow(llm)
 
         # Create graph
-        state_graph = StateGraph(ReactToMeState, input=InputState, output=OutputState)
+        state_graph = StateGraph(ReactToMeState)
         # Set up nodes
         state_graph.add_node("preprocess", self.preprocess)
         state_graph.add_node("model", self.call_model)
@@ -51,6 +50,7 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         result: dict[str, Any] = await self.reactome_rag.ainvoke(
             {
                 "input": state["rephrased_input"],
+                "chat_history": state["chat_history"],
             },
             config,
         )
@@ -67,8 +67,11 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
     ) -> ReactToMeState:
         search_results: list[WebSearchResult] = []
         if config["configurable"]["enable_postprocess"]:
-            result: dict[str, Any] = await self.search_workflow.ainvoke(
-                {"question": state["rephrased_input"], "generation": state["answer"]},
+            result: SearchState = await self.search_workflow.ainvoke(
+                SearchState(
+                    input=state["rephrased_input"],
+                    generation=state["answer"],
+                ),
                 config=RunnableConfig(callbacks=config["callbacks"]),
             )
             search_results = result["search_results"]

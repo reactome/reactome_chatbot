@@ -8,20 +8,16 @@ from langgraph.graph.message import add_messages
 
 from agent.tasks.rephrase import create_rephrase_chain
 from tools.external_search.state import WebSearchResult
-from util.safe_typeddict import safe_typeddict
 
 
-@safe_typeddict
 class AdditionalContent(TypedDict, total=False):
     search_results: list[WebSearchResult]
 
 
-@safe_typeddict
 class InputState(TypedDict, total=False):
     user_input: str  # User input text
 
 
-@safe_typeddict
 class OutputState(TypedDict, total=False):
     answer: str  # primary LLM response that is streamed to the user
     additional_content: AdditionalContent  # sends on graph completion
