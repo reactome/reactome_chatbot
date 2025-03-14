@@ -3,7 +3,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable, RunnableConfig
 from pydantic import BaseModel, Field
 
-from external_search.state import GraphState
+from tools.external_search.state import GraphState
 
 completeness_grader_message = """
 You are an expert grader with extensive knowledge in molecular biology and experience as a Reactome curator.

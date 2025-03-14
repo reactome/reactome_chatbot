@@ -4,6 +4,7 @@ from typing import Self
 import yaml
 from pydantic import BaseModel, ValidationError
 
+from agent.profiles import ProfileName
 from util.config_yml.features import Feature, Features
 from util.config_yml.messages import Message, TriggerEvent
 from util.config_yml.usage_limits import MessageRate, UsageLimits
@@ -17,6 +18,7 @@ CONFIG_DEFAULT_YML = Path("config_default.yml")
 class Config(BaseModel):
     features: Features
     messages: dict[str, Message]
+    profiles: list[ProfileName]
     usage_limits: UsageLimits
 
     def get_feature(

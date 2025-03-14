@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import os
 from typing import Any
 
@@ -10,28 +8,19 @@ from chainlit.types import ThreadDict
 from dotenv import load_dotenv
 from langchain_community.callbacks import OpenAICallbackHandler
 
-from conversational_chain.graph import RAGGraphWithMemory
-from retreival_chain import create_retrieval_chain
+from agent.graph import AgentGraph
+from agent.profiles import ProfileName, get_chat_profiles
 from util.chainlit_helpers import (is_feature_enabled, message_rate_limited,
                                    save_openai_metrics, static_messages,
                                    update_search_results)
 from util.config_yml import Config, TriggerEvent
-from util.embedding_environment import EmbeddingEnvironment
 from util.logging import logging
 
 load_dotenv()
 config: Config | None = Config.from_yaml()
 
-
-ENV = os.getenv("CHAT_ENV", "reactome")
-logging.info(f"Selected environment: {ENV}")
-
-llm_graph: RAGGraphWithMemory = create_retrieval_chain(
-    ENV,
-    EmbeddingEnvironment.get_dir(ENV),
-    hf_model=EmbeddingEnvironment.get_model(ENV),
-    oai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-)
+profiles: list[ProfileName] = config.profiles if config else [ProfileName.React_to_Me]
+llm_graph = AgentGraph(profiles)
 
 if os.getenv("POSTGRES_CHAINLIT_DB"):
     CHAINLIT_DB_URI = f"postgresql+psycopg://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_CHAINLIT_DB')}?sslmode=disable"
@@ -56,12 +45,13 @@ if os.getenv("CHAINLIT_AUTH_SECRET"):
 
 
 @cl.set_chat_profiles
-async def chat_profile() -> list[cl.ChatProfile]:
+async def chat_profiles() -> list[cl.ChatProfile]:
     return [
         cl.ChatProfile(
-            name="React-to-me",
-            markdown_description="An AI assistant specialized in exploring **Reactome** biological pathways and processes.",
+            name=profile.name,
+            markdown_description=profile.description,
         )
+        for profile in get_chat_profiles(profiles)
     ]
 
 
@@ -92,6 +82,8 @@ async def main(message: cl.Message) -> None:
     message_count: int = cl.user_session.get("message_count", 0) + 1
     cl.user_session.set("message_count", message_count)
 
+    chat_profile: str = cl.user_session.get("chat_profile")
+
     thread_id: str = cl.user_session.get("thread_id")
 
     chainlit_cb = cl.AsyncLangchainCallbackHandler(
@@ -103,6 +95,7 @@ async def main(message: cl.Message) -> None:
     enable_postprocess: bool = is_feature_enabled(config, "postprocessing")
     result: dict[str, Any] = await llm_graph.ainvoke(
         message.content,
+        chat_profile.lower(),
         callbacks=[chainlit_cb, openai_cb],
         thread_id=thread_id,
         enable_postprocess=enable_postprocess,

@@ -9,8 +9,8 @@ from langchain_huggingface import (HuggingFaceEmbeddings,
                                    HuggingFaceEndpointEmbeddings)
 from langchain_openai import OpenAIEmbeddings
 
-from csv_generator.alliance_generator import generate_all_csvs
-from metadata_csv_loader import MetaDataCSVLoader
+from data_generation.alliance.csv_generator import generate_all_csvs
+from data_generation.metadata_csv_loader import MetaDataCSVLoader
 
 
 def get_release_version() -> str:

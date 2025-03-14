@@ -51,6 +51,11 @@ properties:
             - required: ["event"]
             - required: ["after_messages"]
       required: ["message", "trigger"]
+  profiles:
+    type: array
+    items:
+      type: string
+      enum: ["React-to-Me"]
   usage_limits:
     type: object
     properties:
@@ -73,4 +78,4 @@ properties:
               pattern: "^[0-9]+[smhdw]$"
           required: ["users", "max_messages", "interval"]
     required: ["message_rates"]
-required: ["features", "messages", "usage_limits"]
+required: ["features", "messages", "profiles", "usage_limits"]
