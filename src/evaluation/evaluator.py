@@ -11,12 +11,15 @@ from langchain_community.document_loaders.csv_loader import CSVLoader
 from langchain_community.retrievers import BM25Retriever
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from ragas import evaluate
-from ragas.metrics import (answer_relevancy, context_recall,
-                           context_utilization, faithfulness)
+from ragas.metrics import (ContextUtilization, answer_relevancy,
+                           context_recall, faithfulness)
 
 from retrievers.rag_chain import create_rag_chain
-from retrievers.reactome.metadata_info import descriptions_info, field_info
-from retrievers.reactome.prompt import qa_prompt
+from retrievers.reactome.metadata_info import (reactome_descriptions_info,
+                                               reactome_field_info)
+from retrievers.reactome.prompt import reactome_qa_prompt
+
+context_utilization = ContextUtilization()
 
 
 def parse_arguments():
@@ -82,8 +85,8 @@ def initialize_rag_chain_with_memory(embeddings_directory, model_name, rag_type)
     selfq_retriever = SelfQueryRetriever.from_llm(
         llm=llm,
         vectorstore=vectordb,
-        document_contents=descriptions_info["summations"],
-        metadata_field_info=field_info["summations"],
+        document_contents=reactome_descriptions_info["summations"],
+        metadata_field_info=reactome_field_info["summations"],
         search_kwargs={"k": 7},
     )
     rrf_retriever = EnsembleRetriever(
@@ -99,7 +102,7 @@ def initialize_rag_chain_with_memory(embeddings_directory, model_name, rag_type)
     qa = create_rag_chain(
         retriever=reactome_retriever,
         llm=llm,
-        qa_prompt=qa_prompt,
+        qa_prompt=reactome_qa_prompt,
     )
     return qa
 

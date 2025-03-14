@@ -15,6 +15,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from agent.models import get_embedding, get_llm
 from agent.profiles import ProfileName, create_profile_graphs
+from agent.profiles.base import InputState, OutputState
 from util.logging import logging
 
 LANGGRAPH_DB_URI = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_LANGGRAPH_DB')}?sslmode=disable"
@@ -81,13 +82,13 @@ class AgentGraph:
         callbacks: Callbacks,
         thread_id: str,
         enable_postprocess: bool = True,
-    ) -> dict[str, Any]:
+    ) -> OutputState:
         if self.graph is None:
             self.graph = await self.initialize()
         if profile not in self.graph:
-            return {}
-        result: dict[str, Any] = await self.graph[profile].ainvoke(
-            {"user_input": user_input},
+            return OutputState()
+        result: OutputState = await self.graph[profile].ainvoke(
+            InputState(user_input=user_input),
             config=RunnableConfig(
                 callbacks=callbacks,
                 configurable={
