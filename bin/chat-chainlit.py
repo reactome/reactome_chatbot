@@ -1,5 +1,4 @@
 import os
-from typing import Any
 
 import chainlit as cl
 from chainlit.data.base import BaseDataLayer
@@ -10,6 +9,7 @@ from langchain_community.callbacks import OpenAICallbackHandler
 
 from agent.graph import AgentGraph
 from agent.profiles import ProfileName, get_chat_profiles
+from agent.profiles.base import OutputState
 from util.chainlit_helpers import (is_feature_enabled, message_rate_limited,
                                    save_openai_metrics, static_messages,
                                    update_search_results)
@@ -93,7 +93,7 @@ async def main(message: cl.Message) -> None:
     openai_cb = OpenAICallbackHandler()
 
     enable_postprocess: bool = is_feature_enabled(config, "postprocessing")
-    result: dict[str, Any] = await llm_graph.ainvoke(
+    result: OutputState = await llm_graph.ainvoke(
         message.content,
         chat_profile.lower(),
         callbacks=[chainlit_cb, openai_cb],

@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from tavily import AsyncTavilyClient, MissingAPIKeyError
 
-from tools.external_search.state import GraphState, WebSearchResult
+from tools.external_search.state import SearchState, WebSearchResult
 from util.logging import logging
 
 
@@ -64,10 +64,10 @@ class TavilyWrapper:
             if all(key in result for key in ["title", "url"])
         ]
 
-    async def ainvoke(self, state: GraphState) -> dict[str, list[WebSearchResult]]:
-        query: str = state["question"]
+    async def ainvoke(self, state: SearchState) -> SearchState:
+        query: str = state["input"]
         search_results: list[WebSearchResult] = await self.search(query)
-        return {"search_results": search_results}
+        return SearchState(search_results=search_results)
 
     @staticmethod
     def format_results(web_search_results: list[WebSearchResult]) -> str:
