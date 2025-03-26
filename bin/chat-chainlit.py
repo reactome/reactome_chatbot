@@ -10,9 +10,9 @@ from langchain_community.callbacks import OpenAICallbackHandler
 from agent.graph import AgentGraph
 from agent.profiles import ProfileName, get_chat_profiles
 from agent.profiles.base import OutputState
-from util.chainlit_helpers import (is_feature_enabled, message_rate_limited,
-                                   save_openai_metrics, static_messages,
-                                   update_search_results)
+from util.chainlit_helpers import (PrefixedS3StorageClient, is_feature_enabled,
+                                   message_rate_limited, save_openai_metrics,
+                                   static_messages, update_search_results)
 from util.config_yml import Config, TriggerEvent
 from util.logging import logging
 
@@ -22,12 +22,26 @@ config: Config | None = Config.from_yaml()
 profiles: list[ProfileName] = config.profiles if config else [ProfileName.React_to_Me]
 llm_graph = AgentGraph(profiles)
 
-if os.getenv("POSTGRES_CHAINLIT_DB"):
-    CHAINLIT_DB_URI = f"postgresql+psycopg://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_CHAINLIT_DB')}?sslmode=disable"
+POSTGRES_CHAINLIT_DB = os.getenv("POSTGRES_CHAINLIT_DB")
+POSTGRES_USER = os.getenv("POSTGRES_USER")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+S3_BUCKET = os.getenv("S3_BUCKET")
+S3_CHAINLIT_PREFIX = os.getenv("S3_CHAINLIT_PREFIX")
+
+if POSTGRES_CHAINLIT_DB and POSTGRES_USER and POSTGRES_PASSWORD:
+    CHAINLIT_DB_URI = f"postgresql+psycopg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@postgres:5432/{POSTGRES_CHAINLIT_DB}?sslmode=disable"
+
+    if S3_BUCKET and S3_CHAINLIT_PREFIX:
+        storage_client = PrefixedS3StorageClient(S3_BUCKET, S3_CHAINLIT_PREFIX)
+    else:
+        storage_client = None
 
     @cl.data_layer
     def get_data_layer() -> BaseDataLayer:
-        return SQLAlchemyDataLayer(conninfo=CHAINLIT_DB_URI)
+        return SQLAlchemyDataLayer(
+            conninfo=CHAINLIT_DB_URI,
+            storage_provider=storage_client,
+        )
 
 else:
     logging.warning("POSTGRES_CHAINLIT_DB undefined; Chainlit persistence disabled.")
@@ -57,8 +71,8 @@ async def chat_profiles() -> list[cl.ChatProfile]:
 
 @cl.on_chat_start
 async def start() -> None:
-    thread_id: str = cl.user_session.get("id")
-    cl.user_session.set("thread_id", thread_id)
+    if cl.user_session.get("thread_id") is None:
+        cl.user_session.set("thread_id", cl.user_session.get("id"))
     await static_messages(config, TriggerEvent.on_chat_start)
 
 
@@ -100,15 +114,16 @@ async def main(message: cl.Message) -> None:
         thread_id=thread_id,
         enable_postprocess=enable_postprocess,
     )
+    assistant_message: cl.Message | None = chainlit_cb.final_stream
 
     if (
         enable_postprocess
-        and chainlit_cb.final_stream
+        and assistant_message
         and len(result["additional_content"]["search_results"]) > 0
     ):
         await update_search_results(
             result["additional_content"]["search_results"],
-            chainlit_cb.final_stream,
+            assistant_message,
         )
 
     await static_messages(config, after_messages=message_count)

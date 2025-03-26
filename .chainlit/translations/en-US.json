@@ -94,7 +94,7 @@
                 "negative": "Not helpful",
                 "edit": "Edit feedback",
                 "dialog": {
-                    "title": "Add a comment",
+                    "title": "Add a comment (optional)",
                     "submit": "Submit feedback"
                 },
                 "status": {
