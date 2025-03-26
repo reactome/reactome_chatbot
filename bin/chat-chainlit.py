@@ -57,8 +57,8 @@ async def chat_profiles() -> list[cl.ChatProfile]:
 
 @cl.on_chat_start
 async def start() -> None:
-    thread_id: str = cl.user_session.get("id")
-    cl.user_session.set("thread_id", thread_id)
+    if cl.user_session.get("thread_id") is None:
+        cl.user_session.set("thread_id", cl.user_session.get("id"))
     await static_messages(config, TriggerEvent.on_chat_start)
 
 
