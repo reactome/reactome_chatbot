@@ -7,7 +7,8 @@ from langchain_core.runnables import Runnable, RunnableConfig
 from langgraph.graph.message import add_messages
 
 from agent.tasks.rephrase import create_rephrase_chain
-from tools.external_search.state import WebSearchResult
+from tools.external_search.state import SearchState, WebSearchResult
+from tools.external_search.workflow import create_search_workflow
 
 
 class AdditionalContent(TypedDict, total=False):
@@ -37,6 +38,7 @@ class BaseGraphBuilder:
         embedding: Embeddings,
     ) -> None:
         self.rephrase_chain: Runnable = create_rephrase_chain(llm)
+        self.search_workflow: Runnable = create_search_workflow(llm)
 
     async def preprocess(self, state: BaseState, config: RunnableConfig) -> BaseState:
         rephrased_input: str = await self.rephrase_chain.ainvoke(
@@ -47,3 +49,18 @@ class BaseGraphBuilder:
             config,
         )
         return BaseState(rephrased_input=rephrased_input)
+
+    async def postprocess(self, state: BaseState, config: RunnableConfig) -> BaseState:
+        search_results: list[WebSearchResult] = []
+        if config["configurable"]["enable_postprocess"]:
+            result: SearchState = await self.search_workflow.ainvoke(
+                SearchState(
+                    input=state["rephrased_input"],
+                    generation=state["answer"],
+                ),
+                config=RunnableConfig(callbacks=config["callbacks"]),
+            )
+            search_results = result["search_results"]
+        return BaseState(
+            additional_content=AdditionalContent(search_results=search_results)
+        )

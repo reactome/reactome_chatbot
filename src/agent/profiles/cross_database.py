@@ -4,9 +4,9 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import Runnable, RunnableConfig
-from langgraph.graph.state import CompiledStateGraph, StateGraph
+from langgraph.graph.state import StateGraph
 
-from agent.profiles.base import AdditionalContent, BaseGraphBuilder, BaseState
+from agent.profiles.base import BaseGraphBuilder, BaseState
 from agent.tasks.completeness_grader import (CompletenessGrade,
                                              create_completeness_grader)
 from agent.tasks.cross_database.rewrite_reactome_with_uniprot import \
@@ -19,8 +19,6 @@ from agent.tasks.detect_language import create_language_detector
 from agent.tasks.safety_checker import SafetyCheck, create_safety_checker
 from retrievers.reactome.rag import create_reactome_rag
 from retrievers.uniprot.rag import create_uniprot_rag
-from tools.external_search.state import SearchState, WebSearchResult
-from tools.external_search.workflow import create_search_workflow
 
 
 class CrossDatabaseState(BaseState):
@@ -45,7 +43,6 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
         super().__init__(llm, embedding)
 
         # Create runnables (tasks & tools)
-        self.search_workflow: CompiledStateGraph = create_search_workflow(llm)
         self.reactome_rag: Runnable = create_reactome_rag(llm, embedding)
         self.uniprot_rag: Runnable = create_uniprot_rag(llm, embedding)
 
@@ -271,23 +268,6 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
                 AIMessage(final_response),
             ],
             answer=final_response,
-        )
-
-    async def postprocess(
-        self, state: CrossDatabaseState, config: RunnableConfig
-    ) -> CrossDatabaseState:
-        search_results: list[WebSearchResult] = []
-        if config["configurable"]["enable_postprocess"]:
-            result: SearchState = await self.search_workflow.ainvoke(
-                SearchState(
-                    input=state["rephrased_input"],
-                    generation=state["answer"],
-                ),
-                config=RunnableConfig(callbacks=config["callbacks"]),
-            )
-            search_results = result["search_results"]
-        return CrossDatabaseState(
-            additional_content=AdditionalContent(search_results=search_results)
         )
 
 

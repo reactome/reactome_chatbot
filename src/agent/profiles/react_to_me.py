@@ -4,12 +4,10 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import Runnable, RunnableConfig
-from langgraph.graph.state import CompiledStateGraph, StateGraph
+from langgraph.graph.state import StateGraph
 
-from agent.profiles.base import AdditionalContent, BaseGraphBuilder, BaseState
+from agent.profiles.base import BaseGraphBuilder, BaseState
 from retrievers.reactome.rag import create_reactome_rag
-from tools.external_search.state import SearchState, WebSearchResult
-from tools.external_search.workflow import create_search_workflow
 
 
 class ReactToMeState(BaseState):
@@ -28,7 +26,6 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         self.reactome_rag: Runnable = create_reactome_rag(
             llm, embedding, streaming=True
         )
-        self.search_workflow: CompiledStateGraph = create_search_workflow(llm)
 
         # Create graph
         state_graph = StateGraph(ReactToMeState)
@@ -60,23 +57,6 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
                 AIMessage(result["answer"]),
             ],
             answer=result["answer"],
-        )
-
-    async def postprocess(
-        self, state: ReactToMeState, config: RunnableConfig
-    ) -> ReactToMeState:
-        search_results: list[WebSearchResult] = []
-        if config["configurable"]["enable_postprocess"]:
-            result: SearchState = await self.search_workflow.ainvoke(
-                SearchState(
-                    input=state["rephrased_input"],
-                    generation=state["answer"],
-                ),
-                config=RunnableConfig(callbacks=config["callbacks"]),
-            )
-            search_results = result["search_results"]
-        return ReactToMeState(
-            additional_content=AdditionalContent(search_results=search_results)
         )
 
 
