@@ -1,15 +1,41 @@
 import os
 from datetime import datetime
+from pathlib import PurePosixPath
 from typing import Any, Iterable
 
 import chainlit as cl
 from chainlit.data import get_data_layer
+from chainlit.data.storage_clients.s3 import S3StorageClient
 from langchain_community.callbacks import OpenAICallbackHandler
 
 from util.config_yml import Config, TriggerEvent
 from util.config_yml.usage_limits import MessageRate
 
 guest_user_metadata: dict[str, Any] = {}
+
+
+class PrefixedS3StorageClient(S3StorageClient):
+    def __init__(self, bucket: str, prefix: str, **kwargs: Any) -> None:
+        super().__init__(bucket, **kwargs)
+        self._prefix = PurePosixPath(prefix)
+
+    async def upload_file(
+        self,
+        object_key: str,
+        data: bytes | str,
+        mime: str = "application/octet-stream",
+        overwrite: bool = True,
+    ) -> dict[str, Any]:
+        object_key = str(self._prefix / object_key)
+        return await super().upload_file(object_key, data, mime, overwrite)
+
+    async def delete_file(self, object_key: str) -> bool:
+        object_key = str(self._prefix / object_key)
+        return await super().delete_file(object_key)
+
+    async def get_read_url(self, object_key: str) -> str:
+        object_key = str(self._prefix / object_key)
+        return await super().get_read_url(object_key)
 
 
 def get_user_id() -> str | None:
@@ -136,7 +162,7 @@ async def update_search_results(
         name="SearchResults",
         props={"results": search_results},
     )
-    message.elements = [search_results_element]  # type: ignore
+    message.elements.append(search_results_element)  # type: ignore[arg-type]
     await message.update()
 
 
