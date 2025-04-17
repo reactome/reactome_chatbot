@@ -1,0 +1,2 @@
+CREATE DATABASE chainlit;
+CREATE DATABASE langgraph;

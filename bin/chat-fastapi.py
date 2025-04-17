@@ -9,14 +9,23 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from util.secrets import get_secret, load_secrets_to_environ
+
 load_dotenv()
+load_secrets_to_environ([
+    "CHAINLIT_AUTH_SECRET",
+    "OAUTH_AUTH0_CLIENT_SECRET",
+    "OAUTH_GOOGLE_CLIENT_SECRET",
+    "OPENAI_API_KEY",
+    "TAVILY_API_KEY",
+])
 
 app = FastAPI()
 
 CHAINLIT_URI = os.getenv("CHAINLIT_URI")
 CHAINLIT_URL = os.getenv("CHAINLIT_URL")
 
-CLOUDFLARE_SECRET_KEY = os.getenv("CLOUDFLARE_SECRET_KEY")
+CLOUDFLARE_SECRET_KEY = get_secret("CLOUDFLARE_SECRET_KEY")
 CLOUDFLARE_SITE_KEY = os.getenv("CLOUDFLARE_SITE_KEY")
 
 ERROR_PAGE_TEMPLATE = Template(

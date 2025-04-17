@@ -46,6 +46,8 @@ pydantic = "^2.10.5"
 pyyaml = "^6.0.2"
 tavily-python = "^0.5.0"
 openpyxl = "^3.1.5"
+hvac = "^2.3.0"
+requests-unixsocket2 = "^1.0.0"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.7.1"

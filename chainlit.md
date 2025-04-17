@@ -1,15 +1,15 @@
-# React-to-me
+# React-to-Me
 
-Welcome to React-to-me, your interactive chatbot for exploring Reactome!
+Welcome to React-to-Me, your interactive chatbot for exploring Reactome!
 
 ## About
 
-React-to-me is a specialized chatbot designed to provide fast and reliable answers about biological pathways and processes from the Reactome knowledgebase. Whether you're a researcher, student, or just curious about biology, React-to-me can help you access and understand complex biological information quickly and efficiently.
+React-to-Me is a specialized chatbot designed to provide fast and reliable answers about biological pathways and processes from the Reactome knowledgebase. Whether you're a researcher, student, or just curious about biology, React-to-Me can help you access and understand complex biological information quickly and efficiently.
 ## Features
 
 With Reactome Chatbot, you can:
 - Ask questions about biological pathways and get responses in real-time.
-- Browse through Reactome's extensive collection of pathways and related content. 
+- Browse through Reactome's extensive collection of pathways and related content.
 - Access information in multiple languages, allowing you to ask questions and receive information in your preferred language.
 
 ## How to Use
@@ -33,5 +33,4 @@ Explore pathways such as:
 - [Reactome GitHub Repository](https://github.com/reactome)
 - [Reactome Twitter](https://twitter.com/reactome)
 
-Happy exploring with React-to-me!
-
+Happy exploring with React-to-Me!

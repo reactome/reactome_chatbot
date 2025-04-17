@@ -2,7 +2,7 @@ import os
 
 import chainlit as cl
 from chainlit.data.base import BaseDataLayer
-from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
+from chainlit.data.chainlit_data_layer import ChainlitDataLayer
 from chainlit.types import ThreadDict
 from dotenv import load_dotenv
 from langchain_community.callbacks import OpenAICallbackHandler
@@ -10,11 +10,13 @@ from langchain_community.callbacks import OpenAICallbackHandler
 from agent.graph import AgentGraph
 from agent.profiles import ProfileName, get_chat_profiles
 from agent.profiles.base import OutputState
-from util.chainlit_helpers import (PrefixedS3StorageClient, is_feature_enabled,
+from util.chainlit_helpers import (is_feature_enabled,
                                    message_rate_limited, save_openai_metrics,
                                    static_messages, update_search_results)
+from util.chainlit_helpers import PrefixedS3StorageClient
 from util.config_yml import Config, TriggerEvent
 from util.logging import logging
+from util.secrets import get_db_uri
 
 load_dotenv()
 config: Config | None = Config.from_yaml()
@@ -23,13 +25,10 @@ profiles: list[ProfileName] = config.profiles if config else [ProfileName.React_
 llm_graph = AgentGraph(profiles)
 
 POSTGRES_CHAINLIT_DB = os.getenv("POSTGRES_CHAINLIT_DB")
-POSTGRES_USER = os.getenv("POSTGRES_USER")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 S3_BUCKET = os.getenv("S3_BUCKET")
 S3_CHAINLIT_PREFIX = os.getenv("S3_CHAINLIT_PREFIX")
 
-if POSTGRES_CHAINLIT_DB and POSTGRES_USER and POSTGRES_PASSWORD:
-    CHAINLIT_DB_URI = f"postgresql+psycopg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@postgres:5432/{POSTGRES_CHAINLIT_DB}?sslmode=disable"
+if get_db_uri(POSTGRES_CHAINLIT_DB):
 
     if S3_BUCKET and S3_CHAINLIT_PREFIX:
         storage_client = PrefixedS3StorageClient(S3_BUCKET, S3_CHAINLIT_PREFIX)
@@ -38,9 +37,9 @@ if POSTGRES_CHAINLIT_DB and POSTGRES_USER and POSTGRES_PASSWORD:
 
     @cl.data_layer
     def get_data_layer() -> BaseDataLayer:
-        return SQLAlchemyDataLayer(
-            conninfo=CHAINLIT_DB_URI,
-            storage_provider=storage_client,
+        return ChainlitDataLayer(
+            database_url=get_db_uri(POSTGRES_CHAINLIT_DB),
+            storage_client=storage_client,
         )
 
 else:

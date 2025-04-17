@@ -1,0 +1,179 @@
+services:
+
+  chainlit:
+    image: ${CHAINLIT_IMAGE}
+    build: .
+    ports:
+      - target: 8000
+        published: 8000
+        mode: host
+    environment:
+      CHAINLIT_ROOT_PATH: ${CHAINLIT_ROOT_PATH}
+      CHAINLIT_URI: ${CHAINLIT_URI}
+      CHAINLIT_URL: ${CHAINLIT_URL}
+      CLOUDFLARE_SITE_KEY: ${CLOUDFLARE_SITE_KEY}
+      LOG_LEVEL: ${LOG_LEVEL}
+      OAUTH_AUTH0_CLIENT_ID: ${OAUTH_AUTH0_CLIENT_ID}
+      OAUTH_AUTH0_DOMAIN: ${OAUTH_AUTH0_DOMAIN}
+      OAUTH_GOOGLE_CLIENT_ID: ${OAUTH_GOOGLE_CLIENT_ID}
+      POSTGRES_CHAINLIT_DB: ${POSTGRES_CHAINLIT_DB}
+      POSTGRES_LANGGRAPH_DB: ${POSTGRES_LANGGRAPH_DB}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_CHAINLIT_PREFIX: ${S3_CHAINLIT_PREFIX}
+      UVICORN_LOG_LEVEL: ${LOG_LEVEL}
+      # The following should use Docker Secrets when possible:
+      CHAINLIT_AUTH_SECRET: ${CHAINLIT_AUTH_SECRET}
+      CLOUDFLARE_SECRET_KEY: ${CLOUDFLARE_SECRET_KEY}
+      OAUTH_AUTH0_CLIENT_SECRET: ${OAUTH_AUTH0_CLIENT_SECRET}
+      OAUTH_GOOGLE_CLIENT_SECRET: ${OAUTH_GOOGLE_CLIENT_SECRET}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      TAVILY_API_KEY: ${TAVILY_API_KEY}
+      # Postgres access when not using Vault (for development)
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    secrets:
+      - CHAINLIT_AUTH_SECRET
+      - CLOUDFLARE_SECRET_KEY
+      - OAUTH_AUTH0_CLIENT_SECRET
+      - OAUTH_GOOGLE_CLIENT_SECRET
+      - OPENAI_API_KEY
+      - TAVILY_API_KEY
+    volumes:
+      - ./config.yml:/app/config.yml:ro
+      - ./embeddings:/app/embeddings
+      - ./records:/app/records
+      - postgres-socket:/sockets/postgres
+      - vault-postgres-app-token:/tokens/postgres-app:ro
+      - vault-socket:/sockets/vault
+
+  chainlit-guest:
+    image: ${CHAINLIT_IMAGE}
+    ports:
+      - target: 8000
+        published: 8001
+        mode: host
+    environment:
+      CHAINLIT_URI: ${CHAINLIT_URI_NO_LOGIN}
+      CHAINLIT_URI_LOGIN: ${CHAINLIT_URI}
+      CHAINLIT_URL: ${CHAINLIT_URL}
+      CLOUDFLARE_SITE_KEY: ${CLOUDFLARE_SITE_KEY}
+      LOG_LEVEL: ${LOG_LEVEL}
+      POSTGRES_CHAINLIT_DB: ${POSTGRES_CHAINLIT_DB}
+      POSTGRES_LANGGRAPH_DB: ${POSTGRES_LANGGRAPH_DB}
+      UVICORN_LOG_LEVEL: ${LOG_LEVEL}
+      # The following should use Docker Secrets when possible:
+      CLOUDFLARE_SECRET_KEY: ${CLOUDFLARE_SECRET_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      TAVILY_API_KEY: ${TAVILY_API_KEY}
+      # Postgres access when not using Vault (for development)
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    secrets:
+      - CLOUDFLARE_SECRET_KEY
+      - OPENAI_API_KEY
+      - TAVILY_API_KEY
+    volumes:
+      - ./config.yml:/app/config.yml:ro
+      - ./embeddings:/app/embeddings
+      - postgres-socket:/sockets/postgres
+      - vault-postgres-app-token:/tokens/postgres-app:ro
+      - vault-socket:/sockets/vault
+
+  init-chainlit-datalayer:
+    image: node:lts-alpine
+    deploy:
+      restart_policy:
+        condition: none
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@localhost/${POSTGRES_CHAINLIT_DB}?host=/sockets/postgres/
+    volumes:
+      - ./docker/chainlit-datalayer/prisma:/prisma
+      - postgres-socket:/sockets/postgres
+    command: npx prisma migrate deploy
+
+  postgres:
+    image: postgres:17-alpine
+    user: 70:1000
+    healthcheck:
+      test: pg_isready
+    environment:
+      LANG: ${LOCALE}.utf8
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: >-
+        --auth-host reject
+        --auth-local scram-sha-256
+        --locale-provider icu
+        --icu-locale ${LOCALE}
+      POSTGRES_HOST_AUTH_METHOD: reject
+      TZ: ${TIMEZONE}
+    volumes:
+      - ./docker/postgres/config:/config:ro
+      - ./docker/postgres/initdb:/docker-entrypoint-initdb.d:ro
+      - postgres-data:/var/lib/postgresql/data
+      - postgres-socket:/var/run/postgresql
+    command: -c config_file=/config/postgresql.conf
+
+  vault:
+    image: hashicorp/vault:1.19
+    healthcheck:
+      test: vault status
+      retries: 999
+    cap_add:
+      - IPC_LOCK
+    environment:
+      LESSSECURE: 1
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      VAULT_ADDR: unix:///sockets/vault/vault.sock
+      VAULT_LOCAL_CONFIG: |  # > /vault/config/local.json
+        {
+          "api_addr": "unix:///sockets/vault/vault.sock",
+          "disable_clustering": "true",
+          "listener": [{
+            "unix": {
+              "address": "/sockets/vault/vault.sock",
+              "socket_mode": "660",
+              "socket_user": "100",
+              "socket_group": "1000"
+            }
+          }],
+          "storage": {
+            "file": {
+              "path": "/vault/file"
+            }
+          },
+          "default_lease_ttl": "1h",
+          "max_lease_ttl": "24h"
+        }
+    volumes:
+      - ./docker/vault/config:/config:ro
+      - postgres-socket:/sockets/postgres
+      - vault-data:/vault/file
+      - vault-postgres-app-token:/tokens/postgres-app
+      - vault-socket:/sockets/vault
+    entrypoint: /usr/bin/dumb-init --
+    command: >
+      sh -c "
+        chown -R vault:vault /sockets/vault &&
+        docker-entrypoint.sh vault server -config=/vault/config/local.json
+      "
+
+
+secrets:
+  CHAINLIT_AUTH_SECRET:
+    external: true
+  CLOUDFLARE_SECRET_KEY:
+    external: true
+  OAUTH_AUTH0_CLIENT_SECRET:
+    external: true
+  OAUTH_GOOGLE_CLIENT_SECRET:
+    external: true
+  OPENAI_API_KEY:
+    external: true
+  TAVILY_API_KEY:
+    external: true
+
+
+volumes:
+  postgres-data:
+  postgres-socket:
+  vault-data:
+  vault-postgres-app-token:
+  vault-socket:

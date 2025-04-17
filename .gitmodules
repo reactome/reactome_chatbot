@@ -1,0 +1,3 @@
+[submodule "docker/chainlit-datalayer"]
+	path = docker/chainlit-datalayer
+	url = https://github.com/Chainlit/chainlit-datalayer.git
