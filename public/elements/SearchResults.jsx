@@ -16,6 +16,7 @@ const SearchResults = () => {
                     <a
                         key={result.id}
                         href={result.url}
+                        target="_blank"
                         className="flex flex-col items-start gap-2 rounded-lg border p-3 text-left text-sm transition-all hover:bg-accent"
                     >
                         <div className="flex w-full flex-col gap-1">
