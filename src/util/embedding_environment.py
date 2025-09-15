@@ -27,8 +27,11 @@ class EmbeddingEnvironment:
         return cls._get().embeddings
 
     @classmethod
-    def get_dir(cls, key: str) -> Path:
-        return EM_ARCHIVE / cls._get().embeddings[key]
+    def get_dir(cls, key: str) -> Path | None:
+        if key in cls._get().embeddings:
+            return EM_ARCHIVE / cls._get().embeddings[key]
+        else:
+            return None
 
     @classmethod
     def get_model(cls, key: str) -> str:
