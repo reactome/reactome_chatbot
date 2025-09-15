@@ -288,7 +288,9 @@ async def landing_page():
     <body>
         <div class="container">
             <div class="logo">
-                <img src="https://reactome.org/templates/favourite/images/logo/logo.png" alt="Reactome Logo">
+                <a href="https://reactome.org" target="_blank">
+                    <img src="https://reactome.org/templates/favourite/images/logo/logo.png" alt="Reactome Logo">
+                </a>
             </div>
             <h1>Meet the React-to-Me AI Chatbot!</h1>
             <p class="centered-text">Your new guide to Reactome. Whether you're looking for specific genes and pathways or just browsing, our AI Chatbot is here to assist you!</p>

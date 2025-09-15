@@ -18,7 +18,7 @@ messages:
 
   welcome:
     message: |-
-      Welcome to {chat_profile}, your interactive chatbot for exploring Reactome!
+      Welcome to {chat_profile}, your interactive chatbot for exploring **[Reactome](https://reactome.org/)**!
       Ask me about biological pathways and processes.
     trigger:
       event: on_chat_start
