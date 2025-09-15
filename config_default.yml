@@ -16,23 +16,6 @@ usage_limits:
 
 messages:
 
-  disclaimer-guests:
-    message: |-
-      _**Disclaimer:** Our chatbot uses AI to assist you. Responses are generated automatically and may not always be accurate. Do not share sensitive, personal or confidential information. For more information, please click on the “Readme” icon at the top-right of this window._
-    recipients:
-      - guests
-    trigger:
-      event: on_chat_start
-  
-  disclaimer-logged_in:
-    message: |-
-      _**Disclaimer:** Our chatbot uses AI to assist you. Responses are generated automatically and may not always be accurate. Do not share sensitive, personal or confidential information. For more information, please click on the “Readme” icon at the top-right of this window._
-    recipients:
-      - logged_in
-    trigger:
-      event: on_chat_start
-      freq_max: 1w
-
   welcome:
     message: |-
       Welcome to {chat_profile}, your interactive chatbot for exploring **[Reactome](https://reactome.org/)**!
