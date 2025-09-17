@@ -288,7 +288,9 @@ async def landing_page():
     <body>
         <div class="container">
             <div class="logo">
-                <img src="https://reactome.org/templates/favourite/images/logo/logo.png" alt="Reactome Logo">
+                <a href="https://reactome.org" target="_blank">
+                    <img src="https://reactome.org/templates/favourite/images/logo/logo.png" alt="Reactome Logo">
+                </a>
             </div>
             <h1>Meet the React-to-Me AI Chatbot!</h1>
             <p class="centered-text">Your new guide to Reactome. Whether you're looking for specific genes and pathways or just browsing, our AI Chatbot is here to assist you!</p>
@@ -296,7 +298,7 @@ async def landing_page():
             <div class="button-container">
                 <a class="button" href="$CHAINLIT_URL/chat/guest/" target="_blank">Guest Access</a>
                 <a class="button" href="$CHAINLIT_URL/chat/personal/" target="_blank">Log In</a>
-                <a class="button feedback-button" href="https://forms.gle/Rvzb8EA73yZs7wd38" target="_blank">Feedback</a>
+                <a class="button feedback-button" href="mailto:help@reactome.org" target="_blank">Feedback</a>
             </div>
 
             <p class="left-justified">Choose <strong>Guest Access</strong> to try the chatbot out. <strong>Log In</strong> will give an increased query allowance and securely stores your chat history so you can save and continue conversations.</p>

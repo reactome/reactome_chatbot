@@ -74,7 +74,7 @@ github = "https://github.com/reactome/reactome_chatbot/issues"
 
 # Specify a Javascript file that can be used to customize the user interface.
 # The Javascript file can be served from the public directory.
-# custom_js = "/public/test.js"
+custom_js = "/public/custom.js"
 
 # Specify a custom meta image url.
 # custom_meta_image_url = "https://chainlit-cloud.s3.eu-west-3.amazonaws.com/logo/chainlit_banner.png"
