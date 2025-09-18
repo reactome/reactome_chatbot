@@ -26,7 +26,6 @@
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
-      /* Remove the watermark element from layout completely. */
       a.watermark {
         display: none !important;
       }
@@ -48,7 +47,7 @@
 
     const container = document.createElement('div');
     container.setAttribute(SIBLING_ATTR, '1');
-    container.style.margin = '0';            // no extra spacing; let parent gap handle layout
+    container.style.margin = '0';
     container.style.pointerEvents = 'auto';
     container.setAttribute('aria-live', 'polite');
     container.innerHTML = CUSTOM_FOOTER_HTML;
@@ -76,7 +75,7 @@
     init();
   }
 
-  // Re-apply on future UI updates (SPA re-renders).
+  // Re-apply on future UI updates
   const mo = new MutationObserver((mutations) => {
     for (const m of mutations) {
       if (m.type === 'childList') {
