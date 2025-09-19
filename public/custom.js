@@ -17,45 +17,72 @@
   `.trim();
 
   const WATERMARK_SELECTOR = 'a.watermark';
-  const APPLIED_ATTR = 'data-custom-watermark';
+  const STYLE_ID = 'custom-watermark-style';
+  const SIBLING_ATTR = 'data-custom-watermark-sibling';
 
-  function replaceFooterContents(root = document) {
+  function injectStyles() {
+    if (document.getElementById(STYLE_ID)) return;
+
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = `
+      a.watermark {
+        display: none !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function ensureSiblingAfterWatermark(el) {
+    if (!(el instanceof HTMLElement)) return;
+
+    // If the immediate next sibling is our disclaimer, update it; otherwise, insert one.
+    const nextEl = el.nextElementSibling;
+    if (nextEl && nextEl.getAttribute(SIBLING_ATTR) === '1') {
+      if (nextEl.innerHTML.trim() !== CUSTOM_FOOTER_HTML) {
+        nextEl.innerHTML = CUSTOM_FOOTER_HTML;
+      }
+      return;
+    }
+
+    const container = document.createElement('div');
+    container.setAttribute(SIBLING_ATTR, '1');
+    container.style.margin = '0';
+    container.style.pointerEvents = 'auto';
+    container.setAttribute('aria-live', 'polite');
+    container.innerHTML = CUSTOM_FOOTER_HTML;
+
+    // Insert directly after the watermark anchor
+    el.insertAdjacentElement('afterend', container);
+  }
+
+  function applyAll(root = document) {
     const nodes = root instanceof Element
       ? root.querySelectorAll(WATERMARK_SELECTOR)
       : document.querySelectorAll(WATERMARK_SELECTOR);
 
-    nodes.forEach((el) => {
-      if (!(el instanceof HTMLElement)) return;
-      if (el.getAttribute(APPLIED_ATTR) === '1') return;
-
-      el.innerHTML = CUSTOM_FOOTER_HTML;
-
-      // disable the link behaviour
-      el.removeAttribute('href');
-      el.removeAttribute('target');
-      el.style.pointerEvents = 'none';
-
-      el.setAttribute(APPLIED_ATTR, '1');
-    });
+    nodes.forEach((el) => ensureSiblingAfterWatermark(el));
   }
 
-  // Initial run (in case the element is already present).
+  function init() {
+    injectStyles();
+    applyAll(document);
+  }
+
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => replaceFooterContents(document));
+    document.addEventListener('DOMContentLoaded', init);
   } else {
-    replaceFooterContents(document);
+    init();
   }
 
-  // Re-apply on future UI updates (SPA re-renders).
+  // Re-apply on future UI updates
   const mo = new MutationObserver((mutations) => {
     for (const m of mutations) {
-      for (const node of m.addedNodes) {
-        if (node instanceof Element) {
-          // If the watermark itself is added or its parent subtree changes, update.
-          if (node.matches?.(WATERMARK_SELECTOR) || node.querySelector?.(WATERMARK_SELECTOR)) {
-            replaceFooterContents(node);
-          }
-        }
+      if (m.type === 'childList') {
+        // Re-ensure CSS and siblings if the UI changes.
+        if (!document.getElementById(STYLE_ID)) injectStyles();
+        applyAll(document);
+        break;
       }
     }
   });
