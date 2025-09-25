@@ -1,0 +1,220 @@
+#-------------------------      NODES      -------------------------
+Pathway:
+  # map to Biolink's Pathway
+  is_a: biolink:Pathway
+  represented_as: node
+  input_label: Pathway
+  preferred_id: reactome
+  properties:
+    stId: str                      # Reactome stable ID for linking
+    name: str
+    cellular_location: str[]
+    associated_disease: str[]
+    upstream_pathway: str[]
+    associated_pathway: str[]     # For top-level pathways that contain sub-pathways
+    description: str
+    url: str
+    # Embedding metadata
+    text_content: str  # Combined text for embedding
+
+Reaction:
+  # map to Biolink's Reaction
+  is_a: biolink:Reaction
+  represented_as: node
+  input_label: Reaction
+  preferred_id: reactome
+  properties:
+    stId: str                      # Reactome stable ID for linking
+    name: str
+    regulated_by: str[]
+    associated_pathway: str[]    
+    associated_disease: str[]
+    description: str
+    url: str
+    # Embedding metadata
+    text_content: str
+
+MolecularComplex:
+  # map to Biolink's Complex
+  is_a: biolink:Complex
+  represented_as: node
+  input_label: MolecularComplex
+  preferred_id: reactome
+  properties:
+    stId: str                      # Reactome stable ID for linking
+    name: str
+    components: str[]             
+    associated_disease: str[]
+    description: str
+    url: str
+    # Embedding metadata
+    text_content: str
+
+GeneProduct:
+  # map to Biolink's Protein
+  is_a: biolink:Protein
+  represented_as: node
+  input_label: GeneProduct
+  preferred_id: reactome
+  properties:
+    stId: str                      # Reactome stable ID for linking
+    name: str
+    gene_symbol: str              # e.g. "TP53"
+    cellular_location: str[]
+    disease_causing_variant: str[]
+    associated_disease: str[]
+    description: str
+    url: str
+    # Embedding metadata
+    text_content: str
+
+SmallMolecule:
+  # map to Biolink's SmallMolecule
+  is_a: biolink:SmallMolecule
+  represented_as: node
+  input_label: SmallMolecule
+  preferred_id: chebi
+  properties:
+    stId: str                      # Reactome stable ID for linking
+    name: str
+    official_name: str
+    formula: str
+    description: str
+    url: str
+    # Embedding metadata
+    text_content: str
+
+Disease:
+  # map to Biolink's Disease
+  is_a: biolink:Disease
+  represented_as: node
+  input_label: Disease
+  preferred_id: doid
+  properties:
+    stId: str                      # Reactome stable ID for linking
+    name: str
+    implicated_pathway: str[]
+    implicated_reaction: str[]
+    implicated_complex: str[]
+    implicated_variant: str[]
+    implicated_drug: str[]
+    description: str
+    url: str
+    # Embedding metadata
+    text_content: str
+
+Drug:
+  # map to Biolink's Drug
+  is_a: biolink:Drug
+  represented_as: node
+  input_label: Drug
+  preferred_id: reactome
+  properties:
+    stId: str                      # Reactome stable ID for linking
+    name: str
+    drug_type: str
+    mode_of_function: str[]
+    cellular_location: str[]
+    associated_disease: str[]
+    description: str
+    url: str
+    # Embedding metadata
+    text_content: str
+
+#------------------      RELATIONSHIPS (EDGES)     -----------------
+HasInput:
+  is_a: biolink:has_input
+  represented_as: edge
+  input_label: HasInput
+  source: Reaction
+  target:
+    - GeneProduct
+    - MolecularComplex
+    - SmallMolecule
+
+HasOutput:
+  is_a: biolink:has_output
+  represented_as: edge
+  input_label: HasOutput
+  source: Reaction
+  target:
+    - GeneProduct
+    - MolecularComplex
+    - SmallMolecule
+
+HasCatalyst:
+  is_a: biolink:has_catalyst
+  represented_as: edge
+  input_label: HasCatalyst
+  source: Reaction
+  target:
+    - GeneProduct
+    - MolecularComplex
+    - SmallMolecule
+
+HasComponent:
+  is_a: biolink:part_of
+  represented_as: edge
+  input_label: HasComponent
+  source: MolecularComplex
+  target:
+    - GeneProduct
+    - MolecularComplex
+    - SmallMolecule
+
+HasVariant:
+  is_a: biolink:is_variant_of
+  represented_as: edge
+  input_label: HasVariant
+  source: GeneProduct
+  target: GeneProduct
+
+Precedes:
+  is_a: biolink:precedes
+  represented_as: edge
+  input_label: Precedes
+  source: Reaction
+  target: Reaction
+
+PartOf:
+  is_a: biolink:part_of
+  represented_as: edge
+  input_label: PartOf
+  source: Reaction
+  target: Pathway
+
+SubPathwayOf:
+  is_a: biolink:part_of
+  represented_as: edge
+  input_label: SubPathwayOf
+  source: Pathway
+  target: Pathway
+
+ActsOn:
+  is_a: biolink:affects
+  represented_as: edge
+  input_label: ActsOn
+  source: Drug
+  target:
+    - GeneProduct
+    - MolecularComplex
+    - Reaction
+    - Pathway
+
+Treats:
+  is_a: biolink:treats
+  represented_as: edge
+  input_label: Treats
+  source: Drug
+  target: Disease
+
+AssociatedWith:
+  is_a: biolink:associated_with
+  represented_as: edge
+  input_label: AssociatedWith
+  source: Disease
+  target:
+    - GeneProduct
+    - MolecularComplex
+    - Reaction
+    - Pathway
