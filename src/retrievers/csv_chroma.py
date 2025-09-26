@@ -37,7 +37,9 @@ def create_bm25_chroma_ensemble_retriever(
         reactome_csvs_dir: Path = embeddings_directory / "csv_files"
         loader = CSVLoader(file_path=reactome_csvs_dir / csv_file_name)
         data = loader.load()
-        bm25_retriever = BM25Retriever.from_documents(data)
+        bm25_retriever = BM25Retriever.from_documents(
+            data, preprocess_func=lambda text: text.casefold().split()
+        )
         bm25_retriever.k = 10
 
         # set up vectorstore SelfQuery retriever
