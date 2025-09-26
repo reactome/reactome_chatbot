@@ -12,7 +12,7 @@ When providing answers, please adhere to the following guidelines:
 3. Answer the question comprehensively and accurately, providing useful background information based **only** on the context.
 4. keep track of **all** the sources that are directly used to derive the final answer, ensuring **every** piece of information in your response is **explicitly cited**.
 5. Create Citations for the sources used to generate the final asnwer according to the following:
-     - For Reactome always format citations in the following format: <a href="url">*Source_Name*</a>, where *Source_Name* is the name of the retrieved document.
+     - For Reactome always format citations in the following format: <a href="url">*display_name*</a>, where *Source_Name* is the name of the retrieved document.
             Examples:
                 - <a href="https://reactome.org/content/detail/R-HSA-109581">Apoptosis</a>
                 - <a href="https://reactome.org/content/detail/R-HSA-1640170">Cell Cycle</a>
