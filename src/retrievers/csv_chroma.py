@@ -11,6 +11,7 @@ from langchain_community.retrievers import BM25Retriever
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.retrievers import BaseRetriever
+from nltk.tokenize import word_tokenize
 
 chroma_settings = chromadb.config.Settings(anonymized_telemetry=False)
 
@@ -37,7 +38,12 @@ def create_bm25_chroma_ensemble_retriever(
         reactome_csvs_dir: Path = embeddings_directory / "csv_files"
         loader = CSVLoader(file_path=reactome_csvs_dir / csv_file_name)
         data = loader.load()
-        bm25_retriever = BM25Retriever.from_documents(data)
+        bm25_retriever = BM25Retriever.from_documents(
+            data,
+            preprocess_func=lambda text: word_tokenize(
+                text.casefold(), language="english"
+            ),
+        )
         bm25_retriever.k = 10
 
         # set up vectorstore SelfQuery retriever

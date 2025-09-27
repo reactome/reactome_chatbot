@@ -47,7 +47,11 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         result: dict[str, Any] = await self.reactome_rag.ainvoke(
             {
                 "input": state["rephrased_input"],
-                "chat_history": state["chat_history"],
+                "chat_history": (
+                    state["chat_history"]
+                    if state["chat_history"]
+                    else [HumanMessage(state["user_input"])]
+                ),
             },
             config,
         )

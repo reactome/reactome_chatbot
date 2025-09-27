@@ -27,6 +27,9 @@ RUN poetry config virtualenvs.in-project true
 # Install dependencies without dev dependencies
 RUN poetry install --no-root --without dev
 
+# Download NLTK data
+RUN poetry run python -m nltk.downloader punkt_tab
+
 # Adjust PATH to include the virtual environment's bin directory
 ENV PATH="${VENV_PATH}/bin:${PATH}"
 
