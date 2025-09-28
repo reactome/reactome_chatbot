@@ -10,6 +10,7 @@ from langchain_chroma.vectorstores import Chroma
 from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
+from langchain_core.retrievers import BaseRetriever
 
 from retrievers.retrieval_utils import reciprocal_rank_fusion
 
@@ -47,12 +48,12 @@ def create_documents_from_csv(csv_path: Path) -> List[Document]:
         page_content = "\n".join(content_parts)
 
         metadata = {
-            str(column): str(value)
+            column: str(value)
             for column in df.columns
             for value in [row[column]]
             if pd.notna(value) and str(value) != "nan"
         }
-        metadata.update({"source": str(csv_path), "row_index": index})
+        metadata.update({"source": str(csv_path), "row_index": str(index)})
 
         documents.append(Document(page_content=page_content, metadata=metadata))
 
@@ -78,11 +79,10 @@ class HybridRetriever:
     """Advanced hybrid retriever supporting RRF, parallel processing, and multi-source search."""
 
     def __init__(self, embedding: Embeddings, embeddings_directory: Path):
-
         self.embedding = embedding
         self.embeddings_directory = embeddings_directory
         self._retrievers: Dict[
-            str, Dict[str, Optional[Union[BM25Retriever, object]]]
+            str, Dict[str, Optional[Union[BM25Retriever, BaseRetriever]]]
         ] = {}
 
         try:
@@ -129,7 +129,7 @@ class HybridRetriever:
             logger.error(f"Failed to create BM25 retriever for {subdirectory}: {e}")
             return None
 
-    def _create_vector_retriever(self, subdirectory: str) -> Optional[object]:
+    def _create_vector_retriever(self, subdirectory: str) -> Optional[BaseRetriever]:
         """Create vector retriever for a specific subdirectory."""
         vector_directory = self.embeddings_directory / subdirectory
 
@@ -160,7 +160,9 @@ class HybridRetriever:
         """Search using BM25 retriever asynchronously."""
         return await asyncio.to_thread(retriever.get_relevant_documents, query)
 
-    async def _search_with_vector(self, query: str, retriever: Any) -> List[Document]:
+    async def _search_with_vector(
+        self, query: str, retriever: BaseRetriever
+    ) -> List[Document]:
         """Search using vector retriever asynchronously."""
         return await asyncio.to_thread(retriever.get_relevant_documents, query)
 
@@ -178,7 +180,9 @@ class HybridRetriever:
         if retriever_info["bm25"] and isinstance(retriever_info["bm25"], BM25Retriever):
             search_tasks.append(self._search_with_bm25(query, retriever_info["bm25"]))
 
-        if retriever_info["vector"]:
+        if retriever_info["vector"] and isinstance(
+            retriever_info["vector"], BaseRetriever
+        ):
             search_tasks.append(
                 self._search_with_vector(query, retriever_info["vector"])
             )

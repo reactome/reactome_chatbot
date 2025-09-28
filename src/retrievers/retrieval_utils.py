@@ -10,7 +10,7 @@ def reciprocal_rank_fusion(
     id_getter: Callable[[Any], str] = lambda doc: doc.metadata.get("stId")
     or doc.metadata.get("stable_id"),
 ) -> Tuple[List[Any], List[str], Dict[str, float]]:
-    rrf_scores: defaultdict[str, float] = defaultdict(float)
+    rrf_scores: Dict[str, float] = defaultdict(float)
     doc_meta = {}
 
     for ranked in ranked_lists:
