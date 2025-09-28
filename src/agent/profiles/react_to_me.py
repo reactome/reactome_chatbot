@@ -45,13 +45,13 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         """Build and configure the ReactToMe workflow graph."""
         state_graph = StateGraph(ReactToMeState)
 
-        # Add workflow nodes
+        # Add nodes
         state_graph.add_node("preprocess", self.preprocess)
         state_graph.add_node("model", self.call_model)
         state_graph.add_node("generate_unsafe_response", self.generate_unsafe_response)
         state_graph.add_node("postprocess", self.postprocess)
 
-        # Configure workflow edges
+        # Add edges
         state_graph.set_entry_point("preprocess")
         state_graph.add_conditional_edges(
             "preprocess",
