@@ -23,11 +23,7 @@ class ReactToMeState(BaseState):
 class ReactToMeGraphBuilder(BaseGraphBuilder):
     """Graph builder for ReactToMe profile with Reactome-specific functionality."""
 
-    def __init__(
-        self, 
-        llm: BaseChatModel, 
-        embedding: Embeddings
-        ) -> None:
+    def __init__(self, llm: BaseChatModel, embedding: Embeddings) -> None:
         """Initialize ReactToMe graph builder with required components."""
         super().__init__(llm, embedding)
 
@@ -69,25 +65,20 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         return state_graph
 
     async def preprocess(
-        self, 
-        state: ReactToMeState, 
-        config: RunnableConfig
+        self, state: ReactToMeState, config: RunnableConfig
     ) -> ReactToMeState:
         """Run preprocessing workflow."""
         result = await super().preprocess(state, config)
         return ReactToMeState(**result)
 
     async def proceed_with_research(
-        self, 
-        state: ReactToMeState
+        self, state: ReactToMeState
     ) -> Literal["Continue", "Finish"]:
         """Determine whether to proceed with research based on safety check."""
         return "Continue" if state["safety"] == SAFETY_SAFE else "Finish"
 
     async def generate_unsafe_response(
-        self, 
-        state: ReactToMeState, 
-        config: RunnableConfig
+        self, state: ReactToMeState, config: RunnableConfig
     ) -> ReactToMeState:
         """Generate appropriate refusal response for unsafe queries."""
         final_answer_message = await self.unsafe_answer_generator.ainvoke(
@@ -120,9 +111,7 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         )
 
     async def call_model(
-        self, 
-        state: ReactToMeState, 
-        config: RunnableConfig
+        self, state: ReactToMeState, config: RunnableConfig
     ) -> ReactToMeState:
         """Generate response using Reactome RAG for safe queries."""
         result: dict[str, Any] = await self.reactome_rag.ainvoke(
@@ -147,9 +136,6 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         )
 
 
-def create_reactome_graph(
-    llm: BaseChatModel, 
-    embedding: Embeddings
-    ) -> StateGraph:
+def create_reactome_graph(llm: BaseChatModel, embedding: Embeddings) -> StateGraph:
     """Create and return the ReactToMe workflow graph."""
     return ReactToMeGraphBuilder(llm, embedding).uncompiled_graph

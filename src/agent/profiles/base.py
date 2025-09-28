@@ -52,20 +52,12 @@ class BaseState(InputState, OutputState, total=False):
 class BaseGraphBuilder:
     """Base class for all graph builders with common preprocessing and postprocessing."""
 
-    def __init__(
-        self, 
-        llm: BaseChatModel, 
-        embedding: Embeddings
-        ) -> None:
+    def __init__(self, llm: BaseChatModel, embedding: Embeddings) -> None:
         """Initialize with LLM and embedding models."""
         self.preprocessing_workflow: Runnable = create_preprocessing_workflow(llm)
         self.search_workflow: Runnable = create_search_workflow(llm)
 
-    async def preprocess(
-        self, 
-        state: BaseState, 
-        config: RunnableConfig
-        ) -> BaseState:
+    async def preprocess(self, state: BaseState, config: RunnableConfig) -> BaseState:
         """Run the complete preprocessing workflow and map results to state."""
         result: PreprocessingState = await self.preprocessing_workflow.ainvoke(
             PreprocessingState(
@@ -77,10 +69,7 @@ class BaseGraphBuilder:
 
         return self._map_preprocessing_result(result)
 
-    def _map_preprocessing_result(
-        self, 
-        result: PreprocessingState
-        ) -> BaseState:
+    def _map_preprocessing_result(self, result: PreprocessingState) -> BaseState:
         """Map preprocessing results to BaseState with defaults."""
         return BaseState(
             rephrased_input=result["rephrased_input"],
@@ -90,11 +79,7 @@ class BaseGraphBuilder:
             detected_language=result.get("detected_language", DEFAULT_LANGUAGE),
         )
 
-    async def postprocess(
-        self, 
-        state: BaseState, 
-        config: RunnableConfig
-        ) -> BaseState:
+    async def postprocess(self, state: BaseState, config: RunnableConfig) -> BaseState:
         """Postprocess that preserves existing state and conditionally adds search results."""
         search_results: list[WebSearchResult] = []
 
@@ -113,4 +98,9 @@ class BaseGraphBuilder:
             search_results = result["search_results"]
 
         # Create new state with updated additional_content
-        return BaseState(**{**state, "additional_content": AdditionalContent(search_results=search_results)})
+        return BaseState(
+            **{
+                **state,
+                "additional_content": AdditionalContent(search_results=search_results),
+            }
+        )
