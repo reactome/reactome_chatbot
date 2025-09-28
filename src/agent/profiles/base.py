@@ -99,8 +99,6 @@ class BaseGraphBuilder:
 
         # Create new state with updated additional_content
         return BaseState(
-            **{
-                **state,
-                "additional_content": AdditionalContent(search_results=search_results),
-            }
+            **state,  # Copy existing state
+            additional_content=AdditionalContent(search_results=search_results)
         )
