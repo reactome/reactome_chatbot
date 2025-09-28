@@ -1,13 +1,13 @@
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
+
 
 # unsafe or out of scope answer generator
 def create_unsafe_answer_generator(llm: BaseChatModel) -> Runnable:
     """
     Create an unsafe answer generator chain.
-    
+
     Args:
         llm: Language model to use
 
@@ -34,9 +34,14 @@ You must:
 
 You must not provide any workaround, implicit answer, or redirection toward unsafe content.
 """
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        ("user", "Language:{language}\n\nQuestion:{user_input}\n\n Reason for unsafe or out of scope: {reason_unsafe}")
-    ])
-    
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", system_prompt),
+            (
+                "user",
+                "Language:{language}\n\nQuestion:{user_input}\n\n Reason for unsafe or out of scope: {reason_unsafe}",
+            ),
+        ]
+    )
+
     return prompt | llm

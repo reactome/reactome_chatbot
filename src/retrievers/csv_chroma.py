@@ -10,8 +10,6 @@ from langchain_chroma.vectorstores import Chroma
 from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
-from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.retrievers import BaseRetriever
 
 from retrievers.retrieval_utils import reciprocal_rank_fusion
 

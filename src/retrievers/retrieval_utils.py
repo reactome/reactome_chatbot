@@ -1,13 +1,14 @@
 from collections import defaultdict
-from typing import List, Any, Tuple, Dict, Callable
-from pydantic import BaseModel
+from typing import Any, Callable, Dict, List, Tuple
+
 
 def reciprocal_rank_fusion(
     ranked_lists: List[List[Any]],
     final_k: int = 5,
     lambda_mult: float = 60.0,
     rrf_k: int | None = None,
-    id_getter: Callable[[Any], str] = lambda doc: doc.metadata.get("stId") or doc.metadata.get("stable_id"),
+    id_getter: Callable[[Any], str] = lambda doc: doc.metadata.get("stId")
+    or doc.metadata.get("stable_id"),
 ) -> Tuple[List[Any], List[str], Dict[str, float]]:
     rrf_scores = defaultdict(float)
     doc_meta = {}
