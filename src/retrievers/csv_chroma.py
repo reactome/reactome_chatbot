@@ -47,7 +47,7 @@ def create_documents_from_csv(csv_path: Path) -> List[Document]:
         page_content = "\n".join(content_parts)
 
         metadata = {
-            column: str(value)
+            str(column): str(value)
             for column in df.columns
             for value in [row[column]]
             if pd.notna(value) and str(value) != "nan"
@@ -77,7 +77,12 @@ def list_chroma_subdirectories(directory: Path) -> List[str]:
 class HybridRetriever:
     """Advanced hybrid retriever supporting RRF, parallel processing, and multi-source search."""
 
-    def __init__(self, embedding: Embeddings, embeddings_directory: Path):
+    def __init__(
+        self, 
+        embedding: Embeddings, 
+        embeddings_directory: Path
+        ):
+
         self.embedding = embedding
         self.embeddings_directory = embeddings_directory
         self._retrievers: Dict[
@@ -154,19 +159,25 @@ class HybridRetriever:
             return None
 
     async def _search_with_bm25(
-        self, query: str, retriever: BM25Retriever
+        self, 
+        query: str, 
+        retriever: BM25Retriever
     ) -> List[Document]:
         """Search using BM25 retriever asynchronously."""
         return await asyncio.to_thread(retriever.get_relevant_documents, query)
 
     async def _search_with_vector(
-        self, query: str, retriever: object
+        self, 
+        query: str, 
+        retriever: Any
     ) -> List[Document]:
         """Search using vector retriever asynchronously."""
         return await asyncio.to_thread(retriever.get_relevant_documents, query)
 
     async def _execute_hybrid_search(
-        self, query: str, subdirectory: str
+        self, 
+        query: str, 
+        subdirectory: str
     ) -> List[Document]:
         """Execute hybrid search (BM25 + vector) for a single query on a subdirectory."""
         retriever_info = self._retrievers.get(subdirectory)
@@ -176,7 +187,7 @@ class HybridRetriever:
 
         search_tasks = []
 
-        if retriever_info["bm25"]:
+        if retriever_info["bm25"] and isinstance(retriever_info["bm25"], BM25Retriever):
             search_tasks.append(self._search_with_bm25(query, retriever_info["bm25"]))
 
         if retriever_info["vector"]:
@@ -212,7 +223,9 @@ class HybridRetriever:
         return hashlib.md5(document.page_content.encode()).hexdigest()
 
     async def _apply_reciprocal_rank_fusion(
-        self, queries: List[str], subdirectory: str
+        self, 
+        queries: List[str], 
+        subdirectory: str
     ) -> List[Document]:
         """Apply Reciprocal Rank Fusion to results from multiple queries on a subdirectory."""
         logger.info(
@@ -312,7 +325,8 @@ class HybridRetriever:
 
 
 def create_hybrid_retriever(
-    embedding: Embeddings, embeddings_directory: Path
+    embedding: Embeddings, 
+    embeddings_directory: Path
 ) -> HybridRetriever:
     """Create a hybrid retriever with RRF and parallel processing support."""
     try:
