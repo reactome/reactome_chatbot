@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  # Test Neo4j Database for Knowledge Graph
+  neo4j-test:
+    image: neo4j:5.15-community
+    container_name: reactome-neo4j-test
+    ports:
+      - "7475:7474"  # HTTP (different port)
+      - "7688:7687"  # Bolt (different port)
+    environment:
+      # Authentication
+      NEO4J_AUTH: "neo4j/reactome-test"
+      NEO4J_dbms_default__database: "reactome-kg-test"
+      
+      # Plugins
+      NEO4JLABS_PLUGINS: '["apoc","graph-data-science","n10s"]'
+      
+      # APOC Configuration
+      NEO4J_dbms_security_procedures_unrestricted: "apoc.*,gds.*,n10s.*"
+      NEO4J_dbms_security_procedures_allowlist: "apoc.*,gds.*,n10s.*"
+      NEO4J_apoc_import_file_enabled: "true"
+      NEO4J_apoc_export_file_enabled: "true"
+      NEO4J_apoc_import_file_use__neo4j__config: "true"
+      
+      # Memory Configuration (smaller for test)
+      NEO4J_dbms_memory_heap_initial__size: "512m"
+      NEO4J_dbms_memory_heap_max__size: "1g"
+      NEO4J_dbms_memory_pagecache_size: "512m"
+      
+      # Performance Tuning
+      NEO4J_dbms_transaction_timeout: "60s"
+      NEO4J_dbms_lock_acquisition_timeout: "30s"
+      
+    volumes:
+      - neo4j_test_data:/data
+      - neo4j_test_logs:/logs
+      - neo4j_test_import:/var/lib/neo4j/import
+      - neo4j_test_plugins:/plugins
+      
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "reactome-test", "RETURN 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Test Weaviate Vector Database
+  weaviate-test:
+    image: cr.weaviate.io/semitechnologies/weaviate:1.31.2
+    container_name: reactome-weaviate-test
+    ports:
+      - "8081:8080"    # REST API (different port)
+      - "50052:50051"  # gRPC (different port)
+    environment:
+      QUERY_DEFAULTS_LIMIT: 100
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      PERSISTENCE_DATA_PATH: "/var/lib/weaviate"
+      CLUSTER_HOSTNAME: "node1"
+      ENABLE_MODULES: "text2vec-openai"
+      DEFAULT_VECTORIZER_MODULE: "text2vec-openai"
+      OPENAI_APIKEY: "${OPENAI_API_KEY}"
+      
+    volumes:
+      - weaviate_test_data:/var/lib/weaviate
+      
+    restart: unless-stopped
+    depends_on:
+      - neo4j-test
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/meta"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  neo4j_test_data:
+    driver: local
+  neo4j_test_logs:
+    driver: local
+  neo4j_test_import:
+    driver: local
+  neo4j_test_plugins:
+    driver: local
+  weaviate_test_data:
+    driver: local

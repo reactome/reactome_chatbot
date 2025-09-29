@@ -1,0 +1,128 @@
+# GraphRAG Reactome Pipeline Makefile
+# Provides convenient commands for managing the GraphRAG Docker Compose setup
+
+.PHONY: help core api chainlit admin jupyter pipeline all logs status stop cleanup build
+
+# Default target
+help: ## Show this help message
+	@echo "GraphRAG Reactome Pipeline Management"
+	@echo "====================================="
+	@echo ""
+	@echo "Available commands:"
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@echo ""
+	@echo "Examples:"
+	@echo "  make core        # Start core services"
+	@echo "  make pipeline    # Run the GraphRAG pipeline"
+	@echo "  make all         # Start all services"
+	@echo "  make logs        # Show logs for all services"
+
+# Core services
+core: ## Start core services (Neo4j, Weaviate, PostgreSQL, Redis)
+	@echo "Starting core services..."
+	docker-compose -f docker-compose.graphrag.yml up -d neo4j weaviate postgres redis
+	@echo "Core services started. Waiting for health checks..."
+	@sleep 30
+	@echo "Core services are ready!"
+
+# API service
+api: ## Start Graph RAG API service
+	@echo "Starting Graph RAG API..."
+	docker-compose -f docker-compose.graphrag.yml --profile api up -d graph-rag-api
+	@echo "Graph RAG API started at http://localhost:8000"
+
+# Chainlit interface
+chainlit: ## Start Chainlit chat interface
+	@echo "Starting Chainlit interface..."
+	docker-compose -f docker-compose.graphrag.yml --profile chainlit up -d chainlit
+	@echo "Chainlit interface started at http://localhost:8001"
+
+# Admin tools
+admin: ## Start admin tools (pgAdmin)
+	@echo "Starting admin tools..."
+	docker-compose -f docker-compose.graphrag.yml --profile admin up -d pgadmin
+	@echo "pgAdmin started at http://localhost:16543"
+
+# Jupyter Lab
+jupyter: ## Start Jupyter Lab for data analysis
+	@echo "Starting Jupyter Lab..."
+	docker-compose -f docker-compose.graphrag.yml --profile jupyter up -d jupyter
+	@echo "Jupyter Lab started at http://localhost:8888"
+	@echo "Token: reactome123"
+
+# GraphRAG pipeline
+pipeline: ## Run the GraphRAG Reactome pipeline
+	@echo "Running GraphRAG Reactome pipeline..."
+	docker-compose -f docker-compose.graphrag.yml --profile pipeline run --rm reactome-pipeline
+	@echo "Pipeline completed!"
+
+# Start all services
+all: core api chainlit admin jupyter ## Start all services
+	@echo "All services started successfully!"
+	@echo ""
+	@echo "Service URLs:"
+	@echo "  Neo4j Browser:     http://localhost:7474"
+	@echo "  Weaviate:          http://localhost:8080"
+	@echo "  Graph RAG API:     http://localhost:8000"
+	@echo "  Chainlit:          http://localhost:8001"
+	@echo "  pgAdmin:           http://localhost:16543"
+	@echo "  Jupyter Lab:       http://localhost:8888"
+
+# Build services
+build: ## Build all Docker images
+	@echo "Building Docker images..."
+	docker-compose -f docker-compose.graphrag.yml build
+
+# Show logs
+logs: ## Show logs for all services
+	docker-compose -f docker-compose.graphrag.yml logs -f
+
+# Show status
+status: ## Show service status
+	@echo "Service Status:"
+	@echo "==============="
+	docker-compose -f docker-compose.graphrag.yml ps
+
+# Stop all services
+stop: ## Stop all services
+	@echo "Stopping all services..."
+	docker-compose -f docker-compose.graphrag.yml down
+	@echo "All services stopped!"
+
+# Clean up
+cleanup: ## Remove all containers and volumes (WARNING: This will delete all data!)
+	@echo "WARNING: This will remove all containers and volumes!"
+	@echo "This will delete all data. Are you sure? [y/N]"
+	@read -r response; \
+	if [ "$$response" = "y" ] || [ "$$response" = "Y" ]; then \
+		echo "Cleaning up..."; \
+		docker-compose -f docker-compose.graphrag.yml down -v --remove-orphans; \
+		docker system prune -f; \
+		echo "Cleanup completed!"; \
+	else \
+		echo "Cleanup cancelled."; \
+	fi
+
+# Development helpers
+dev-setup: ## Set up development environment
+	@echo "Setting up development environment..."
+	@mkdir -p data/kg data/vectors logs notebooks pgadmin
+	@if [ ! -f .env.enhanced ]; then \
+		echo "Creating .env.enhanced from template..."; \
+		cp env.enhanced .env.enhanced; \
+		echo "Please edit .env.enhanced with your API keys!"; \
+	fi
+	@echo "Development environment ready!"
+
+# Quick start
+quick-start: dev-setup core pipeline api chainlit ## Quick start: setup, core services, pipeline, and applications
+	@echo "Quick start completed!"
+	@echo "Your Reactome system is ready!"
+
+# Health checks
+health: ## Check health of all services
+	@echo "Checking service health..."
+	@echo "Neo4j: $$(docker-compose -f docker-compose.graphrag.yml exec -T neo4j cypher-shell -u neo4j -p reactome 'RETURN 1' 2>/dev/null && echo 'OK' || echo 'FAILED')"
+	@echo "Weaviate: $$(curl -s http://localhost:8080/v1/meta >/dev/null && echo 'OK' || echo 'FAILED')"
+	@echo "PostgreSQL: $$(docker-compose -f docker-compose.graphrag.yml exec -T postgres pg_isready -U reactome 2>/dev/null && echo 'OK' || echo 'FAILED')"
+	@echo "Redis: $$(docker-compose -f docker-compose.graphrag.yml exec -T redis redis-cli ping 2>/dev/null | grep -q PONG && echo 'OK' || echo 'FAILED')"

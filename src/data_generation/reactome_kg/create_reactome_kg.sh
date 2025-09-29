@@ -158,9 +158,9 @@ cleanup_containers() {
     log_step "Cleaning up existing containers and Docker Compose services..."
     
     # Stop Docker Compose services first
-    if [ -f "$PROJECT_ROOT/docker-compose.enhanced.yml" ]; then
+    if [ -f "$PROJECT_ROOT/docker-compose.graphrag.yml" ]; then
         log_info "Stopping Docker Compose services..."
-        docker-compose -f "$PROJECT_ROOT/docker-compose.enhanced.yml" down 2>/dev/null || true
+        docker-compose -f "$PROJECT_ROOT/docker-compose.graphrag.yml" down 2>/dev/null || true
     fi
     
     # Stop and remove individual containers
