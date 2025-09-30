@@ -20,9 +20,6 @@ class WeaviateVectorClient(IVectorClient):
     for different use cases (Reactome, UniProt, etc.) through constructor parameters.
     """
     
-    DEFAULT_MMR_FETCH_K_MULTIPLIER = 4
-    MIN_MMR_FETCH_K = 20
-    
     def __init__(
         self,
         host: str,
@@ -69,7 +66,7 @@ class WeaviateVectorClient(IVectorClient):
     ) -> List[Document]:
         """Perform MMR (Maximal Marginal Relevance) search."""
         try:
-            fk = fetch_k if fetch_k is not None else max(self.MIN_MMR_FETCH_K, self.DEFAULT_MMR_FETCH_K_MULTIPLIER * k)
+            fk = fetch_k if fetch_k is not None else max(20, 4 * k)
             docs = self._store.max_marginal_relevance_search(
                 query=query, k=k, fetch_k=fk, lambda_mult=lambda_mult
             )

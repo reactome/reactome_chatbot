@@ -1,8 +1,3 @@
-"""
-Core data models and protocols for Graph-RAG.
-Moved from `src.retrievers.graph_rag_models`.
-"""
-
 from typing import List, Optional, Protocol, Dict, Any
 from dataclasses import dataclass
 from neo4j import Record
@@ -11,14 +6,14 @@ from langchain.schema import Document
 
 @dataclass
 class NodeInfo:
-    node_id: str  # Changed from int to str for stable IDs
+    node_id: str
     labels: List[str]
     properties: Dict[str, Any]
 
 
 @dataclass
 class NeighborInfo:
-    node_id: str  # Changed from int to str for stable IDs
+    node_id: str
     labels: List[str]
     properties: Dict[str, Any]
     edge_type: str

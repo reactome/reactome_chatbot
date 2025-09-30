@@ -18,55 +18,17 @@ from .graph_traversal_strategies import (
 )
 from .graph_traversal_strategies.one_hop import OneHopRenderer
 from .graph_traversal_strategies.steiner_tree import SteinerTreeRenderer
-from .retrieval_utils import ReactomeRetrievalConfig, UniProtRetrievalConfig, VectorSearchConfig, GraphTraversalConfig
-
-from .uniprot_retriever import UniProtRetriever
+from .retrieval_utils import ReactomeRetrievalConfig, VectorSearchConfig, GraphTraversalConfig
 
 logger = logging.getLogger(__name__)
 
-# Weaviate Configuration
-WEAVIATE_HOST = "WEAVIATE_HOST"
-WEAVIATE_PORT = "WEAVIATE_PORT"
-WEAVIATE_GRPC_PORT = "WEAVIATE_GRPC_PORT"
-WEAVIATE_INDEX = "WEAVIATE_INDEX"
-OPENAI_API_KEY = "OPENAI_API_KEY"
-EMBEDDING_MODEL = "EMBEDDING_MODEL"
 
-# Neo4j Configuration
-NEO4J_URI = "NEO4J_URI"
-NEO4J_USER = "NEO4J_USER"
-NEO4J_PASSWORD = "NEO4J_PASSWORD"
-NEO4J_DATABASE = "NEO4J_DATABASE"
-
-# Graph RAG Configuration
-GRAPH_RAG_STRATEGY = "GRAPH_RAG_STRATEGY"
-GRAPH_RAG_USE_RRF = "GRAPH_RAG_USE_RRF"
-GRAPH_RAG_RRF_PER_QUERY_K = "GRAPH_RAG_RRF_PER_QUERY_K"
-GRAPH_RAG_RRF_FINAL_K = "GRAPH_RAG_RRF_FINAL_K"
-GRAPH_RAG_RRF_LAMBDA = "GRAPH_RAG_RRF_LAMBDA"
-GRAPH_RAG_RRF_ALPHA = "GRAPH_RAG_RRF_ALPHA"
-GRAPH_RAG_RRF_CUTOFF_K = "GRAPH_RAG_RRF_CUTOFF_K"
-GRAPH_RAG_ALPHA = "GRAPH_RAG_ALPHA"
-GRAPH_RAG_MAX_NEIGHBORS_PER_TYPE = "GRAPH_RAG_MAX_NEIGHBORS_PER_TYPE"
-GRAPH_RAG_MAX_TOTAL = "GRAPH_RAG_MAX_TOTAL"
-GRAPH_RAG_SOURCE_ID = "GRAPH_RAG_SOURCE_ID"
-GRAPH_RAG_GDS_GRAPH_NAME = "GRAPH_RAG_GDS_GRAPH_NAME"
-
-# UniProt Configuration
-UNIPROT_USE_RRF = "UNIPROT_USE_RRF"
-UNIPROT_RRF_PER_QUERY_K = "UNIPROT_RRF_PER_QUERY_K"
-UNIPROT_RRF_FINAL_K = "UNIPROT_RRF_FINAL_K"
-UNIPROT_RRF_LAMBDA = "UNIPROT_RRF_LAMBDA"
-UNIPROT_RRF_ALPHA = "UNIPROT_RRF_ALPHA"
-UNIPROT_RRF_CUTOFF_K = "UNIPROT_RRF_CUTOFF_K"
-UNIPROT_ALPHA = "UNIPROT_ALPHA"
-
-STRATEGY_REGISTRY = {
+STRATEGY_REGISTRY: Dict[str, Any] = {
     "one_hop": OneHopStrategy(),
     "steiner_tree": SteinerTreeStrategy(),
 }
 
-RENDERER_REGISTRY = {
+RENDERER_REGISTRY: Dict[str, Any] = {
     "one_hop": OneHopRenderer,
     "steiner_tree": SteinerTreeRenderer,
 }
@@ -79,12 +41,12 @@ def get_weaviate_config() -> Dict[str, Any]:
         Dictionary containing Weaviate connection and configuration parameters
     """
     return {
-        "host": os.getenv(WEAVIATE_HOST, "localhost"),
-        "port": int(os.getenv(WEAVIATE_PORT, "8080")),
-        "grpc_port": int(os.getenv(WEAVIATE_GRPC_PORT, "50051")),
-        "index_name": os.getenv(WEAVIATE_INDEX, "ReactomeKGNode"),
-        "openai_api_key": os.getenv(OPENAI_API_KEY, ""),
-        "embedding_model": os.getenv(EMBEDDING_MODEL, "text-embedding-3-large"),
+        "host": os.getenv("WEAVIATE_HOST", "localhost"),
+        "port": int(os.getenv("WEAVIATE_PORT", "8080")),
+        "grpc_port": int(os.getenv("WEAVIATE_GRPC_PORT", "50051")),
+        "index_name": os.getenv("WEAVIATE_INDEX", "ReactomeKGNode"),
+        "openai_api_key": os.getenv("OPENAI_API_KEY", ""),
+        "embedding_model": os.getenv("EMBEDDING_MODEL", "text-embedding-3-large"),
     }
 
 
@@ -96,10 +58,10 @@ def get_neo4j_config() -> Dict[str, Any]:
         Dictionary containing Neo4j connection parameters
     """
     return {
-        "uri": os.getenv(NEO4J_URI, "bolt://localhost:7687"),
-        "user": os.getenv(NEO4J_USER, "neo4j"),
-        "password": os.getenv(NEO4J_PASSWORD, "reactome"),
-        "default_db": os.getenv(NEO4J_DATABASE, "neo4j"),
+        "uri": os.getenv("NEO4J_URI", "bolt://localhost:7687"),
+        "user": os.getenv("NEO4J_USER", "neo4j"),
+        "password": os.getenv("NEO4J_PASSWORD", "reactome"),
+        "default_db": os.getenv("NEO4J_DATABASE", "neo4j"),
     }
 
 
@@ -107,17 +69,17 @@ def _build_vector_config(
     prefix: str,
     use_rrf_default: str = "false",
     rrf_per_query_k_default: str = "20",
-    rrf_final_k_default: str = "10",
+    rrf_final_k_default: str = "15",
     rrf_lambda_default: str = "60.0",
-    rrf_alpha_default: str = "0.7",
+    rrf_alpha_default: str = "0.8",
     rrf_cutoff_k_default: str = "0",
-    alpha_default: str = "0.7",
+    alpha_default: str = "0.8",
 ) -> VectorSearchConfig:
     """
     Build a VectorSearchConfig from environment variables with a given prefix.
     
     Args:
-        prefix: Environment variable prefix (e.g., "GRAPH_RAG" or "UNIPROT")
+        prefix: Environment variable prefix (e.g., "GRAPH_RAG")
         use_rrf_default: Default value for use_rrf
         rrf_per_query_k_default: Default value for rrf_per_query_k
         rrf_final_k_default: Default value for rrf_final_k
@@ -148,22 +110,22 @@ def get_reactome_config() -> ReactomeRetrievalConfig:
         Configured ReactomeRetrievalConfig instance
     """
     # Parse strategy sequence (comma-separated list)
-    strategy_env = os.getenv(GRAPH_RAG_STRATEGY, "one_hop")
+    strategy_env = os.getenv("GRAPH_RAG_STRATEGY", "one_hop")
     strategy_sequence = [s.strip() for s in strategy_env.split(",")]
     
     # Vector search configuration
     vector_config = _build_vector_config(
         prefix="GRAPH_RAG",
-        rrf_final_k_default="5"
+        rrf_final_k_default="15"
     )
     
     # Graph traversal configuration
     graph_config = GraphTraversalConfig(
         strategy_sequence=strategy_sequence,
-        max_neighbors_per_type=int(os.getenv(GRAPH_RAG_MAX_NEIGHBORS_PER_TYPE, "5")),
-        max_total=int(os.getenv(GRAPH_RAG_MAX_TOTAL, "10")),
-        source_id=os.getenv(GRAPH_RAG_SOURCE_ID) or None,
-        gds_graph_name=os.getenv(GRAPH_RAG_GDS_GRAPH_NAME) or None,
+        max_neighbors_per_type=int(os.getenv("GRAPH_RAG_MAX_NEIGHBORS_PER_TYPE", "5")),
+        max_total=int(os.getenv("GRAPH_RAG_MAX_TOTAL", "10")),
+        source_id=os.getenv("GRAPH_RAG_SOURCE_ID") or None,
+        gds_graph_name=os.getenv("GRAPH_RAG_GDS_GRAPH_NAME") or None,
     )
     
     return ReactomeRetrievalConfig(
@@ -172,36 +134,6 @@ def get_reactome_config() -> ReactomeRetrievalConfig:
     )
 
 
-def get_uniprot_config() -> UniProtRetrievalConfig:
-    """
-    Get UniProt retrieval configuration from environment variables.
-    
-    Returns:
-        Configured UniProtRetrievalConfig instance
-    """
-    vector_config = _build_vector_config(prefix="UNIPROT")
-    
-    return UniProtRetrievalConfig(
-        vector_config=vector_config,
-    )
-
-
-def get_uniprot_embeddings() -> Dict[str, Any]:
-    """
-    Get UniProt embeddings configuration from environment variables.
-    
-    Returns:
-        Dictionary containing UniProt embeddings configuration
-    """
-    from src.util.embedding_environment import EmbeddingEnvironment
-    
-    embeddings_directory = EmbeddingEnvironment.get_dir("uniprot")
-    embedding_model = EmbeddingEnvironment.get_model("uniprot")
-    
-    return {
-        "embeddings_directory": embeddings_directory,
-        "embedding_model": embedding_model,
-    }
 
 def create_vector_client() -> WeaviateVectorClient:
     """
@@ -299,46 +231,3 @@ def create_reactome_retriever_custom(
     config = retrieval_config or get_reactome_config()
     return retriever, config
 
-def create_uniprot_retriever(
-    embedding: Any,
-    embeddings_directory: Optional[str] = None,
-) -> UniProtRetriever:
-    """
-    Create a UniProt vector retriever with default configuration.
-    
-    Args:
-        embedding: Embedding model for vector operations
-        embeddings_directory: Optional path to embeddings directory
-        
-    Returns:
-        Configured UniProtRetriever instance
-    """
-    if embeddings_directory is None:
-        config = get_uniprot_embeddings()
-        embeddings_directory = config["embeddings_directory"]
-    
-    logger.info("Creating UniProt vector retriever for directory: %s", embeddings_directory)
-    return UniProtRetriever(
-        embedding=embedding,
-        embeddings_directory=embeddings_directory,
-    )
-
-def create_uniprot_retriever_custom(
-    embedding: Any,
-    retrieval_config: Optional[UniProtRetrievalConfig] = None,
-    embeddings_directory: Optional[str] = None,
-) -> Tuple[UniProtRetriever, UniProtRetrievalConfig]:
-    """
-    Create a UniProt vector retriever with custom configuration.
-    
-    Args:
-        embedding: Embedding model for vector operations
-        retrieval_config: Optional retrieval configuration
-        embeddings_directory: Optional path to embeddings directory
-        
-    Returns:
-        Tuple of (retriever, config)
-    """
-    retriever = create_uniprot_retriever(embedding, embeddings_directory)
-    config = retrieval_config or get_uniprot_config()
-    return retriever, config

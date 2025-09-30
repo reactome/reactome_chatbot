@@ -1,32 +1,16 @@
-"""
-Graph-RAG retriever orchestrator.
-Moved from `src.retrievers.graphrag_retriever`.
-"""
-
 from __future__ import annotations
 
 import asyncio
 from typing import List, Optional, Dict, Any
 
 from .types import IVectorClient, IGraphClient
-from .retrieval_utils import ReactomeRetrievalConfig, UniProtRetrievalConfig, reciprocal_rank_fusion
+from .retrieval_utils import ReactomeRetrievalConfig, VectorSearchConfig
 from .graph_traversal_strategies import GraphTraversalStrategy
+from ..retrieval_utils import reciprocal_rank_fusion
 
 
 class GraphRAGRetriever:
-    """Graph-RAG retriever that orchestrates vector search and graph traversal strategies."""
-    
-    # Strategy names
-    ONE_HOP_STRATEGY = "one_hop"
-    STEINER_TREE_STRATEGY = "steiner_tree"
-    
-    # Output formats
-    OUTPUT_FORMAT_JSON = "json"
-    OUTPUT_FORMAT_LLM_TEXT = "llm_text"
-    
-    # Default messages
-    NO_RESULTS_MESSAGE = "No relevant nodes found in the knowledge graph for this query."
-    NO_DOCUMENTS_MESSAGE = "No relevant Reactome entries found for this query."
+    """Graph-RAG retriever that orchestrates vector search and graph traversal strategies.    """
     
     def __init__(
         self,
@@ -54,7 +38,7 @@ class GraphRAGRetriever:
         query: str,
         cfg: ReactomeRetrievalConfig,
         expanded_queries: Optional[List[str]] = None,
-        output_format: str = OUTPUT_FORMAT_LLM_TEXT,
+        output_format: str = "llm_text",
     ) -> str:
         """
         Invoke the Graph-RAG retrieval pipeline.
@@ -76,29 +60,23 @@ class GraphRAGRetriever:
         Raises:
             ValueError: If output_format is invalid or strategy is unknown
         """
-        # Step 1: Vector Search
-        vector_result = await self._search_vectors(query, cfg.vector_config, expanded_queries)
-        seed_ids = vector_result["seed_ids"]
-        documents = vector_result["documents"]
+        vector_result: Dict[str, Any] = await self._search_vectors(query, cfg.vector_config, expanded_queries)
+        seed_ids: List[str] = vector_result["seed_ids"]
+        documents: List[Any] = vector_result["documents"]
         
         if not seed_ids:
-            return self.NO_RESULTS_MESSAGE
+            return "No relevant nodes found in the knowledge graph for this query."
 
-        # Step 2: Graph Traversal (only if graph_config is provided)
         if cfg.graph_config is None:
-            # Vector-only search: return formatted vector results directly
             return self._format_documents(documents)
         
-        # Perform graph traversal
-        final_result = await self._traverse_graph(seed_ids, cfg.graph_config)
-
-        # Step 3: Render results
+        final_result: Any = await self._traverse_graph(seed_ids, cfg.graph_config)
         return self._render_results(final_result, cfg.graph_config.strategy_sequence, output_format)
 
     async def _search_vectors(
         self,
         query: str,
-        vector_config,
+        vector_config: VectorSearchConfig,
         expanded_queries: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
@@ -116,8 +94,7 @@ class GraphRAGRetriever:
             Dictionary with 'seed_ids' and 'documents' keys
         """
         if vector_config.use_rrf and expanded_queries and len(expanded_queries) > 1:
-            # Create tasks for parallel execution of all vector searches
-            tasks = [
+            tasks: List[Any] = [
                 asyncio.to_thread(
                     self.vector_client.search_similar,
                     q, 
@@ -127,9 +104,10 @@ class GraphRAGRetriever:
                 for q in expanded_queries
             ]
             
-            # Execute all vector searches in parallel
-            ranked_lists = await asyncio.gather(*tasks)
+            ranked_lists: List[List[Any]] = await asyncio.gather(*tasks)
             
+            top_docs: List[Any]
+            seed_ids: List[str]
             top_docs, seed_ids, _ = reciprocal_rank_fusion(
                 ranked_lists=ranked_lists,
                 final_k=vector_config.rrf_final_k,
@@ -140,14 +118,14 @@ class GraphRAGRetriever:
             
         else:
             # Simple similarity search
-            docs = await asyncio.to_thread(
+            docs: List[Any] = await asyncio.to_thread(
                 self.vector_client.search_similar,
                 query=query,
                 k=vector_config.rrf_final_k,
                 alpha=vector_config.alpha,
             )
-            top_docs = docs[:vector_config.rrf_final_k]
-            seed_ids = [self._extract_stable_id(doc) for doc in top_docs]
+            top_docs: List[Any] = docs[:vector_config.rrf_final_k]
+            seed_ids: List[str] = [self._extract_stable_id(doc) for doc in top_docs]
             seed_ids = [sid for sid in seed_ids if sid is not None]  # Filter out None values
         
         return {
@@ -168,11 +146,9 @@ class GraphRAGRetriever:
         try:
             stable_id = doc.metadata.get("stId") or doc.metadata.get("stable_id")
             if stable_id is None:
-                print(f"WARNING: Document missing stId/stable_id - metadata: {doc.metadata}")
                 return None
-            return str(stable_id)  # Ensure it's a string
+            return str(stable_id)
         except (ValueError, TypeError) as e:
-            print(f"WARNING: Invalid stable_id '{stable_id}' - {e}")
             return None
 
     async def _traverse_graph(
@@ -193,28 +169,24 @@ class GraphRAGRetriever:
         Returns:
             Graph traversal results
         """
-        strategy_sequence = graph_config.strategy_sequence
-        current_seed_ids = seed_ids.copy()
+        strategy_sequence: List[str] = graph_config.strategy_sequence
+        current_seed_ids: List[str] = seed_ids.copy()
         
-        # Handle single strategy
         if len(strategy_sequence) == 1:
-            strategy_name = strategy_sequence[0]
-            result = await self._run_strategy(strategy_name, current_seed_ids, graph_config)
+            strategy_name: str = strategy_sequence[0]
+            result: Any = await self._run_strategy(strategy_name, current_seed_ids, graph_config)
             return result
         
-        # Handle composite strategies (e.g., steiner_tree -> one_hop)
-        results = []
+        results: List[Any] = []
         for i, strategy_name in enumerate(strategy_sequence):
-            result = await self._run_strategy(strategy_name, current_seed_ids, graph_config)
+            result: Any = await self._run_strategy(strategy_name, current_seed_ids, graph_config)
             results.append(result)
             
-            # For composite strategies, extract node IDs from result for next iteration
-            if i < len(strategy_sequence) - 1:  # Not the last strategy
+            if i < len(strategy_sequence) - 1:
                 current_seed_ids = self._extract_node_ids(result, strategy_name)
                 if not current_seed_ids:
-                    break  # No nodes to continue with
+                    break
         
-        # Return the final result or combine results as needed
         return results[-1] if results else None
 
     async def _run_strategy(
@@ -240,11 +212,9 @@ class GraphRAGRetriever:
         if strategy_name not in self.strategies:
             raise ValueError(f"Unknown strategy '{strategy_name}'")
 
-        # Build strategy-specific configuration
-        strategy_cfg = self._build_config(strategy_name, graph_config)
+        strategy_cfg: Dict[str, Any] = self._build_config(strategy_name, graph_config)
         
-        strategy = self.strategies[strategy_name]
-        # Use asyncio.to_thread for potentially blocking graph operations
+        strategy: GraphTraversalStrategy = self.strategies[strategy_name]
         return await asyncio.to_thread(
             strategy.traverse,
             self.graph_client,
@@ -263,14 +233,14 @@ class GraphRAGRetriever:
         Returns:
             Strategy-specific configuration dictionary
         """
-        cfg = {}
+        cfg: Dict[str, Any] = {}
         
-        if strategy_name == self.ONE_HOP_STRATEGY:
+        if strategy_name == "one_hop":
             cfg.update({
                 "max_neighbors_per_type": graph_config.max_neighbors_per_type,
                 "max_total": graph_config.max_total,
             })
-        elif strategy_name == self.STEINER_TREE_STRATEGY:
+        elif strategy_name == "steiner_tree":
             cfg.update({
                 "source_id": graph_config.source_id,
                 "gds_graph_name": graph_config.gds_graph_name,
@@ -289,21 +259,19 @@ class GraphRAGRetriever:
         Returns:
             List of node IDs extracted from the result
         """
-        if strategy_name == self.ONE_HOP_STRATEGY:
-            # Extract all node IDs from one_hop result
-            node_ids = set()
+        if strategy_name == "one_hop":
+            node_ids: set[str] = set()
             if isinstance(result, dict):
                 for seed_id, data in result.items():
-                    node_ids.add(seed_id)  # seed_id is already a string (stable_id)
+                    node_ids.add(seed_id)
                     if "neighbors" in data:
                         for rel_type, neighbors in data["neighbors"].items():
                             for neighbor in neighbors:
-                                node_ids.add(neighbor["node_id"])  # node_id is now a string
+                                node_ids.add(neighbor["node_id"])
             return list(node_ids)
         
-        elif strategy_name == self.STEINER_TREE_STRATEGY:
-            # Extract all node IDs from steiner_tree result
-            node_ids = set()
+        elif strategy_name == "steiner_tree":
+            node_ids: set[str] = set()
             if isinstance(result, dict):
                 node_ids.update(result.get("nodeIds", []))
             return list(node_ids)
@@ -321,25 +289,23 @@ class GraphRAGRetriever:
             Formatted string with document information
         """
         if not documents:
-            return self.NO_DOCUMENTS_MESSAGE
+            return "No relevant Reactome entries found for this query."
         
-        lines = []
+        lines: List[str] = []
         for i, doc in enumerate(documents, 1):
-            metadata = doc.metadata
-            content = doc.page_content
+            metadata: Dict[str, Any] = doc.metadata
+            content: str = doc.page_content
             
             lines.append(f"## Reactome Entry {i}")
             
-            # Add all metadata properties
             for key, value in metadata.items():
                 if value is not None and value != "":
                     lines.append(f"* {key}: {value}")
             
-            # Add the page content
             if content:
                 lines.append(f"* content: {content}")
             
-            lines.append("")  # Empty line between entries
+            lines.append("")
         
         return "\n".join(lines).strip()
 
@@ -363,16 +329,15 @@ class GraphRAGRetriever:
         Raises:
             ValueError: If renderer not found or output format is invalid
         """
-        # Use the renderer for the final strategy in the sequence
-        final_strategy = strategy_sequence[-1]
+        final_strategy: str = strategy_sequence[-1]
         
         if final_strategy not in self.renderers:
             raise ValueError(f"No renderer registered for strategy '{final_strategy}'")
 
-        renderer = self.renderers[final_strategy]
-        if output_format == self.OUTPUT_FORMAT_JSON:
+        renderer: Any = self.renderers[final_strategy]
+        if output_format == "json":
             return renderer.to_json(result)
-        elif output_format == self.OUTPUT_FORMAT_LLM_TEXT:
+        elif output_format == "llm_text":
             return renderer.to_llm_text(result)
         else:
             raise ValueError(f"Unknown output format: {output_format}")
