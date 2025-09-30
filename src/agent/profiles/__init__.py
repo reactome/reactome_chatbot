@@ -7,12 +7,14 @@ from langgraph.graph.state import StateGraph
 
 from agent.profiles.cross_database import create_cross_database_graph
 from agent.profiles.react_to_me import create_reactome_graph
+from agent.profiles.graph_rag import create_graph_rag_graph
 
 
 class ProfileName(StrEnum):
     # These should exactly match names in .config.schema.yaml
     React_to_Me = "React-to-Me"
     Cross_Database_Prototype = "Cross-Database Prototype"
+    Graph_RAG = "Graph-RAG"
 
 
 class Profile(NamedTuple):
@@ -31,6 +33,11 @@ CHAT_PROFILES: dict[str, Profile] = {
         name=ProfileName.Cross_Database_Prototype,
         description="Early version of an AI assistant with knowledge from multiple bio-databases (**Reactome** + **Uniprot**).",
         graph_builder=create_cross_database_graph,
+    ),
+    ProfileName.Graph_RAG.lower(): Profile(
+        name=ProfileName.Graph_RAG,
+        description="Graph-RAG workflow that retrieves and summarizes knowledge graph context (Reactome KG).",
+        graph_builder=create_graph_rag_graph,
     ),
 }
 

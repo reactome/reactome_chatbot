@@ -15,8 +15,8 @@ from agent.tasks.cross_database.rewrite_uniprot_with_reactome import \
     create_uniprot_rewriter_w_reactome
 from agent.tasks.cross_database.summarize_reactome_uniprot import \
     create_reactome_uniprot_summarizer
-from agent.tasks.detect_language import create_language_detector
-from agent.tasks.safety_checker import SafetyCheck, create_safety_checker
+from agent.tasks.preprocessing.detect_language import create_language_detector
+from agent.tasks.preprocessing.safety_checker import SafetyCheck, create_safety_checker
 from retrievers.reactome.rag import create_reactome_rag
 from retrievers.uniprot.rag import create_uniprot_rag
 
