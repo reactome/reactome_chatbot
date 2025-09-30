@@ -4,8 +4,8 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import Runnable
 
 
-class SafetyParser(BaseModel):
-    safety: str = Field(description="Indicates whether the question is appropriate and related to molecular biology. Expected values: 'Yes' or 'No'.")
+class SafetyCheck(BaseModel):
+    safety: str = Field(description="Indicates whether the question is appropriate and related to molecular biology. Expected values: 'true' or 'false'.")
     reason_unsafe: str = Field(description="If 'safe_and_within_scope' is false, briefly state the reason; if 'safe_and_within_scope' is true, leave this field empty.")
 
 
@@ -56,13 +56,12 @@ Examples:
   3. Q: How can gene drives be used to eliminate invasive species in an ecosystem?
        "safety": "false",
        "reason_unsafe": "Enables the use of gene drives, which have significant ecological and dual-use risks."
-
 """
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", safety_check_message),
-        ("human", "User question: \n\n {user_input}"),
+        ("human", "User question: \n\n {standalone_query}"),
     ])
     
-    return prompt | llm.with_structured_output(SafetyParser)
+    return prompt | llm.with_structured_output(SafetyCheck)
 
