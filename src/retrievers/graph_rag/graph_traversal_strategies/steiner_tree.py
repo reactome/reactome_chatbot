@@ -1,10 +1,3 @@
-"""
-Steiner tree graph traversal strategy.
-
-This module implements a strategy that finds minimum-weight Steiner trees
-connecting seed nodes using Neo4j's GDS library.
-"""
-
 from typing import List, Dict, Any, Tuple
 from collections import defaultdict, deque
 import uuid
@@ -28,13 +21,13 @@ class SteinerTreeStrategy(GraphTraversalStrategy):
         if not stable_ids:
             return {}
         
-        query = """
+        query: str = """
         UNWIND $stable_ids as stable_id
         MATCH (n {stId: stable_id})
         RETURN stable_id, id(n) as internal_id
         """
         
-        results = graph_client.invoke(query, {"stable_ids": stable_ids})
+        results: List[Any] = graph_client.invoke(query, {"stable_ids": stable_ids})
         return {record["stable_id"]: record["internal_id"] for record in results}
 
     def _internal_ids_to_stable_ids(self, graph_client: IGraphClient, internal_ids: List[int]) -> Dict[int, str]:
@@ -42,14 +35,14 @@ class SteinerTreeStrategy(GraphTraversalStrategy):
         if not internal_ids:
             return {}
         
-        query = """
+        query: str = """
         UNWIND $internal_ids as internal_id
         MATCH (n)
         WHERE id(n) = internal_id
         RETURN id(n) as internal_id, n.stId as stable_id
         """
         
-        results = graph_client.invoke(query, {"internal_ids": internal_ids})
+        results: List[Any] = graph_client.invoke(query, {"internal_ids": internal_ids})
         return {record["internal_id"]: record["stable_id"] for record in results}
 
     def traverse(
@@ -73,31 +66,31 @@ class SteinerTreeStrategy(GraphTraversalStrategy):
             raise ValueError("steiner_tree needs at least 2 seed_ids")
         
         # Convert stable IDs to internal IDs for GDS operations
-        stable_to_internal = self._stable_ids_to_internal_ids(graph_client, seed_ids)
+        stable_to_internal: Dict[str, int] = self._stable_ids_to_internal_ids(graph_client, seed_ids)
         if len(stable_to_internal) < 2:
             raise ValueError("steiner_tree needs at least 2 valid seed_ids found in graph")
         
-        internal_seed_ids = list(stable_to_internal.values())
-        internal_to_stable = {v: k for k, v in stable_to_internal.items()}
+        internal_seed_ids: List[int] = list(stable_to_internal.values())
+        internal_to_stable: Dict[int, str] = {v: k for k, v in stable_to_internal.items()}
         
         # Use first seed as source, or specified source_id
-        source_stable_id = cfg.get("source_id", seed_ids[0])
+        source_stable_id: str = cfg.get("source_id", seed_ids[0])
         if source_stable_id not in stable_to_internal:
             source_stable_id = seed_ids[0]  # Fallback to first seed
         
-        source_id = stable_to_internal[source_stable_id]
-        target_ids = [internal_id for stable_id, internal_id in stable_to_internal.items() 
+        source_id: int = stable_to_internal[source_stable_id]
+        target_ids: List[int] = [internal_id for stable_id, internal_id in stable_to_internal.items() 
                      if internal_id != source_id]
         
         if not target_ids:
             raise ValueError("steiner_tree needs at least 1 target distinct from source_id")
 
-        gname = cfg.get("gds_graph_name")
-        drop_after = False
+        gname: str | None = cfg.get("gds_graph_name")
+        drop_after: bool = False
         if not gname:
             gname = f"tmp_steiner_{uuid.uuid4().hex[:8]}"
             drop_after = True
-            project_cypher = """
+            project_cypher: str = """
             CALL gds.graph.project($gname, '*',
               {ALL: {type: '*', orientation: 'UNDIRECTED'}}
             )
@@ -106,7 +99,7 @@ class SteinerTreeStrategy(GraphTraversalStrategy):
             graph_client.invoke(project_cypher, {"gname": gname})
 
         try:
-            steiner_cypher = """
+            steiner_cypher: str = """
             CALL gds.steinerTree.stream($gname, {
               sourceNode: $source,
               targetNodes: $targets
@@ -114,26 +107,26 @@ class SteinerTreeStrategy(GraphTraversalStrategy):
             YIELD nodeId, parentId, weight
             RETURN nodeId, parentId, weight
             """
-            rows = list(graph_client.invoke(
+            rows: List[Any] = list(graph_client.invoke(
                 steiner_cypher,
                 {"gname": gname, "source": source_id, "targets": target_ids},
             ))
             
-            pairs = [
+            pairs: List[List[int]] = [
                 [int(r["parentId"]), int(r["nodeId"])]
                 for r in rows if int(r["nodeId"]) != int(r["parentId"])
             ]
-            total_weight = float(sum(
+            total_weight: float = float(sum(
                 r["weight"] for r in rows if int(r["nodeId"]) != int(r["parentId"])
             ))
             
-            node_ids_set = set()
+            node_ids_set: set[int] = set()
             for u, v in pairs:
                 node_ids_set.add(u)
                 node_ids_set.add(v)
-            node_ids = sorted(node_ids_set)
+            node_ids: List[int] = sorted(node_ids_set)
 
-            resolve_cypher = """
+            resolve_cypher: str = """
             UNWIND $pairs AS p
             WITH p[0] AS u, p[1] AS v
             MATCH (a) WHERE id(a) = u
@@ -150,9 +143,9 @@ class SteinerTreeStrategy(GraphTraversalStrategy):
               id(startNode(r)) AS s,
               id(endNode(r)) AS t
             """
-            rel_rows = list(graph_client.invoke(resolve_cypher, {"pairs": pairs}))
+            rel_rows: List[Any] = list(graph_client.invoke(resolve_cypher, {"pairs": pairs}))
 
-            edges = []
+            edges: List[Dict[str, Any]] = []
             for rec in rel_rows:
                 edges.append({
                     "u": int(rec["u"]),
@@ -164,13 +157,13 @@ class SteinerTreeStrategy(GraphTraversalStrategy):
                     "t": int(rec["t"]),
                 })
 
-            nodes_query = """
+            nodes_query: str = """
             UNWIND $ids AS nid
             MATCH (n) WHERE id(n)=nid
             RETURN id(n) AS id, labels(n) AS labels, properties(n) AS props
             """
-            node_rows = list(graph_client.invoke(nodes_query, {"ids": node_ids}))
-            nodes_meta = {
+            node_rows: List[Any] = list(graph_client.invoke(nodes_query, {"ids": node_ids}))
+            nodes_meta: Dict[int, Dict[str, Any]] = {
                 int(r["id"]): {
                     "labels": list(r["labels"] or []),
                     "props": dict(r["props"] or {}),
@@ -178,16 +171,16 @@ class SteinerTreeStrategy(GraphTraversalStrategy):
                 for r in node_rows
             }
 
-            reached = node_ids_set
-            unreached = [t for t in target_ids if t not in reached]
+            reached: set[int] = node_ids_set
+            unreached: List[int] = [t for t in target_ids if t not in reached]
 
             # Convert internal IDs back to stable IDs for the result
-            stable_node_ids = [internal_to_stable.get(internal_id, str(internal_id)) 
+            stable_node_ids: List[str] = [internal_to_stable.get(internal_id, str(internal_id)) 
                              for internal_id in node_ids if internal_id in internal_to_stable]
-            stable_source = internal_to_stable.get(source_id, str(source_id))
-            stable_targets = [internal_to_stable.get(internal_id, str(internal_id)) 
+            stable_source: str = internal_to_stable.get(source_id, str(source_id))
+            stable_targets: List[str] = [internal_to_stable.get(internal_id, str(internal_id)) 
                             for internal_id in target_ids if internal_id in internal_to_stable]
-            stable_unreached = [internal_to_stable.get(internal_id, str(internal_id)) 
+            stable_unreached: List[str] = [internal_to_stable.get(internal_id, str(internal_id)) 
                               for internal_id in unreached if internal_id in internal_to_stable]
 
             # Output shape is clean for renderer: seed, neighbors (intermediates), target

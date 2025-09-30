@@ -1,10 +1,3 @@
-"""
-One-hop graph traversal strategy.
-
-This module implements a strategy that traverses one hop from seed nodes,
-collecting neighbors with relationship type prioritization.
-"""
-
 from typing import List, Dict, Any
 from collections import defaultdict
 
@@ -46,17 +39,17 @@ class OneHopStrategy(GraphTraversalStrategy):
         Returns:
             Dictionary mapping seed IDs to their neighbors organized by relationship type
         """
-        per_type = int(cfg.get("max_neighbors_per_type", self.max_neighbors_per_type))
-        total_cap = int(cfg.get("max_total", self.max_total))
+        per_type: int = int(cfg.get("max_neighbors_per_type", self.max_neighbors_per_type))
+        total_cap: int = int(cfg.get("max_total", self.max_total))
 
         # Fetch seed node info using stable IDs
-        seed_query = "MATCH (n) WHERE n.stId IN $ids RETURN n.stId AS node_id, n"
-        seed_recs = graph_client.invoke(seed_query, {"ids": seed_ids})
+        seed_query: str = "MATCH (n) WHERE n.stId IN $ids RETURN n.stId AS node_id, n"
+        seed_recs: List[Any] = graph_client.invoke(seed_query, {"ids": seed_ids})
         seeds: Dict[str, Dict[str, Any]] = {}
         
         for rec in seed_recs:
-            n = rec["n"]
-            nid = rec["node_id"]  # Now a string (stable_id)
+            n: Any = rec["n"]
+            nid: str = rec["node_id"]  # Now a string (stable_id)
             seeds[nid] = {
                 "node_id": nid,
                 "title": n.get("displayName") or n.get("name") or f"node:{nid}",
@@ -74,7 +67,7 @@ class OneHopStrategy(GraphTraversalStrategy):
                 )}
             }
             
-        cypher = """
+        cypher: str = """
         UNWIND $seed_ids AS seed_id
         MATCH (seed) WHERE seed.stId = seed_id
         CALL {
@@ -107,18 +100,18 @@ class OneHopStrategy(GraphTraversalStrategy):
           rel_props
         """
 
-        records = graph_client.invoke(cypher, {"seed_ids": seed_ids, "per_type": per_type})
+        records: List[Any] = graph_client.invoke(cypher, {"seed_ids": seed_ids, "per_type": per_type})
 
-        rel_priority = {t: i for i, t in enumerate(self._order)}
+        rel_priority: Dict[str, int] = {t: i for i, t in enumerate(self._order)}
         grouped: Dict[str, Dict[str, List[Dict[str, Any]]]] = {sid: defaultdict(list) for sid in seed_ids}
 
         for rec in records:
-            sid = rec["seed_id"]  # Now a string
-            rel_type = rec["rel_type"]
-            s_id = rec["rel_start_id"]  # Now a string
-            e_id = rec["rel_end_id"]  # Now a string
-            direction = "out" if s_id == sid else ("in" if e_id == sid else "undirected")
-            neighbor = rec["neighbor"]
+            sid: str = rec["seed_id"]  # Now a string
+            rel_type: str = rec["rel_type"]
+            s_id: str = rec["rel_start_id"]  # Now a string
+            e_id: str = rec["rel_end_id"]  # Now a string
+            direction: str = "out" if s_id == sid else ("in" if e_id == sid else "undirected")
+            neighbor: Any = rec["neighbor"]
 
             grouped[sid][rel_type].append({
                 "node_id": rec["neighbor_id"],  # Now a string
@@ -134,15 +127,15 @@ class OneHopStrategy(GraphTraversalStrategy):
         final_output: Dict[str, Dict[str, Any]] = {}
 
         for sid, rel_map in grouped.items():
-            total = 0
-            sorted_rels = sorted(rel_map.items(), key=lambda x: (rel_priority.get(x[0], len(self._order)), x[0]))
+            total: int = 0
+            sorted_rels: List[tuple[str, List[Dict[str, Any]]]] = sorted(rel_map.items(), key=lambda x: (rel_priority.get(x[0], len(self._order)), x[0]))
             neighbors_by_rel: Dict[str, List[Dict[str, Any]]] = {}
             
             for rel_type, neighbors in sorted_rels:
                 if total >= total_cap:
                     break
                 neighbors.sort(key=lambda x: (-x["rel_score"], x["node_id"]))
-                limit = min(total_cap - total, len(neighbors))
+                limit: int = min(total_cap - total, len(neighbors))
                 neighbors_by_rel[rel_type] = neighbors[:limit]
                 total += limit
     

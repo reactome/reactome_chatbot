@@ -1,10 +1,3 @@
-"""
-Base class for graph traversal strategies.
-
-This module defines the abstract base class that all graph traversal
-strategies must implement.
-"""
-
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
