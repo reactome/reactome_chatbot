@@ -1,4 +1,4 @@
-from typing import Annotated, TypedDict
+from typing import Annotated, Literal, TypedDict
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -6,9 +6,14 @@ from langchain_core.messages import BaseMessage
 from langchain_core.runnables import Runnable, RunnableConfig
 from langgraph.graph.message import add_messages
 
-from agent.tasks.rephrase import create_rephrase_chain
 from tools.external_search.state import SearchState, WebSearchResult
 from tools.external_search.workflow import create_search_workflow
+from tools.preprocessing.state import PreprocessingState
+from tools.preprocessing.workflow import create_preprocessing_workflow
+
+SAFETY_SAFE: Literal["true"] = "true"
+SAFETY_UNSAFE: Literal["false"] = "false"
+DEFAULT_LANGUAGE: str = "English"
 
 
 class AdditionalContent(TypedDict, total=False):
@@ -20,39 +25,50 @@ class InputState(TypedDict, total=False):
 
 
 class OutputState(TypedDict, total=False):
-    answer: str  # primary LLM response that is streamed to the user
+    answer: str  #  LLM response streamed to the user
     additional_content: AdditionalContent  # sends on graph completion
 
 
 class BaseState(InputState, OutputState, total=False):
-    rephrased_input: str  # LLM-generated query from user input
+    rephrased_input: str  # contextualized, LLM-generated standalone query from user input
     chat_history: Annotated[list[BaseMessage], add_messages]
+    safety: str  # LLM-assessed safety level of the user input
+    reason_unsafe: str 
 
 
 class BaseGraphBuilder:
-    # NOTE: Anything that is common to all graph builders goes here
 
     def __init__(
         self,
         llm: BaseChatModel,
         embedding: Embeddings,
     ) -> None:
-        self.rephrase_chain: Runnable = create_rephrase_chain(llm)
+        self.preprocessing_workflow: Runnable = create_preprocessing_workflow(llm)
         self.search_workflow: Runnable = create_search_workflow(llm)
 
     async def preprocess(self, state: BaseState, config: RunnableConfig) -> BaseState:
-        rephrased_input: str = await self.rephrase_chain.ainvoke(
-            {
-                "user_input": state["user_input"],
-                "chat_history": state["chat_history"],
-            },
+        result: PreprocessingState = await self.preprocessing_workflow.ainvoke(
+            PreprocessingState(
+                user_input=state["user_input"],
+                chat_history=state.get("chat_history", []),
+            ),
             config,
         )
-        return BaseState(rephrased_input=rephrased_input)
+        mapped_state = BaseState(
+            rephrased_input=result.get("rephrased_input", ""),
+            safety=result.get("safety", SAFETY_SAFE),
+            reason_unsafe=result.get("reason_unsafe", ""),
+        )
+        merged_state = dict(state)
+        merged_state.update(mapped_state)
+        return BaseState(**merged_state)
 
     async def postprocess(self, state: BaseState, config: RunnableConfig) -> BaseState:
         search_results: list[WebSearchResult] = []
-        if config["configurable"]["enable_postprocess"]:
+        if (
+            state.get("safety") == SAFETY_SAFE
+            and config["configurable"]["enable_postprocess"]
+        ):
             result: SearchState = await self.search_workflow.ainvoke(
                 SearchState(
                     input=state["rephrased_input"],
@@ -61,6 +77,8 @@ class BaseGraphBuilder:
                 config=RunnableConfig(callbacks=config["callbacks"]),
             )
             search_results = result["search_results"]
-        return BaseState(
-            additional_content=AdditionalContent(search_results=search_results)
+        merged_state = dict(state)
+        merged_state.update(
+            {"additional_content": AdditionalContent(search_results=search_results)}
         )
+        return BaseState(**merged_state)
