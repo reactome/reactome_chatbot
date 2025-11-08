@@ -13,9 +13,7 @@ from agent.profiles.base import (
     BaseGraphBuilder,
     BaseState,
 )
-from agent.tasks.final_answer_generation.unsafe_question import (
-    create_unsafe_answer_generator,
-)
+from agent.tasks.unsafe_answer import create_unsafe_answer_generator
 from retrievers.reactome.rag import create_reactome_rag
 
 
