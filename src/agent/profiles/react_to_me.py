@@ -6,13 +6,8 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import Runnable, RunnableConfig
 from langgraph.graph.state import StateGraph
 
-from agent.profiles.base import (
-    DEFAULT_LANGUAGE,
-    SAFETY_SAFE,
-    SAFETY_UNSAFE,
-    BaseGraphBuilder,
-    BaseState,
-)
+from agent.profiles.base import (DEFAULT_LANGUAGE, SAFETY_SAFE, SAFETY_UNSAFE,
+                                 BaseGraphBuilder, BaseState)
 from agent.tasks.unsafe_answer import create_unsafe_answer_generator
 from retrievers.reactome.rag import create_reactome_rag
 

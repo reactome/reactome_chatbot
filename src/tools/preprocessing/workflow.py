@@ -61,5 +61,3 @@ def create_preprocessing_workflow(llm: BaseChatModel) -> CompiledStateGraph:
     workflow.set_finish_point("safety_check")
 
     return workflow.compile()
-
-

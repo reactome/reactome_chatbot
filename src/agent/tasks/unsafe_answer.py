@@ -44,5 +44,3 @@ You must not provide any workaround, implicit answer, or redirection toward unsa
     )
 
     return prompt | llm
-
-

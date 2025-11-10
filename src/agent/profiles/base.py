@@ -30,10 +30,12 @@ class OutputState(TypedDict, total=False):
 
 
 class BaseState(InputState, OutputState, total=False):
-    rephrased_input: str  # contextualized, LLM-generated standalone query from user input
+    rephrased_input: (
+        str  # contextualized, LLM-generated standalone query from user input
+    )
     chat_history: Annotated[list[BaseMessage], add_messages]
     safety: str  # LLM-assessed safety level of the user input
-    reason_unsafe: str 
+    reason_unsafe: str
 
 
 class BaseGraphBuilder:
