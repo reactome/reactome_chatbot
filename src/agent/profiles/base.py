@@ -61,9 +61,7 @@ class BaseGraphBuilder:
             safety=result.get("safety", SAFETY_SAFE),
             reason_unsafe=result.get("reason_unsafe", ""),
         )
-        merged_state = dict(state)
-        merged_state.update(mapped_state)
-        return BaseState(**merged_state)
+        return BaseState(**state, **mapped_state)
 
     async def postprocess(self, state: BaseState, config: RunnableConfig) -> BaseState:
         search_results: list[WebSearchResult] = []
@@ -79,8 +77,7 @@ class BaseGraphBuilder:
                 config=RunnableConfig(callbacks=config["callbacks"]),
             )
             search_results = result["search_results"]
-        merged_state = dict(state)
-        merged_state.update(
-            {"additional_content": AdditionalContent(search_results=search_results)}
+        return BaseState(
+            **state,
+            additional_content=AdditionalContent(search_results=search_results),
         )
-        return BaseState(**merged_state)
