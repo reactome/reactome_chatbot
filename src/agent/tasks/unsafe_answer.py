@@ -33,6 +33,8 @@ You must:
 
 You must not provide any workaround, implicit answer, or redirection toward unsafe content.
 """
+    streaming_llm = llm.model_copy(update={"streaming": True})
+
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", system_prompt),
@@ -43,4 +45,4 @@ You must not provide any workaround, implicit answer, or redirection toward unsa
         ]
     )
 
-    return prompt | llm
+    return prompt | streaming_llm

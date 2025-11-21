@@ -25,9 +25,7 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         super().__init__(llm, embedding)
 
         # Create runnables (tasks & tools)
-        streaming_llm = llm.model_copy(update={"streaming": True})
-
-        self.unsafe_answer_generator = create_unsafe_answer_generator(streaming_llm)
+        self.unsafe_answer_generator = create_unsafe_answer_generator(llm)
         self.reactome_rag: Runnable = create_reactome_rag(
             llm, embedding, streaming=True
         )
@@ -75,21 +73,25 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
             else str(final_answer_message)
         )
 
-        updated_state = dict(state)
-        updated_state.update(
-            chat_history=[
+        history = list(state.get("chat_history", []))
+        history.extend(
+            [
                 HumanMessage(state["user_input"]),
                 (
                     final_answer_message
                     if hasattr(final_answer_message, "content")
                     else AIMessage(final_answer)
                 ),
-            ],
+            ]
+        )
+
+        return ReactToMeState(
+            **state,
+            chat_history=history,
             answer=final_answer,
             safety=SAFETY_UNSAFE,
             additional_content={"search_results": []},
         )
-        return ReactToMeState(**updated_state)
 
     async def call_model(
         self, state: ReactToMeState, config: RunnableConfig
@@ -106,15 +108,18 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
             },
             config,
         )
-        updated_state = dict(state)
-        updated_state.update(
-            chat_history=[
+        history = list(state.get("chat_history", []))
+        history.extend(
+            [
                 HumanMessage(state["user_input"]),
                 AIMessage(result["answer"]),
-            ],
+            ]
+        )
+        return ReactToMeState(
+            **state,
+            chat_history=history,
             answer=result["answer"],
         )
-        return ReactToMeState(**updated_state)
 
 
 def create_reactome_graph(
