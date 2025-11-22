@@ -65,9 +65,8 @@ class BaseGraphBuilder:
 
     async def postprocess(self, state: BaseState, config: RunnableConfig) -> BaseState:
         search_results: list[WebSearchResult] = []
-        if (
-            state.get("safety") == SAFETY_SAFE
-            and config["configurable"]["enable_postprocess"]
+        if state.get("safety") == SAFETY_SAFE and config.get("configurable", {}).get(
+            "enable_postprocess", False
         ):
             result: SearchState = await self.search_workflow.ainvoke(
                 SearchState(

@@ -6,8 +6,8 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import Runnable, RunnableConfig
 from langgraph.graph.state import StateGraph
 
-from agent.profiles.base import (DEFAULT_LANGUAGE, SAFETY_SAFE, SAFETY_UNSAFE,
-                                 BaseGraphBuilder, BaseState)
+from agent.profiles.base import (SAFETY_SAFE, SAFETY_UNSAFE, BaseGraphBuilder,
+                                 BaseState)
 from agent.tasks.unsafe_answer import create_unsafe_answer_generator
 from retrievers.reactome.rag import create_reactome_rag
 
@@ -60,7 +60,6 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
     ) -> ReactToMeState:
         final_answer_message = await self.unsafe_answer_generator.ainvoke(
             {
-                "language": state.get("detected_language", DEFAULT_LANGUAGE),
                 "user_input": state.get("rephrased_input", state["user_input"]),
                 "reason_unsafe": state.get("reason_unsafe", ""),
             },
@@ -86,7 +85,6 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         )
 
         return ReactToMeState(
-            **state,
             chat_history=history,
             answer=final_answer,
             safety=SAFETY_UNSAFE,
@@ -99,7 +97,6 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         result: dict[str, Any] = await self.reactome_rag.ainvoke(
             {
                 "input": state["rephrased_input"],
-                "expanded_queries": state.get("expanded_queries", []),
                 "chat_history": (
                     state.get("chat_history")
                     if state.get("chat_history")
@@ -116,7 +113,6 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
             ]
         )
         return ReactToMeState(
-            **state,
             chat_history=history,
             answer=result["answer"],
         )

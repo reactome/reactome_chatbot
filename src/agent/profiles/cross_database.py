@@ -15,16 +15,12 @@ from agent.tasks.cross_database.rewrite_uniprot_with_reactome import \
     create_uniprot_rewriter_w_reactome
 from agent.tasks.cross_database.summarize_reactome_uniprot import \
     create_reactome_uniprot_summarizer
-from agent.tasks.detect_language import create_language_detector
 from agent.tasks.safety_checker import SafetyCheck, create_safety_checker
 from retrievers.reactome.rag import create_reactome_rag
 from retrievers.uniprot.rag import create_uniprot_rag
 
 
 class CrossDatabaseState(BaseState):
-    safety: str  # LLM-assessed safety level of the user input
-    query_language: str  # language of the user input
-
     reactome_query: str  # LLM-generated query for Reactome
     reactome_answer: str  # LLM-generated answer from Reactome
     reactome_completeness: str  # LLM-assessed completeness of the Reactome answer
@@ -48,7 +44,6 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
 
         self.safety_checker = create_safety_checker(llm)
         self.completeness_checker = create_completeness_grader(llm)
-        self.detect_language = create_language_detector(llm)
         self.write_reactome_query = create_reactome_rewriter_w_uniprot(llm)
         self.write_uniprot_query = create_uniprot_rewriter_w_reactome(llm)
         self.summarize_final_answer = create_reactome_uniprot_summarizer(
@@ -60,7 +55,6 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
         # Set up nodes
         state_graph.add_node("check_question_safety", self.check_question_safety)
         state_graph.add_node("preprocess_question", self.preprocess)
-        state_graph.add_node("identify_query_language", self.identify_query_language)
         state_graph.add_node("conduct_research", self.conduct_research)
         state_graph.add_node("generate_reactome_answer", self.generate_reactome_answer)
         state_graph.add_node("rewrite_reactome_query", self.rewrite_reactome_query)
@@ -74,7 +68,6 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
         state_graph.add_node("postprocess", self.postprocess)
         # Set up edges
         state_graph.set_entry_point("preprocess_question")
-        state_graph.add_edge("preprocess_question", "identify_query_language")
         state_graph.add_edge("preprocess_question", "check_question_safety")
         state_graph.add_conditional_edges(
             "check_question_safety",
@@ -112,7 +105,7 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
             config,
         )
         if result.binary_score == "No":
-            inappropriate_input = f"This is the user's question and it is NOT appropriate for you to answer: {state["user_input"]}. \n\n explain that you are unable to answer the question but you can answer questions about topics related to the Reactome Pathway Knowledgebase or UniProt Knowledgebas."
+            inappropriate_input = f"This is the user's question and it is NOT appropriate for you to answer: {state["user_input"]}. \n\n explain that you are unable to answer the question but you can answer questions about topics related to the Reactome Pathway Knowledgebase or UniProt Knowledgebase."
             return CrossDatabaseState(
                 safety=result.binary_score,
                 user_input=inappropriate_input,
@@ -129,14 +122,6 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
             return "Continue"
         else:
             return "Finish"
-
-    async def identify_query_language(
-        self, state: CrossDatabaseState, config: RunnableConfig
-    ) -> CrossDatabaseState:
-        query_language: str = await self.detect_language.ainvoke(
-            {"user_input": state["user_input"]}, config
-        )
-        return CrossDatabaseState(query_language=query_language)
 
     async def conduct_research(
         self, state: CrossDatabaseState, config: RunnableConfig
@@ -256,7 +241,6 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
         final_response: str = await self.summarize_final_answer.ainvoke(
             {
                 "input": state["rephrased_input"],
-                "query_language": state["query_language"],
                 "reactome_answer": state["reactome_answer"],
                 "uniprot_answer": state["uniprot_answer"],
             },

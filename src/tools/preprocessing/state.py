@@ -14,5 +14,3 @@ class PreprocessingState(TypedDict, total=False):
     rephrased_input: str
     safety: str
     reason_unsafe: str
-    expanded_queries: list[str]
-    detected_language: str
