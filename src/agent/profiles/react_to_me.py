@@ -6,8 +6,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import Runnable, RunnableConfig
 from langgraph.graph.state import StateGraph
 
-from agent.profiles.base import (SAFETY_SAFE, SAFETY_UNSAFE, BaseGraphBuilder,
-                                 BaseState)
+from agent.profiles.base import BaseGraphBuilder, BaseState
 from agent.tasks.unsafe_answer import create_unsafe_answer_generator
 from retrievers.reactome.rag import create_reactome_rag
 
@@ -51,44 +50,26 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         self.uncompiled_graph: StateGraph = state_graph
 
     async def proceed_with_research(
-        self, state: ReactToMeState
+        self, state: BaseState
     ) -> Literal["Continue", "Finish"]:
-        return "Continue" if state.get("safety") == SAFETY_SAFE else "Finish"
+        return "Continue" if state["safety"] == "true" else "Finish"
 
     async def generate_unsafe_response(
         self, state: ReactToMeState, config: RunnableConfig
     ) -> ReactToMeState:
-        final_answer_message = await self.unsafe_answer_generator.ainvoke(
+        answer: str = await self.unsafe_answer_generator.ainvoke(
             {
-                "user_input": state.get("rephrased_input", state["user_input"]),
-                "reason_unsafe": state.get("reason_unsafe", ""),
+                "user_input": state["rephrased_input"],
+                "reason_unsafe": state["reason_unsafe"],
             },
             config,
         )
-
-        final_answer = (
-            final_answer_message.content
-            if hasattr(final_answer_message, "content")
-            else str(final_answer_message)
-        )
-
-        history = list(state.get("chat_history", []))
-        history.extend(
-            [
-                HumanMessage(state["user_input"]),
-                (
-                    final_answer_message
-                    if hasattr(final_answer_message, "content")
-                    else AIMessage(final_answer)
-                ),
-            ]
-        )
-
         return ReactToMeState(
-            chat_history=history,
-            answer=final_answer,
-            safety=SAFETY_UNSAFE,
-            additional_content={"search_results": []},
+            chat_history=[
+                HumanMessage(state["user_input"]),
+                AIMessage(answer),
+            ],
+            answer=answer,
         )
 
     async def call_model(
@@ -97,23 +78,17 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         result: dict[str, Any] = await self.reactome_rag.ainvoke(
             {
                 "input": state["rephrased_input"],
-                "chat_history": (
-                    state.get("chat_history")
-                    if state.get("chat_history")
-                    else [HumanMessage(state["user_input"])]
+                "chat_history": state.get(
+                    "chat_history", [HumanMessage(state["user_input"])]
                 ),
             },
             config,
         )
-        history = list(state.get("chat_history", []))
-        history.extend(
-            [
+        return ReactToMeState(
+            chat_history=[
                 HumanMessage(state["user_input"]),
                 AIMessage(result["answer"]),
-            ]
-        )
-        return ReactToMeState(
-            chat_history=history,
+            ],
             answer=result["answer"],
         )
 

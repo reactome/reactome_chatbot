@@ -1,4 +1,4 @@
-from typing import Annotated, Literal, TypedDict
+from typing import Annotated, TypedDict
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -6,14 +6,10 @@ from langchain_core.messages import BaseMessage
 from langchain_core.runnables import Runnable, RunnableConfig
 from langgraph.graph.message import add_messages
 
+from agent.tasks.rephrase import create_rephrase_chain
+from agent.tasks.safety_checker import create_safety_checker
 from tools.external_search.state import SearchState, WebSearchResult
 from tools.external_search.workflow import create_search_workflow
-from tools.preprocessing.state import PreprocessingState
-from tools.preprocessing.workflow import create_preprocessing_workflow
-
-SAFETY_SAFE: Literal["true"] = "true"
-SAFETY_UNSAFE: Literal["false"] = "false"
-DEFAULT_LANGUAGE: str = "English"
 
 
 class AdditionalContent(TypedDict, total=False):
@@ -25,48 +21,52 @@ class InputState(TypedDict, total=False):
 
 
 class OutputState(TypedDict, total=False):
-    answer: str  #  LLM response streamed to the user
+    answer: str  # primary LLM response that is streamed to the user
     additional_content: AdditionalContent  # sends on graph completion
 
 
 class BaseState(InputState, OutputState, total=False):
-    rephrased_input: (
-        str  # contextualized, LLM-generated standalone query from user input
-    )
+    rephrased_input: str  # LLM-generated query from user input
     chat_history: Annotated[list[BaseMessage], add_messages]
     safety: str  # LLM-assessed safety level of the user input
     reason_unsafe: str
 
 
 class BaseGraphBuilder:
+    # NOTE: Anything that is common to all graph builders goes here
 
     def __init__(
         self,
         llm: BaseChatModel,
         embedding: Embeddings,
     ) -> None:
-        self.preprocessing_workflow: Runnable = create_preprocessing_workflow(llm)
+        self.rephrase_chain: Runnable = create_rephrase_chain(llm)
+        self.safety_checker: Runnable = create_safety_checker(llm)
         self.search_workflow: Runnable = create_search_workflow(llm)
 
     async def preprocess(self, state: BaseState, config: RunnableConfig) -> BaseState:
-        result: PreprocessingState = await self.preprocessing_workflow.ainvoke(
-            PreprocessingState(
-                user_input=state["user_input"],
-                chat_history=state.get("chat_history", []),
-            ),
+        rephrased_input: str = await self.rephrase_chain.ainvoke(
+            {
+                "user_input": state["user_input"],
+                "chat_history": state.get("chat_history", []),
+            },
             config,
         )
-        mapped_state = BaseState(
-            rephrased_input=result.get("rephrased_input", ""),
-            safety=result.get("safety", SAFETY_SAFE),
-            reason_unsafe=result.get("reason_unsafe", ""),
+        safety_check: BaseState = await self.safety_checker.ainvoke(
+            {"rephrased_input": rephrased_input},
+            config,
         )
-        return BaseState(**state, **mapped_state)
+        return BaseState(
+            rephrased_input=rephrased_input,
+            safety=safety_check["safety"].lower(),
+            reason_unsafe=safety_check["reason_unsafe"],
+        )
 
     async def postprocess(self, state: BaseState, config: RunnableConfig) -> BaseState:
         search_results: list[WebSearchResult] = []
-        if state.get("safety") == SAFETY_SAFE and config.get("configurable", {}).get(
-            "enable_postprocess", False
+        if (
+            config["configurable"].get("enable_postprocess", False)
+            and state["safety"] == "true"
         ):
             result: SearchState = await self.search_workflow.ainvoke(
                 SearchState(
@@ -77,6 +77,5 @@ class BaseGraphBuilder:
             )
             search_results = result["search_results"]
         return BaseState(
-            **state,
-            additional_content=AdditionalContent(search_results=search_results),
+            additional_content=AdditionalContent(search_results=search_results)
         )

@@ -1,19 +1,9 @@
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
 
-
-def create_unsafe_answer_generator(llm: BaseChatModel) -> Runnable:
-    """
-    Create an unsafe answer generator chain.
-
-    Args:
-        llm: Language model to use.
-
-    Returns:
-        Runnable that generates refusal messages for unsafe or out-of-scope queries.
-    """
-    system_prompt = """
+unsafe_answer_message = """
     You are an expert scientific assistant operating under the React-to-Me platform. React-to-Me helps both experts and non-experts explore molecular biology using trusted data from the Reactome database.
 
 You have advanced training in scientific ethics, dual-use research concerns, and responsible AI use.
@@ -31,16 +21,20 @@ You must:
 
 You must not provide any workaround, implicit answer, or redirection toward unsafe content.
 """
+
+unsafe_answer_prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", unsafe_answer_message),
+        (
+            "user",
+            "Question:{user_input}\n\n Reason for unsafe or out of scope: {reason_unsafe}",
+        ),
+    ]
+)
+
+
+def create_unsafe_answer_generator(llm: BaseChatModel) -> Runnable:
     streaming_llm = llm.model_copy(update={"streaming": True})
-
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", system_prompt),
-            (
-                "user",
-                "Question:{user_input}\n\n Reason for unsafe or out of scope: {reason_unsafe}",
-            ),
-        ]
+    return (unsafe_answer_prompt | streaming_llm | StrOutputParser()).with_config(
+        run_name="unsafe_answer"
     )
-
-    return prompt | streaming_llm
