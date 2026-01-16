@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Any
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -48,11 +48,6 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         state_graph.set_finish_point("postprocess")
 
         self.uncompiled_graph: StateGraph = state_graph
-
-    async def proceed_with_research(
-        self, state: BaseState
-    ) -> Literal["Continue", "Finish"]:
-        return "Continue" if state["safety"] == "true" else "Finish"
 
     async def generate_unsafe_response(
         self, state: ReactToMeState, config: RunnableConfig

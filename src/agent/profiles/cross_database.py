@@ -22,7 +22,6 @@ from retrievers.uniprot.rag import create_uniprot_rag
 
 
 class CrossDatabaseState(BaseState):
-    safety: str  # LLM-assessed safety level of the user input
     query_language: str  # language of the user input
 
     reactome_query: str  # LLM-generated query for Reactome
@@ -121,14 +120,6 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
             )
         else:
             return CrossDatabaseState(safety=result.binary_score)
-
-    async def proceed_with_research(
-        self, state: CrossDatabaseState
-    ) -> Literal["Continue", "Finish"]:
-        if state["safety"] == "Yes":
-            return "Continue"
-        else:
-            return "Finish"
 
     async def identify_query_language(
         self, state: CrossDatabaseState, config: RunnableConfig

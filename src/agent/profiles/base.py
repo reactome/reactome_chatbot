@@ -1,4 +1,4 @@
-from typing import Annotated, TypedDict
+from typing import Annotated, Literal, TypedDict
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -61,6 +61,9 @@ class BaseGraphBuilder:
             safety=safety_check["safety"].lower(),
             reason_unsafe=safety_check["reason_unsafe"],
         )
+
+    def proceed_with_research(self, state: BaseState) -> Literal["Continue", "Finish"]:
+        return "Continue" if state["safety"] == "true" else "Finish"
 
     async def postprocess(self, state: BaseState, config: RunnableConfig) -> BaseState:
         search_results: list[WebSearchResult] = []
