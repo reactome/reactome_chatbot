@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -43,7 +43,7 @@ def create_advanced_rag_chain(
     if streaming:
         llm = llm.model_copy(update={"streaming": True})
 
-    async def rag_chain(inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def rag_chain(inputs: dict[str, Any]) -> dict[str, Any]:
         user_input = inputs["input"]
         chat_history = inputs.get("chat_history", [])
         expanded_queries = inputs.get("expanded_queries", [])

@@ -16,18 +16,6 @@ def create_reactome_rag(
     *,
     streaming: bool = False,
 ) -> Runnable:
-    """
-    Create a Reactome-specific RAG chain with hybrid retrieval and query expansion.
-
-    Args:
-        llm: Language model for generation
-        embedding: Embedding model for retrieval
-        embeddings_directory: Directory containing Reactome embeddings and CSV files
-        streaming: Whether to enable streaming responses
-
-    Returns:
-        Runnable RAG chain for Reactome queries
-    """
     return create_advanced_rag_chain(
         llm=llm,
         embedding=embedding,

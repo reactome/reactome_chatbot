@@ -6,87 +6,78 @@ from langchain_core.messages import BaseMessage
 from langchain_core.runnables import Runnable, RunnableConfig
 from langgraph.graph.message import add_messages
 
+from agent.tasks.detect_language import create_language_detector
+from agent.tasks.rephrase import create_rephrase_chain
+from agent.tasks.safety_checker import create_safety_checker
 from tools.external_search.state import SearchState, WebSearchResult
 from tools.external_search.workflow import create_search_workflow
-from tools.preprocessing.state import PreprocessingState
-from tools.preprocessing.workflow import create_preprocessing_workflow
-
-# Constants
-SAFETY_SAFE: Literal["true"] = "true"
-SAFETY_UNSAFE: Literal["false"] = "false"
-DEFAULT_LANGUAGE: str = "English"
 
 
 class AdditionalContent(TypedDict, total=False):
-    """Additional content sent on graph completion."""
-
     search_results: list[WebSearchResult]
 
 
 class InputState(TypedDict, total=False):
-    """Input state for user queries."""
-
-    user_input: str
+    user_input: str  # User input text
 
 
 class OutputState(TypedDict, total=False):
-    """Output state for responses."""
-
-    answer: str
-    additional_content: AdditionalContent
+    answer: str  # primary LLM response that is streamed to the user
+    additional_content: AdditionalContent  # sends on graph completion
 
 
 class BaseState(InputState, OutputState, total=False):
-    """Base state containing all common fields for agent workflows."""
-
-    rephrased_input: str
+    rephrased_input: str  # LLM-generated query from user input
     chat_history: Annotated[list[BaseMessage], add_messages]
 
     # Preprocessing results
-    safety: str
-    reason_unsafe: str
-    expanded_queries: list[str]
-    detected_language: str
+    safety: str  # "true" or "false" from safety check
+    reason_unsafe: str  # Reason if unsafe
+    detected_language: str  # Detected language
 
 
 class BaseGraphBuilder:
-    """Base class for all graph builders with common preprocessing and postprocessing."""
+    # NOTE: Anything that is common to all graph builders goes here
 
-    def __init__(self, llm: BaseChatModel, embedding: Embeddings) -> None:
-        """Initialize with LLM and embedding models."""
-        self.preprocessing_workflow: Runnable = create_preprocessing_workflow(llm)
+    def __init__(
+        self,
+        llm: BaseChatModel,
+        embedding: Embeddings,
+    ) -> None:
+        self.rephrase_chain: Runnable = create_rephrase_chain(llm)
+        self.safety_checker: Runnable = create_safety_checker(llm)
+        self.language_detector: Runnable = create_language_detector(llm)
         self.search_workflow: Runnable = create_search_workflow(llm)
 
     async def preprocess(self, state: BaseState, config: RunnableConfig) -> BaseState:
-        """Run the complete preprocessing workflow and map results to state."""
-        result: PreprocessingState = await self.preprocessing_workflow.ainvoke(
-            PreprocessingState(
-                user_input=state["user_input"],
-                chat_history=state["chat_history"],
-            ),
+        rephrased_input: str = await self.rephrase_chain.ainvoke(
+            {
+                "user_input": state["user_input"],
+                "chat_history": state.get("chat_history", []),
+            },
             config,
         )
-
-        return self._map_preprocessing_result(result)
-
-    def _map_preprocessing_result(self, result: PreprocessingState) -> BaseState:
-        """Map preprocessing results to BaseState with defaults."""
+        safety_check: BaseState = await self.safety_checker.ainvoke(
+            {"rephrased_input": rephrased_input}, config
+        )
+        detected_language: str = await self.language_detector.ainvoke(
+            {"user_input": state["user_input"]}, config
+        )
         return BaseState(
-            rephrased_input=result["rephrased_input"],
-            safety=result.get("safety", SAFETY_SAFE),
-            reason_unsafe=result.get("reason_unsafe", ""),
-            expanded_queries=result.get("expanded_queries", []),
-            detected_language=result.get("detected_language", DEFAULT_LANGUAGE),
+            rephrased_input=rephrased_input,
+            safety=safety_check["safety"],
+            reason_unsafe=safety_check["reason_unsafe"],
+            detected_language=detected_language,
         )
 
-    async def postprocess(self, state: BaseState, config: RunnableConfig) -> BaseState:
-        """Postprocess that preserves existing state and conditionally adds search results."""
-        search_results: list[WebSearchResult] = []
+    def proceed_with_research(self, state: BaseState) -> Literal["Continue", "Finish"]:
+        return "Continue" if state["safety"] == "true" else "Finish"
 
-        # Only run external search for safe questions
+    async def postprocess(self, state: BaseState, config: RunnableConfig) -> BaseState:
+        search_results: list[WebSearchResult] = []
         if (
-            state.get("safety") == SAFETY_SAFE
-            and config["configurable"]["enable_postprocess"]
+            config["configurable"].get("enable_postprocess")
+            and state["safety"] == "true"
         ):
             result: SearchState = await self.search_workflow.ainvoke(
                 SearchState(
@@ -96,9 +87,6 @@ class BaseGraphBuilder:
                 config=RunnableConfig(callbacks=config["callbacks"]),
             )
             search_results = result["search_results"]
-
-        # Create new state with updated additional_content
         return BaseState(
-            **state,  # Copy existing state
             additional_content=AdditionalContent(search_results=search_results)
         )

@@ -1,8 +1,7 @@
 import asyncio
 import hashlib
-import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import chromadb.config
 import pandas as pd
@@ -12,7 +11,7 @@ from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.retrievers import BaseRetriever
 
-from retrievers.retrieval_utils import reciprocal_rank_fusion
+from util.logging import logging
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +22,7 @@ RRF_LAMBDA_MULTIPLIER = 60.0
 EXCLUDED_CONTENT_COLUMNS = {"st_id"}
 
 
-def create_documents_from_csv(csv_path: Path) -> List[Document]:
+def create_documents_from_csv(csv_path: Path) -> list[Document]:
     """Create Document objects from CSV file with proper metadata extraction."""
     if not csv_path.exists():
         raise FileNotFoundError(f"CSV file not found: {csv_path}")
@@ -60,7 +59,7 @@ def create_documents_from_csv(csv_path: Path) -> List[Document]:
     return documents
 
 
-def list_chroma_subdirectories(directory: Path) -> List[str]:
+def list_chroma_subdirectories(directory: Path) -> list[str]:
     """Discover all subdirectories containing ChromaDB files."""
     if not directory.exists():
         raise ValueError(f"Directory does not exist: {directory}")
@@ -81,9 +80,9 @@ class HybridRetriever:
     def __init__(self, embedding: Embeddings, embeddings_directory: Path):
         self.embedding = embedding
         self.embeddings_directory = embeddings_directory
-        self._retrievers: Dict[
-            str, Dict[str, Optional[Union[BM25Retriever, BaseRetriever]]]
-        ] = {}
+        self._retrievers: dict[str, dict[str, BM25Retriever | BaseRetriever | None]] = (
+            {}
+        )
 
         try:
             self._initialize_retrievers()
@@ -109,7 +108,7 @@ class HybridRetriever:
 
         logger.info(f"Initialized retrievers for {len(subdirectories)} subdirectories")
 
-    def _create_bm25_retriever(self, subdirectory: str) -> Optional[BM25Retriever]:
+    def _create_bm25_retriever(self, subdirectory: str) -> BM25Retriever | None:
         """Create BM25 retriever for a specific subdirectory."""
         csv_path = self.embeddings_directory / "csv_files" / f"{subdirectory}.csv"
 
@@ -129,7 +128,7 @@ class HybridRetriever:
             logger.error(f"Failed to create BM25 retriever for {subdirectory}: {e}")
             return None
 
-    def _create_vector_retriever(self, subdirectory: str) -> Optional[BaseRetriever]:
+    def _create_vector_retriever(self, subdirectory: str) -> BaseRetriever | None:
         """Create vector retriever for a specific subdirectory."""
         vector_directory = self.embeddings_directory / subdirectory
 
@@ -156,19 +155,19 @@ class HybridRetriever:
 
     async def _search_with_bm25(
         self, query: str, retriever: BM25Retriever
-    ) -> List[Document]:
+    ) -> list[Document]:
         """Search using BM25 retriever asynchronously."""
         return await asyncio.to_thread(retriever.get_relevant_documents, query)
 
     async def _search_with_vector(
         self, query: str, retriever: BaseRetriever
-    ) -> List[Document]:
+    ) -> list[Document]:
         """Search using vector retriever asynchronously."""
         return await asyncio.to_thread(retriever.get_relevant_documents, query)
 
     async def _execute_hybrid_search(
         self, query: str, subdirectory: str
-    ) -> List[Document]:
+    ) -> list[Document]:
         """Execute hybrid search (BM25 + vector) for a single query on a subdirectory."""
         retriever_info = self._retrievers.get(subdirectory)
         if not retriever_info:
@@ -215,8 +214,8 @@ class HybridRetriever:
         return hashlib.md5(document.page_content.encode()).hexdigest()
 
     async def _apply_reciprocal_rank_fusion(
-        self, queries: List[str], subdirectory: str
-    ) -> List[Document]:
+        self, queries: list[str], subdirectory: str
+    ) -> list[Document]:
         """Apply Reciprocal Rank Fusion to results from multiple queries on a subdirectory."""
         logger.info(
             f"Executing hybrid search for {len(queries)} queries in {subdirectory}"
@@ -258,7 +257,7 @@ class HybridRetriever:
 
         return top_documents
 
-    async def ainvoke(self, inputs: Dict[str, Any]) -> str:
+    async def ainvoke(self, inputs: dict[str, Any]) -> str:
         """Main retrieval method supporting RRF and parallel processing."""
         original_query = inputs.get("input", "").strip()
         if not original_query:

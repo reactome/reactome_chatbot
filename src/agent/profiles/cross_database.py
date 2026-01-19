@@ -122,14 +122,6 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
         else:
             return CrossDatabaseState(safety=result.binary_score)
 
-    async def proceed_with_research(
-        self, state: CrossDatabaseState
-    ) -> Literal["Continue", "Finish"]:
-        if state["safety"] == "Yes":
-            return "Continue"
-        else:
-            return "Finish"
-
     async def identify_query_language(
         self, state: CrossDatabaseState, config: RunnableConfig
     ) -> CrossDatabaseState:

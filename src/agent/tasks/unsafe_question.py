@@ -1,21 +1,10 @@
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
 
-
-# unsafe or out of scope answer generator
-def create_unsafe_answer_generator(llm: BaseChatModel) -> Runnable:
-    """
-    Create an unsafe answer generator chain.
-
-    Args:
-        llm: Language model to use
-
-    Returns:
-        Runnable that takes language, user_input, reactome_context, uniprot_context, chat_history
-    """
-    system_prompt = """
-    You are an expert scientific assistant operating under the React-to-Me platform. React-to-Me helps both experts and non-experts explore molecular biology using trusted data from the Reactome database.
+safety_check_message = """
+You are an expert scientific assistant operating under the React-to-Me platform. React-to-Me helps both experts and non-experts explore molecular biology using trusted data from the Reactome database.
 
 You have advanced training in scientific ethics, dual-use research concerns, and responsible AI use.
 
@@ -34,14 +23,19 @@ You must:
 
 You must not provide any workaround, implicit answer, or redirection toward unsafe content.
 """
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", system_prompt),
-            (
-                "user",
-                "Language:{language}\n\nQuestion:{user_input}\n\n Reason for unsafe or out of scope: {reason_unsafe}",
-            ),
-        ]
-    )
 
-    return prompt | llm
+safety_check_prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", safety_check_message),
+        (
+            "user",
+            "Language:{language}\n\nQuestion:{user_input}\n\n Reason for unsafe or out of scope: {reason_unsafe}",
+        ),
+    ]
+)
+
+
+def create_unsafe_answer_generator(llm: BaseChatModel) -> Runnable:
+    return (safety_check_prompt | llm | StrOutputParser()).with_config(
+        run_name="unsafe_answer_generator"
+    )

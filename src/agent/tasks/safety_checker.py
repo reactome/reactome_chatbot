@@ -1,29 +1,9 @@
-from langchain.prompts import ChatPromptTemplate
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field
 
-
-class SafetyCheck(BaseModel):
-    safety: str = Field(
-        description="Indicates whether the question is appropriate and related to molecular biology. Expected values: 'true' or 'false'."
-    )
-    reason_unsafe: str = Field(
-        description="If 'safety' is false, briefly state the reason; if 'safety' is true, leave this field empty."
-    )
-
-
-def create_safety_checker(llm: BaseChatModel) -> Runnable:
-    """
-    Create a safety checker chain.
-
-    Args:
-        llm: Language model to use
-
-    Returns:
-        Runnable that takes user_input and returns SafetyCheck
-    """
-    safety_check_message = """
+safety_check_message = """
 You are an expert scientific assistant. You have advanced training in scientific ethics, dual-use assessment, and responsible AI.
 
 Tasks:
@@ -66,11 +46,22 @@ Examples:
        "reason_unsafe": ""
 """
 
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", safety_check_message),
-            ("human", "User question: \n\n {rephrased_input}"),
-        ]
+safety_check_prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", safety_check_message),
+        ("human", "User question: \n\n {rephrased_input}"),
+    ]
+)
+
+
+class SafetyCheck(BaseModel):
+    safety: str = Field(
+        description="Indicates whether the question is appropriate and related to molecular biology. Expected values: 'true' or 'false'."
+    )
+    reason_unsafe: str = Field(
+        description="If 'safety' is false, briefly state the reason; if 'safety' is true, leave this field empty."
     )
 
-    return prompt | llm.with_structured_output(SafetyCheck)
+
+def create_safety_checker(llm: BaseChatModel) -> Runnable:
+    return safety_check_prompt | llm.with_structured_output(SafetyCheck)
