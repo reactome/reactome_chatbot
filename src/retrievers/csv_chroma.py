@@ -60,17 +60,9 @@ def create_documents_from_csv(csv_path: Path) -> list[Document]:
 
 
 def list_chroma_subdirectories(directory: Path) -> list[str]:
-    """Discover all subdirectories containing ChromaDB files."""
-    if not directory.exists():
-        raise ValueError(f"Directory does not exist: {directory}")
-
-    subdirectories = [
+    subdirectories = list(
         chroma_file.parent.name for chroma_file in directory.glob("*/chroma.sqlite3")
-    ]
-
-    if not subdirectories:
-        logger.warning(f"No ChromaDB subdirectories found in {directory}")
-
+    )
     return subdirectories
 
 
