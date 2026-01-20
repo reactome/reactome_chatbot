@@ -60,7 +60,6 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
             },
             config,
         )
-
         return ReactToMeState(
             chat_history=[
                 HumanMessage(state["user_input"]),
