@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, Any, Coroutine, TypedDict
 
 import chromadb.config
 from langchain.chains.query_constructor.schema import AttributeInfo
@@ -176,9 +176,17 @@ class HybridRetriever(MultiQueryRetriever, EnsembleRetriever):
         return subdirectory_docs
 
     async def aretrieve_documents(
-        self, queries: list[Document], run_manager
+        self, queries: list[str], run_manager
     ) -> list[Document]:
-        subdirectory_results = {}
+        subdirectory_results: dict[
+            str,
+            list[
+                tuple[
+                    Coroutine[Any, Any, list[Document]],
+                    Coroutine[Any, Any, list[Document]],
+                ]
+            ],
+        ] = {}
         for subdirectory, retrievers in self._retrievers.items():
             bm25_retriever = retrievers["bm25"]
             vector_retriever = retrievers["vector"]
