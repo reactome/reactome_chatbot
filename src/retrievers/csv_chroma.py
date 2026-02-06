@@ -141,6 +141,7 @@ class HybridRetriever(MultiQueryRetriever):
         hybrid_retriever = cls(
             llm_chain=llm_chain,
             include_original=include_original,
+            _retrievers={},
         )
         hybrid_retriever._retrievers = _retrievers
         return hybrid_retriever
