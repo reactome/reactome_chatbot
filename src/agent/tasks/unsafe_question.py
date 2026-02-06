@@ -35,7 +35,9 @@ safety_check_prompt = ChatPromptTemplate.from_messages(
 )
 
 
-def create_unsafe_answer_generator(llm: BaseChatModel) -> Runnable:
+def create_unsafe_answer_generator(llm: BaseChatModel, streaming: bool = False) -> Runnable:
+    if streaming:
+        llm = llm.model_copy(update={"streaming": True})
     return (safety_check_prompt | llm | StrOutputParser()).with_config(
         run_name="unsafe_answer_generator"
     )
