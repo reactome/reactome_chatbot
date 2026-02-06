@@ -24,7 +24,9 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         super().__init__(llm, embedding)
 
         # Create runnables (tasks & tools)
-        self.unsafe_answer_generator: Runnable = create_unsafe_answer_generator(llm, streaming=True)
+        self.unsafe_answer_generator: Runnable = create_unsafe_answer_generator(
+            llm, streaming=True
+        )
         self.reactome_rag: Runnable = create_reactome_rag(
             llm, embedding, streaming=True
         )
