@@ -86,9 +86,8 @@ class RetrieverDict(TypedDict):
     vector: SelfQueryRetriever
 
 
-class HybridRetriever(MultiQueryRetriever, EnsembleRetriever):
+class HybridRetriever(MultiQueryRetriever):
     retriever: ExcludedField = None
-    retrievers: ExcludedField = None
     _retrievers: dict[str, RetrieverDict]
 
     @classmethod
@@ -136,17 +135,22 @@ class HybridRetriever(MultiQueryRetriever, EnsembleRetriever):
                 "bm25": bm25_retriever,
                 "vector": selfq_retriever,
             }
-        llm_chain = (
-            super()
-            .from_llm(bm25_retriever, llm, multi_query_prompt, None, include_original)
-            .llm_chain
-        )
-        return cls(
-            _retrievers=_retrievers,
+        llm_chain = MultiQueryRetriever.from_llm(
+            bm25_retriever, llm, multi_query_prompt, None, include_original
+        ).llm_chain
+        hybrid_retriever = cls(
             llm_chain=llm_chain,
             include_original=include_original,
-            weights=[0.2] * 5,
         )
+        hybrid_retriever._retrievers = _retrievers
+        return hybrid_retriever
+
+    def weighted_reciprocal_rank(
+        self, doc_lists: list[list[Document]]
+    ) -> list[Document]:
+        return EnsembleRetriever(
+            retrievers=[], weights=[1 / len(doc_lists)] * len(doc_lists)
+        ).weighted_reciprocal_rank(doc_lists)
 
     def retrieve_documents(self, queries: list[str], run_manager) -> list[Document]:
         subdirectory_docs: list[Document] = []
