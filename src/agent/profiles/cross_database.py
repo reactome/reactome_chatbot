@@ -45,7 +45,7 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
         self.write_reactome_query = create_reactome_rewriter_w_uniprot(llm)
         self.write_uniprot_query = create_uniprot_rewriter_w_reactome(llm)
         self.summarize_final_answer = create_reactome_uniprot_summarizer(
-            llm.model_copy(update={"streaming": True})
+            llm, streaming=True
         )
 
         # Create graph
@@ -53,7 +53,6 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
         # Set up nodes
         state_graph.add_node("check_question_safety", self.check_question_safety)
         state_graph.add_node("preprocess_question", self.preprocess)
-        state_graph.add_node("identify_query_language", self.identify_query_language)
         state_graph.add_node("conduct_research", self.conduct_research)
         state_graph.add_node("generate_reactome_answer", self.generate_reactome_answer)
         state_graph.add_node("rewrite_reactome_query", self.rewrite_reactome_query)
@@ -108,14 +107,6 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
             )
         else:
             return CrossDatabaseState()
-
-    async def identify_query_language(
-        self, state: CrossDatabaseState, config: RunnableConfig
-    ) -> CrossDatabaseState:
-        query_language: str = await self.detect_language.ainvoke(
-            {"user_input": state["user_input"]}, config
-        )
-        return CrossDatabaseState(query_language=query_language)
 
     async def conduct_research(
         self, state: CrossDatabaseState, config: RunnableConfig
@@ -235,7 +226,7 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
         final_response: str = await self.summarize_final_answer.ainvoke(
             {
                 "input": state["rephrased_input"],
-                "query_language": state["query_language"],
+                "detected_language": state["detected_language"],
                 "reactome_answer": state["reactome_answer"],
                 "uniprot_answer": state["uniprot_answer"],
             },
