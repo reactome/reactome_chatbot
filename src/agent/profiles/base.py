@@ -8,7 +8,7 @@ from langgraph.graph.message import add_messages
 
 from agent.tasks.detect_language import create_language_detector
 from agent.tasks.rephrase import create_rephrase_chain
-from agent.tasks.safety_checker import create_safety_checker
+from agent.tasks.safety_checker import SafetyCheck, create_safety_checker
 from tools.external_search.state import SearchState, WebSearchResult
 from tools.external_search.workflow import create_search_workflow
 
@@ -57,7 +57,7 @@ class BaseGraphBuilder:
             },
             config,
         )
-        safety_check: BaseState = await self.safety_checker.ainvoke(
+        safety_check: SafetyCheck = await self.safety_checker.ainvoke(
             {"rephrased_input": rephrased_input}, config
         )
         detected_language: str = await self.language_detector.ainvoke(
@@ -65,8 +65,8 @@ class BaseGraphBuilder:
         )
         return BaseState(
             rephrased_input=rephrased_input,
-            safety=safety_check["safety"],
-            reason_unsafe=safety_check["reason_unsafe"],
+            safety=safety_check.safety,
+            reason_unsafe=safety_check.reason_unsafe,
             detected_language=detected_language,
         )
 
