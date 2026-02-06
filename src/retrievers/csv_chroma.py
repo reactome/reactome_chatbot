@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from typing import Annotated, Any, Coroutine, TypedDict
 
@@ -197,7 +198,8 @@ class HybridRetriever(MultiQueryRetriever):
             vector_retriever = retrievers["vector"]
             subdirectory_results[subdirectory] = []
             for i, query in enumerate(queries):
-                bm25_results = bm25_retriever.ainvoke(
+                bm25_results = asyncio.to_thread(
+                    bm25_retriever.invoke,
                     query,
                     config={
                         "callbacks": run_manager.get_child(
@@ -205,7 +207,8 @@ class HybridRetriever(MultiQueryRetriever):
                         )
                     },
                 )
-                vector_results = vector_retriever.ainvoke(
+                vector_results = asyncio.to_thread(
+                    vector_retriever.invoke,
                     query,
                     config={
                         "callbacks": run_manager.get_child(
@@ -213,15 +216,15 @@ class HybridRetriever(MultiQueryRetriever):
                         )
                     },
                 )
-                subdirectory_results[subdirectory].append(
+                subdirectory_results[subdirectory].extend(
                     (bm25_results, vector_results)
                 )
         subdirectory_docs: list[Document] = []
         for subdir_results in subdirectory_results.values():
-            doc_lists: list[list[Document]] = []
-            for bm25_results, vector_results in subdir_results:
-                bm25_docs = await bm25_results
-                vector_docs = await vector_results
-                doc_lists.append(bm25_docs + vector_docs)
+            results_iter = iter(await asyncio.gather(*subdir_results))
+            doc_lists: list[list[Document]] = [
+                bm25_results + vector_results
+                for bm25_results, vector_results in zip(results_iter, results_iter)
+            ]
             subdirectory_docs.extend(self.weighted_reciprocal_rank(doc_lists))
         return subdirectory_docs
