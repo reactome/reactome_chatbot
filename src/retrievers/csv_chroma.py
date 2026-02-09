@@ -184,15 +184,7 @@ class HybridRetriever(MultiQueryRetriever):
     async def aretrieve_documents(
         self, queries: list[str], run_manager
     ) -> list[Document]:
-        subdirectory_results: dict[
-            str,
-            list[
-                tuple[
-                    Coroutine[Any, Any, list[Document]],
-                    Coroutine[Any, Any, list[Document]],
-                ]
-            ],
-        ] = {}
+        subdirectory_results: dict[str, list[Coroutine[Any, Any, list[Document]]]] = {}
         for subdirectory, retrievers in self._retrievers.items():
             bm25_retriever = retrievers["bm25"]
             vector_retriever = retrievers["vector"]
