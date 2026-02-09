@@ -7,6 +7,7 @@ from langchain_core.runnables import Runnable, RunnableConfig
 from langgraph.graph.state import StateGraph
 
 from agent.profiles.base import BaseGraphBuilder, BaseState
+from agent.tasks.unsafe_question import create_unsafe_answer_generator
 from retrievers.reactome.rag import create_reactome_rag
 
 
@@ -23,6 +24,9 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         super().__init__(llm, embedding)
 
         # Create runnables (tasks & tools)
+        self.unsafe_answer_generator: Runnable = create_unsafe_answer_generator(
+            llm, streaming=True
+        )
         self.reactome_rag: Runnable = create_reactome_rag(
             llm, embedding, streaming=True
         )
@@ -32,14 +36,39 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         # Set up nodes
         state_graph.add_node("preprocess", self.preprocess)
         state_graph.add_node("model", self.call_model)
+        state_graph.add_node("generate_unsafe_response", self.generate_unsafe_response)
         state_graph.add_node("postprocess", self.postprocess)
         # Set up edges
         state_graph.set_entry_point("preprocess")
-        state_graph.add_edge("preprocess", "model")
+        state_graph.add_conditional_edges(
+            "preprocess",
+            self.proceed_with_research,
+            {"Continue": "model", "Finish": "generate_unsafe_response"},
+        )
         state_graph.add_edge("model", "postprocess")
+        state_graph.add_edge("generate_unsafe_response", "postprocess")
         state_graph.set_finish_point("postprocess")
 
         self.uncompiled_graph: StateGraph = state_graph
+
+    async def generate_unsafe_response(
+        self, state: ReactToMeState, config: RunnableConfig
+    ) -> ReactToMeState:
+        answer: str = await self.unsafe_answer_generator.ainvoke(
+            {
+                "language": state["detected_language"],
+                "user_input": state["rephrased_input"],
+                "reason_unsafe": state["reason_unsafe"],
+            },
+            config,
+        )
+        return ReactToMeState(
+            chat_history=[
+                HumanMessage(state["user_input"]),
+                AIMessage(answer),
+            ],
+            answer=answer,
+        )
 
     async def call_model(
         self, state: ReactToMeState, config: RunnableConfig

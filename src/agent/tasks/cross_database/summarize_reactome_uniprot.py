@@ -36,13 +36,17 @@ summarizer_prompt = ChatPromptTemplate.from_messages(
         ("system", summarization_message),
         (
             "human",
-            "User question: {input} \n\n Language: {query_language} \n\n Reactome-drived information: \n {reactome_answer} \n\n UniProt-drived infromation: \n {uniprot_answer}.",
+            "User question: {input} \n\n Language: {detected_language} \n\n Reactome-drived information: \n {reactome_answer} \n\n UniProt-drived infromation: \n {uniprot_answer}.",
         ),
     ]
 )
 
 
-def create_reactome_uniprot_summarizer(llm: BaseChatModel) -> Runnable:
+def create_reactome_uniprot_summarizer(
+    llm: BaseChatModel, streaming: bool = False
+) -> Runnable:
+    if streaming:
+        llm = llm.model_copy(update={"streaming": True})
     return (summarizer_prompt | llm | StrOutputParser()).with_config(
         run_name="summarize_answer"
     )
