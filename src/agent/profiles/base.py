@@ -1,5 +1,6 @@
 from typing import Annotated, Literal, TypedDict
 
+import asyncio
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage
@@ -50,25 +51,29 @@ class BaseGraphBuilder:
         self.search_workflow: Runnable = create_search_workflow(llm)
 
     async def preprocess(self, state: BaseState, config: RunnableConfig) -> BaseState:
-        rephrased_input: str = await self.rephrase_chain.ainvoke(
-            {
-                "user_input": state["user_input"],
-                "chat_history": state.get("chat_history", []),
-            },
-            config,
-        )
-        safety_check: SafetyCheck = await self.safety_checker.ainvoke(
-            {"rephrased_input": rephrased_input}, config
-        )
-        detected_language: str = await self.language_detector.ainvoke(
-            {"user_input": state["user_input"]}, config
-        )
-        return BaseState(
-            rephrased_input=rephrased_input,
-            safety=safety_check.safety,
-            reason_unsafe=safety_check.reason_unsafe,
-            detected_language=detected_language,
-        )
+            rephrased_input: str = await self.rephrase_chain.ainvoke(
+                {
+                    "user_input": state["user_input"],
+                    "chat_history": state.get("chat_history", []),
+                },
+                config,
+            )
+
+            safety_check, detected_language = await asyncio.gather(
+                self.safety_checker.ainvoke(
+                    {"rephrased_input": rephrased_input}, config
+                ),
+                self.language_detector.ainvoke(
+                    {"user_input": state["user_input"]}, config
+                ),
+            )
+
+            return BaseState(
+                rephrased_input=rephrased_input,
+                safety=safety_check.safety,
+                reason_unsafe=safety_check.reason_unsafe,
+                detected_language=detected_language,
+            )
 
     def proceed_with_research(self, state: BaseState) -> Literal["Continue", "Finish"]:
         return "Continue" if state["safety"] == "true" else "Finish"
