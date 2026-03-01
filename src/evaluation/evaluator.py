@@ -18,6 +18,7 @@ from retrievers.rag_chain import create_rag_chain
 from retrievers.reactome.metadata_info import (reactome_descriptions_info,
                                                reactome_field_info)
 from retrievers.reactome.prompt import reactome_qa_prompt
+from util.embedding_environment import EmbeddingEnvironment
 
 context_utilization = ContextUtilization()
 
@@ -45,6 +46,20 @@ def parse_arguments():
         required=True,
         help="Type of RAG system to use for evaluation",
     )
+    parser.add_argument(
+        "--embeddings_dir",
+        type=str,
+        default=None,
+        help="Path to the ChromaDB embeddings directory (e.g., .../summations). "
+        "Defaults to the active Reactome embedding resolved via embeddings/current.",
+    )
+    parser.add_argument(
+        "--csv_path",
+        type=str,
+        default=None,
+        help="Path to the summations CSV file for BM25 retrieval. "
+        "Defaults to the csv_files/summations.csv sibling of --embeddings_dir.",
+    )
     return parser.parse_args()
 
 
@@ -61,14 +76,14 @@ def load_dataset(testset_path):
         raise ValueError(f"Error reading the Excel file: {e}")
 
 
-def initialize_rag_chain_with_memory(embeddings_directory, model_name, rag_type):
+def initialize_rag_chain_with_memory(
+    embeddings_directory, csv_path, model_name, rag_type
+):
     """Initialize the RAGChainWithMemory system."""
     llm = ChatOpenAI(temperature=0.0, verbose=True, model=model_name)
     retriever_list = []
 
-    loader = CSVLoader(
-        "/Users/hmohammadi/Desktop/react_to_me_github/reactome_chatbot/embeddings/openai/text-embedding-3-large/reactome/summation_csv/summations.csv"
-    )
+    loader = CSVLoader(csv_path)
     data = loader.load()
     bm25_retriever = BM25Retriever.from_documents(data)
     bm25_retriever.k = 7
@@ -167,6 +182,33 @@ def process_testset(
     print(f"Evaluation results saved to {evaluation_filename}")
 
 
+def _resolve_paths(args):
+    """Resolve embeddings directory and CSV path from CLI args or EmbeddingEnvironment."""
+    embeddings_dir = args.embeddings_dir
+    csv_path = args.csv_path
+
+    if embeddings_dir is None:
+        reactome_dir = EmbeddingEnvironment.get_dir("reactome")
+        if reactome_dir is None:
+            raise FileNotFoundError(
+                "No active Reactome embedding found. Either run "
+                "'embeddings_manager use' to set one, or pass --embeddings_dir explicitly."
+            )
+        embeddings_dir = str(reactome_dir / "summations")
+
+    if csv_path is None:
+        # Convention: CSV files live in a csv_files/ sibling directory
+        parent = os.path.dirname(embeddings_dir)
+        csv_path = os.path.join(parent, "csv_files", "summations.csv")
+
+    if not os.path.isdir(embeddings_dir):
+        raise FileNotFoundError(f"Embeddings directory not found: {embeddings_dir}")
+    if not os.path.isfile(csv_path):
+        raise FileNotFoundError(f"CSV file not found: {csv_path}")
+
+    return embeddings_dir, csv_path
+
+
 def main():
     args = parse_arguments()
     model_name = args.model
@@ -176,10 +218,12 @@ def main():
     os.makedirs(response_dir, exist_ok=True)
     os.makedirs(eval_dir, exist_ok=True)
 
+    # Resolve embeddings and CSV paths
+    embeddings_directory, csv_path = _resolve_paths(args)
+
     # Initialize RAG Chain
-    embeddings_directory = "/Users/hmohammadi/Desktop/react_to_me_github/reactome_chatbot/embeddings/openai/text-embedding-3-large/reactome/Release90/summations"
     qa_system = initialize_rag_chain_with_memory(
-        embeddings_directory, model_name, rag_type
+        embeddings_directory, csv_path, model_name, rag_type
     )
 
     # Iterate over all .xlsx files in the directory
