@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Self
 
 import yaml
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from agent.profiles import ProfileName
 from util.config_yml.features import Feature, Features
@@ -17,6 +17,8 @@ CONFIG_DEFAULT_YML = Path("config_default.yml")
 
 
 class Config(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     features: Features
     messages: dict[str, Message]
     models: ModelsConfig = ModelsConfig()
