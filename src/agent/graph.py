@@ -16,6 +16,7 @@ from psycopg_pool import AsyncConnectionPool
 from agent.models import get_embedding, get_llm
 from agent.profiles import ProfileName, create_profile_graphs
 from agent.profiles.base import InputState, OutputState
+from util.config_yml.models import EmbeddingConfig, LLMConfig, ModelsConfig
 from util.logging import logging
 
 LANGGRAPH_DB_URI = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_LANGGRAPH_DB')}?sslmode=disable"
@@ -28,10 +29,21 @@ class AgentGraph:
     def __init__(
         self,
         profiles: list[ProfileName],
+        models_config: ModelsConfig | None = None,
     ) -> None:
-        # Get base models
-        llm: BaseChatModel = get_llm("openai", "gpt-4o-mini")
-        embedding: Embeddings = get_embedding("openai", "text-embedding-3-large")
+        # Get base models from config (with backward-compatible defaults)
+        if models_config is None:
+            models_config = ModelsConfig()
+
+        llm_cfg: LLMConfig = models_config.llm
+        emb_cfg: EmbeddingConfig = models_config.embedding
+
+        llm: BaseChatModel = get_llm(
+            llm_cfg.provider, llm_cfg.model, base_url=llm_cfg.base_url
+        )
+        embedding: Embeddings = get_embedding(
+            emb_cfg.provider, emb_cfg.model, device=emb_cfg.device
+        )
 
         self.uncompiled_graph: dict[str, StateGraph] = create_profile_graphs(
             profiles, llm, embedding

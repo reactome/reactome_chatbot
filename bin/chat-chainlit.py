@@ -20,7 +20,8 @@ load_dotenv()
 config: Config | None = Config.from_yaml()
 
 profiles: list[ProfileName] = config.profiles if config else [ProfileName.React_to_Me]
-llm_graph = AgentGraph(profiles)
+models_config = config.models if config else None
+llm_graph = AgentGraph(profiles, models_config=models_config)
 
 POSTGRES_CHAINLIT_DB = os.getenv("POSTGRES_CHAINLIT_DB")
 POSTGRES_USER = os.getenv("POSTGRES_USER")

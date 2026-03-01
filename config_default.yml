@@ -1,5 +1,13 @@
 # yaml-language-server: $schema=./.config.schema.yaml
 
+models:
+  llm:
+    provider: openai
+    model: gpt-4o-mini
+  embedding:
+    provider: openai
+    model: text-embedding-3-large
+
 profiles:
   - React-to-Me
 

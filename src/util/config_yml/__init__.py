@@ -7,6 +7,7 @@ from pydantic import BaseModel, ValidationError
 from agent.profiles import ProfileName
 from util.config_yml.features import Feature, Features
 from util.config_yml.messages import Message, TriggerEvent
+from util.config_yml.models import EmbeddingConfig, LLMConfig, ModelsConfig
 from util.config_yml.usage_limits import MessageRate, UsageLimits
 from util.config_yml.user_matching import match_user
 from util.logging import logging
@@ -18,6 +19,7 @@ CONFIG_DEFAULT_YML = Path("config_default.yml")
 class Config(BaseModel):
     features: Features
     messages: dict[str, Message]
+    models: ModelsConfig = ModelsConfig()
     profiles: list[ProfileName]
     usage_limits: UsageLimits
 
