@@ -56,3 +56,11 @@ messages:
     trigger:
       event: on_message
       freq_max: 1m
+
+reranker:
+  enabled: true
+  top_n: 5
+  model: "ms-marco-MiniLM-L-12-v2"
+  cache_dir: "/tmp"
+  max_length: 512
+
