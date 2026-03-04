@@ -138,7 +138,8 @@ def upload_to_chromadb(
             "Annotation(s) interactor A",
             "Annotation(s) interactor B",
             "Interaction annotation(s)",
-            "Host organism(s)" "Interaction parameter(s)",
+            "Host organism(s)",
+            "Interaction parameter(s)",
             "Creation date",
             "Update date",
             "Checksum(s) interactor A",
@@ -177,11 +178,11 @@ def upload_to_chromadb(
             "Xref(s) interactor A",
             "Xref(s) interactor B",
             "Interaction Xref(s)",
-            "Annotation(s) interactor A"
-            "Annotation(s) interactor B"
-            "Interaction annotation(s)"
-            "Host organism(s)"
-            "Interaction parameter(s)"
+            "Annotation(s) interactor A",
+            "Annotation(s) interactor B",
+            "Interaction annotation(s)",
+            "Host organism(s)",
+            "Interaction parameter(s)",
             "Creation date",
             "Update date",
             "Checksum(s) interactor A",
