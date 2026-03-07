@@ -2,52 +2,75 @@
 
 The Reactome ChatBot is an interactive tool that provides information about biological entities and processes using Advanced RAG techniques. It leverages the Reactome database to retrieve relevant information based on user queries.
 
-
 ## Installation
 
 ### Prerequisites
 
 - **Minimum requirements:**
-    + Python 3.12
-    + [Poetry](https://python-poetry.org/docs/#installation) `1.8.*`
+  - Python 3.12
+  - [Poetry](https://python-poetry.org/docs/#installation) `1.8.*`
 - **Requirements for running the complete application:**
-    + [Docker](https://docs.docker.com/get-started/get-docker/)
-    + [Docker Compose](https://docs.docker.com/compose/install/)
+  - [Docker](https://docs.docker.com/get-started/get-docker/)
+  - [Docker Compose](https://docs.docker.com/compose/install/)
 
 ### Quick Start
 
 Follow these steps to run the barebones Chainlit application.
 
-1. Clone the repository:
+1.  Clone the repository:
     ```bash
     git clone https://github.com/reactome/reactome_chatbot.git
     ```
-2. Navigate to the project directory:
+2.  Navigate to the project directory:
+
     ```bash
     cd reactome_chatbot
+
     ```
-3. Install dependencies using Poetry:
+
+3.  Install dependencies using Poetry:
+
+    ```bash
+    sudo apt install python3-poetry
+    ```
+
     ```bash
     poetry install
     ```
-4. Verify your `PYTHONPATH` environment variable includes `./src`:
-    ```bash
+
+4.  Verify your `PYTHONPATH`
+    Ensure your environment includes the source directory:
+    `bash
     echo $PYTHONPATH
-    # ./src
-    ```
-5. List embeddings available for download:
+    `
+    Should include ./src
+
+        If ./src is missing, add it for your current session:
+        ```bash
+        export PYTHONPATH=$PYTHONPATH:./src
+        ```
+        If your system uses python3 but the scripts expect python, you may see an error.
+        ```bash
+        sudo ln -s /usr/bin/python3 /usr/bin/python
+        ```
+
+5.  List embeddings available for download:
     ```bash
-    ./bin/embeddings_manager ls-remote
+    PYTHONPATH=src poetry run python ./bin/embeddings_manager ls-remote
     ```
-6. Install your chosen embeddings:
+    Note: If you encounter "Access Denied" or cannot list them, try a specific release version in the next step (e.g., Release 91 or 89).
+6.  Install your chosen embeddings:
     ```bash
-    ./bin/embeddings_manager install openai/text-embedding-3-large/reactome/ReleaseXX
+    PYTHONPATH=src poetry ./bin/embeddings_manager install openai/text-embedding-3-large/reactome/ReleaseXX
     ```
-7. Run the Chainlit application:
+7.  Run the Chainlit application:
+
     ```
-    chainlit run bin/chat-chainlit.py -w
+
+    PYTHONPATH=src poetry run chainlit run bin/chat-chainlit.py -w
     ```
-8. Access the app at http://localhost:8000 🎉
+
+8.  Access the app at http://localhost:8000 🎉
 
 ### Docker Setup
 
@@ -56,41 +79,47 @@ The project uses Docker Compose to manage the PostgreSQL database. The configura
 Follow these steps to run the complete application in Docker.
 
 1. Create a copy of the `env_template` file and name it `.env`:
-    ```bash
-    cp env_template .env
-    ```
+   ```bash
+   cp env_template .env
+   ```
 2. Configure the application by editing environment variables in `.env`:
-    - `OPENAI_API_KEY`: add your OpenAI key.
-    - `CLOUDFLARE_SECRET_KEY`: keep blank to disable captcha.
-    - `CHAINLIT_IMAGE=reactome-chatbot`: set this to use your local docker build.
-    - Use the following variables to configure Auth0:
-        + This will enable Chainlit user-login and chat history.
-        ```
-        OAUTH_AUTH0_CLIENT_ID
-        OAUTH_AUTH0_CLIENT_SECRET
-        OAUTH_AUTH0_DOMAIN
-        ```
+   - `OPENAI_API_KEY`: add your OpenAI key.
+   - `CLOUDFLARE_SECRET_KEY`: keep blank to disable captcha.
+   - `CHAINLIT_IMAGE=reactome-chatbot`: set this to use your local docker build.
+   - Use the following variables to configure Auth0:
+     - This will enable Chainlit user-login and chat history.
+     ```
+     OAUTH_AUTH0_CLIENT_ID
+     OAUTH_AUTH0_CLIENT_SECRET
+     OAUTH_AUTH0_DOMAIN
+     ```
 3. List embeddings available for download:
-    ```bash
-    docker compose run --rm chainlit /bin/bash -c "./bin/embeddings_manager ls-remote"
-    ```
+   ```bash
+   docker compose run --rm chainlit /bin/bash -c "./bin/embeddings_manager ls-remote"
+   ```
 4. Install your chosen embeddings:
-    ```bash
-    docker compose run --rm chainlit /bin/bash -c "./bin/embeddings_manager install openai/text-embedding-3-large/reactome/ReleaseXX"
-    ```
+   ```bash
+   docker compose run --rm chainlit /bin/bash -c "./bin/embeddings_manager install openai/text-embedding-3-large/reactome/ReleaseXX"
+   ```
 5. Build the Docker image (do this every time you make local changes):
-    ```bash
-    docker build -t reactome-chatbot .
-    ```
+   ```bash
+   docker build -t reactome-chatbot .
+   ```
 6. Start the Chainlit application and PostgrSQL database in Docker containers:
-    ```bash
-    docker-compose up
 
-    # To run it in the background, use:
-    # docker-compose up -d
-    ```
+   ```bash
+
+   cp config_default.yml config.yml
+   ```
+
+   ```bash
+   docker-compose up
+
+   # To run it in the background, use:
+   # docker-compose up -d
+   ```
+
 7. Access the app at http://localhost:8000 🎉
-
 
 ## Embeddings & Documents Bundles
 
@@ -101,15 +130,16 @@ In the case of Reactome, embeddings bundles are generated once per release from 
 ### Embeddings Manager Script
 
 All aspects of generating, managing, uploading, and retrieving embeddings bundles are handled by the `./bin/embeddings_manager` script.
+
 - Basic usage is covered in the **_Quick Start_** guide above.
 - See the [Embeddings Manager documentation](docs/embeddings_manager.md) for more information.
-
 
 ## Developers
 
 ### Code Quality
 
 To do main consistency checks
+
 ```bash
 poetry run ruff check .
 ```
@@ -122,13 +152,12 @@ poetry run black .
 
 To make sure imports are organized
 
-
 ```bash
 poetry run isort .
 ```
 
-
 ### Contributing
+
 Contributions to the Reactome ChatBot project are welcome! If you encounter any issues or have suggestions for improvements, feel free to open an issue or submit a pull request.
 
 Please make sure to follow our contributing guidelines and code of conduct.
