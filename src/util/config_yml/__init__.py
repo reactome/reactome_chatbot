@@ -37,8 +37,10 @@ class Config(BaseModel):
         user_id: str | None = None,
         event: TriggerEvent | None = None,
         after_messages: int | None = None,
-        last_messages: dict[str, str] = {},
+        last_messages: dict[str, str] | None = None,
     ) -> dict[str, str]:
+        if last_messages is None:
+            last_messages = {}
         return {
             message_id: message.message
             for message_id, message in self.messages.items()
@@ -54,8 +56,10 @@ class Config(BaseModel):
     def get_message_rate_usage_limited(
         self,
         user_id: str | None = None,
-        message_times_queue: list[str] = [],
+        message_times_queue: list[str] | None = None,
     ) -> MessageRate | None:
+        if message_times_queue is None:
+            message_times_queue = []
         message_rate: MessageRate
         for message_rate in self.usage_limits.message_rates:
             if match_user(message_rate.users, user_id):
