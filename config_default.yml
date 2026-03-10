@@ -3,6 +3,11 @@
 profiles:
   - React-to-Me
 
+retriever:
+  context_truncation:
+    max_docs: 15
+    max_tokens: 12000
+
 features:
   postprocessing:  # external web search feature
     enabled: true

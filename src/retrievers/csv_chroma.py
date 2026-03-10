@@ -17,6 +17,7 @@ from langchain_core.prompts.prompt import PromptTemplate
 from nltk.tokenize import word_tokenize
 from pydantic import AfterValidator, Field
 from pydantic.json_schema import SkipJsonSchema
+from util.context_truncator import truncate_to_token_limit
 
 chroma_settings = chromadb.config.Settings(anonymized_telemetry=False)
 
@@ -179,7 +180,7 @@ class HybridRetriever(MultiQueryRetriever):
                 )
                 doc_lists.append(bm25_docs + vector_docs)
             subdirectory_docs.extend(self.weighted_reciprocal_rank(doc_lists))
-        return subdirectory_docs
+        return truncate_to_token_limit(subdirectory_docs)
 
     async def aretrieve_documents(
         self, queries: list[str], run_manager
@@ -219,4 +220,4 @@ class HybridRetriever(MultiQueryRetriever):
                 for bm25_results, vector_results in zip(results_iter, results_iter)
             ]
             subdirectory_docs.extend(self.weighted_reciprocal_rank(doc_lists))
-        return subdirectory_docs
+        return truncate_to_token_limit(subdirectory_docs)
