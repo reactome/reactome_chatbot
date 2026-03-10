@@ -14,8 +14,11 @@ from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
 from agent.models import get_embedding, get_llm
-from agent.profiles import ProfileName, create_profile_graphs
+from agent.profiles import ProfileName
 from agent.profiles.base import InputState, OutputState
+from agent.profiles.cross_database import create_cross_database_graph
+from agent.profiles.react_to_me import create_reactome_graph
+from mcp.mcp_tools import create_mcp_tools
 from util.logging import logging
 
 LANGGRAPH_DB_URI = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_LANGGRAPH_DB')}?sslmode=disable"
@@ -33,9 +36,9 @@ class AgentGraph:
         llm: BaseChatModel = get_llm("openai", "gpt-4o-mini")
         embedding: Embeddings = get_embedding("openai", "text-embedding-3-large")
 
-        self.uncompiled_graph: dict[str, StateGraph] = create_profile_graphs(
-            profiles, llm, embedding
-        )
+        self.llm = llm
+        self.embedding = embedding
+        self.profiles = profiles
 
         # The following are set asynchronously by calling initialize()
         self.graph: dict[str, CompiledStateGraph] | None = None
@@ -46,10 +49,27 @@ class AgentGraph:
             asyncio.run(self.close_pool())
 
     async def initialize(self) -> dict[str, CompiledStateGraph]:
+
+        mcp_tools, self.mcp_manager = await create_mcp_tools(
+            os.getenv("MCP_SERVER_PATH")
+        )
+
+        uncompiled_graphs: dict[str, StateGraph] = {}
+        for profile in map(str.lower, self.profiles):
+            if profile == ProfileName.React_to_Me.lower():
+                uncompiled_graphs[profile] = create_reactome_graph(
+                    self.llm, self.embedding, mcp_tools
+                )
+            elif profile == ProfileName.Cross_Database_Prototype.lower():
+                uncompiled_graphs[profile] = create_cross_database_graph(
+                    self.llm, self.embedding
+                )
+
         checkpointer: BaseCheckpointSaver[str] = await self.create_checkpointer()
+
         return {
             profile: graph.compile(checkpointer=checkpointer)
-            for profile, graph in self.uncompiled_graph.items()
+            for profile, graph in uncompiled_graphs.items()
         }
 
     async def create_checkpointer(self) -> BaseCheckpointSaver[str]:
@@ -73,6 +93,8 @@ class AgentGraph:
     async def close_pool(self) -> None:
         if self.pool:
             await self.pool.close()
+        if self.mcp_manager:
+            await self.mcp_manager.stop()
 
     async def ainvoke(
         self,
