@@ -73,9 +73,27 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
     async def call_model(
         self, state: ReactToMeState, config: RunnableConfig
     ) -> ReactToMeState:
+        # Build the query, injecting a language instruction for non-English users.
+        # Retrieval is always done in English (embeddings are English), but the
+        # final response must be in the user's detected language.
+        query = state["rephrased_input"]
+        detected_language = state.get("detected_language", "English")
+
+        if detected_language.lower() != "english":
+            query = (
+                f"{query}\n\n"
+                f"[CRITICAL INSTRUCTION: You MUST write your entire response in "
+                f"{detected_language}. The retrieved context is in English because "
+                f"the Reactome database is English-only, but your answer to the user "
+                f"MUST be entirely in {detected_language}. "
+                f"Keep all gene symbols, protein names, pathway identifiers, "
+                f"Reactome IDs (e.g. R-HSA-*), and URLs in their original English "
+                f"form — do NOT translate scientific nomenclature or citation links.]"
+            )
+
         result: dict[str, Any] = await self.reactome_rag.ainvoke(
             {
-                "input": state["rephrased_input"],
+                "input": query,
                 "chat_history": (
                     state["chat_history"]
                     if state["chat_history"]
