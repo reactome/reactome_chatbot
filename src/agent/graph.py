@@ -43,7 +43,15 @@ class AgentGraph:
 
     def __del__(self) -> None:
         if self.pool:
-            asyncio.run(self.close_pool())
+            try:
+                loop = asyncio.get_running_loop()
+                if loop.is_running():
+                    loop.create_task(self.close_pool())
+                else:
+                    asyncio.run(self.close_pool())
+            except RuntimeError:
+                # No event loop is running
+                asyncio.run(self.close_pool())
 
     async def initialize(self) -> dict[str, CompiledStateGraph]:
         checkpointer: BaseCheckpointSaver[str] = await self.create_checkpointer()
