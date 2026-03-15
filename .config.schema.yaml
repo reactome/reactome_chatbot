@@ -78,4 +78,10 @@ properties:
               pattern: "^[0-9]+[smhdw]$"
           required: ["users", "max_messages", "interval"]
     required: ["message_rates"]
+  llm:
+    type: string
+    pattern: "^[a-z0-9_-]+/.+$"
+  embedding:
+    type: string
+    pattern: "^[a-z0-9_-]+/.+$"
 required: ["features", "messages", "profiles", "usage_limits"]

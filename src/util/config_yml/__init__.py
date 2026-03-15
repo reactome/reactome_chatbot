@@ -20,6 +20,8 @@ class Config(BaseModel):
     messages: dict[str, Message]
     profiles: list[ProfileName]
     usage_limits: UsageLimits
+    llm: str = "openai/gpt-4o-mini"
+    embedding: str = "openai/text-embedding-3-large"
 
     def get_feature(
         self,

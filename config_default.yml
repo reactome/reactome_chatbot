@@ -3,6 +3,9 @@
 profiles:
   - React-to-Me
 
+llm: openai/gpt-4o-mini
+embedding: openai/text-embedding-3-large
+
 features:
   postprocessing:  # external web search feature
     enabled: true

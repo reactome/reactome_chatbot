@@ -28,10 +28,12 @@ class AgentGraph:
     def __init__(
         self,
         profiles: list[ProfileName],
+        llm_config: str = "openai/gpt-4o-mini",
+        embedding_config: str = "openai/text-embedding-3-large",
     ) -> None:
         # Get base models
-        llm: BaseChatModel = get_llm("openai", "gpt-4o-mini")
-        embedding: Embeddings = get_embedding("openai", "text-embedding-3-large")
+        llm: BaseChatModel = get_llm(llm_config)
+        embedding: Embeddings = get_embedding(embedding_config)
 
         self.uncompiled_graph: dict[str, StateGraph] = create_profile_graphs(
             profiles, llm, embedding
