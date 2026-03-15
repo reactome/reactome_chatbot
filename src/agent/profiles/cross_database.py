@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Annotated, Any, Literal, TypedDict
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -15,8 +15,11 @@ from agent.tasks.cross_database.rewrite_uniprot_with_reactome import \
     create_uniprot_rewriter_w_reactome
 from agent.tasks.cross_database.summarize_reactome_uniprot import \
     create_reactome_uniprot_summarizer
+from agent.tasks.flow_reasoner import create_flow_reasoner
 from retrievers.reactome.rag import create_reactome_rag
 from retrievers.uniprot.rag import create_uniprot_rag
+from tools.reactome_topology import ReactomeTopologyTool
+import re
 
 
 class CrossDatabaseState(BaseState):
@@ -27,6 +30,8 @@ class CrossDatabaseState(BaseState):
     uniprot_query: str  # LLM-generated query for UniProt
     uniprot_answer: str  # LLM-generated answer from UniProt
     uniprot_completeness: str  # LLM-assessed completeness of the UniProt answer
+
+    flow_context: str  # Topological flow data fetched by identify_flow() for mechanistic queries
 
 
 class CrossDatabaseGraphBuilder(BaseGraphBuilder):
@@ -47,6 +52,8 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
         self.summarize_final_answer = create_reactome_uniprot_summarizer(
             llm, streaming=True
         )
+        self.flow_reasoner = create_flow_reasoner(llm)
+        self.topology_tool = ReactomeTopologyTool()
 
         # Create graph
         state_graph = StateGraph(CrossDatabaseState)
@@ -62,6 +69,8 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
         state_graph.add_node("rewrite_uniprot_answer", self.rewrite_uniprot_answer)
         state_graph.add_node("assess_completeness", self.assess_completeness)
         state_graph.add_node("decide_next_steps", self.decide_next_steps)
+        state_graph.add_node("identify_flow", self.identify_flow)
+        state_graph.add_node("verify_mechanism", self.verify_mechanism)
         state_graph.add_node("generate_final_response", self.generate_final_response)
         state_graph.add_node("postprocess", self.postprocess)
         # Set up edges
@@ -84,8 +93,11 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
                 "perform_web_search": "generate_final_response",
                 "rewrite_reactome_query": "rewrite_reactome_query",
                 "rewrite_uniprot_query": "rewrite_uniprot_query",
+                "identify_flow": "identify_flow",
             },
         )
+        state_graph.add_edge("identify_flow", "verify_mechanism")
+        state_graph.add_edge("verify_mechanism", "generate_final_response")
         state_graph.add_edge("rewrite_reactome_query", "rewrite_reactome_answer")
         state_graph.add_edge("rewrite_uniprot_query", "rewrite_uniprot_answer")
         state_graph.add_edge("rewrite_reactome_answer", "generate_final_response")
@@ -203,14 +215,23 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
             uniprot_completeness=uniprot_completeness.binary_score,
         )
 
-    async def decide_next_steps(self, state: CrossDatabaseState) -> Literal[
-        "generate_final_response",
-        "perform_web_search",
-        "rewrite_reactome_query",
-        "rewrite_uniprot_query",
-    ]:
+    async def decide_next_steps(self, state: CrossDatabaseState) -> Literal["identify_flow", "generate_final_response", "perform_web_search", "rewrite_reactome_query", "rewrite_uniprot_query"]:
+        """Decide the next step based on the research results and context."""
+        user_query = state.get("rephrased_input", "").lower()
+        reactome_answer = state.get("reactome_answer", "")
+        uniprot_answer = state.get("uniprot_answer", "")
+        
+        # Tightened keyword matching for mechanistic flow detection
+        flow_pattern = r"\b(after|consequence|downstream|flow|precede|trigger|following|upstream|mechanism)\b"
+        is_mechanistic = bool(re.search(flow_pattern, user_query))
+        
+        if is_mechanistic and reactome_answer and "error" not in reactome_answer.lower():
+            return "identify_flow"
+
         reactome_complete = state["reactome_completeness"] != "No"
         uniprot_complete = state["uniprot_completeness"] != "No"
+
+
         if reactome_complete and uniprot_complete:
             return "generate_final_response"
         elif not reactome_complete and uniprot_complete:
@@ -219,6 +240,35 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
             return "rewrite_uniprot_query"
         else:
             return "perform_web_search"
+
+    async def identify_flow(self, state: CrossDatabaseState, config: RunnableConfig) -> dict[str, Any]:
+        # Extract Reactome Stable IDs (e.g., R-HSA-123456) from the reactome_answer
+        id_pattern = re.compile(r"R-[A-Z]{3}-\d+")
+        reactome_ans = state.get("reactome_answer", "")
+        st_ids = list(set(id_pattern.findall(reactome_ans)))
+        
+        flow_context: str = ""
+        for st_id in st_ids[:5]: # Limit to top 5 IDs for token safety
+            context = self.topology_tool.get_flow_context(st_id)
+            if context:
+                flow_context += f"\n---\n{context}"
+        
+        return {"flow_context": flow_context}
+
+    async def verify_mechanism(self, state: CrossDatabaseState, config: RunnableConfig) -> dict[str, Any]:
+        flow_ctx = state.get("flow_context")
+        if not flow_ctx:
+            return {}
+
+        verified_answer: str = await self.flow_reasoner.ainvoke(
+            {
+                "input": state["rephrased_input"],
+                "initial_answer": state["reactome_answer"],
+                "flow_context": flow_ctx,
+            },
+            config
+        )
+        return {"reactome_answer": verified_answer}
 
     async def generate_final_response(
         self, state: CrossDatabaseState, config: RunnableConfig
