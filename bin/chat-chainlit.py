@@ -20,7 +20,9 @@ load_dotenv()
 config: Config | None = Config.from_yaml()
 
 profiles: list[ProfileName] = config.profiles if config else [ProfileName.React_to_Me]
-llm_graph = AgentGraph(profiles)
+llm_config: str = config.llm if config else "openai/gpt-4o-mini"
+embedding_config: str = config.embedding if config else "openai/text-embedding-3-large"
+llm_graph = AgentGraph(profiles, llm_config=llm_config, embedding_config=embedding_config)
 
 POSTGRES_CHAINLIT_DB = os.getenv("POSTGRES_CHAINLIT_DB")
 POSTGRES_USER = os.getenv("POSTGRES_USER")
@@ -79,6 +81,12 @@ async def start() -> None:
 @cl.on_chat_resume
 async def resume(thread: ThreadDict) -> None:
     await static_messages(config, TriggerEvent.on_chat_resume)
+
+
+@cl.on_app_shutdown
+async def on_shutdown() -> None:
+    """Explicitly close the connection pool on application shutdown."""
+    await llm_graph.shutdown()
 
 
 @cl.on_chat_end
