@@ -5,8 +5,15 @@ from mcp.mcp_client import MCPClient
 
 async def create_mcp_tools(mcp_server_path: str | None):
     """
-    Start the MCP server and return LangChain tool wrappers + manager.
-    Returns ([], None) if no server path provided.
+    Start the MCP server and return LangChain tool wrappers and the process manager.
+
+    Args:
+        mcp_server_path: Path to compiled MCP server (reactome-mcp/dist/index.js).
+                         Pass None to disable MCP tools entirely.
+
+    Returns:
+        Tuple of (list of LangChain tools, MCPProcessManager).
+        Returns ([], None) if no server path provided.
     """
     if not mcp_server_path:
         return [], None

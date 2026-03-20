@@ -8,7 +8,19 @@ class MCPConnectionError(Exception):
 
 
 class MCPProcessManager:
-    """Manages lifecycle of the Reactome MCP server process."""
+    """
+    Manages the lifecycle of the Reactome MCP server subprocess.
+
+    Spawns a Node.js process communicating over stdio via JSON-RPC.
+    Supports async context manager for automatic cleanup.
+
+    Args:
+        mcp_server_path: Path to compiled server entry point (reactome-mcp/dist/index.js).
+                         Run 'npm run build' in reactome-mcp repo first.
+
+    Raises:
+        FileNotFoundError: If the server path does not exist.
+    """
 
     def __init__(self, mcp_server_path: str):
         self.mcp_server_path = Path(mcp_server_path)
@@ -20,7 +32,15 @@ class MCPProcessManager:
         self.process = None
 
     async def start(self) -> asyncio.subprocess.Process:
-        """Start the MCP server process."""
+        """
+        Spawn the MCP server and verify it started successfully.
+
+        Returns:
+            The running asyncio subprocess instance.
+
+        Raises:
+            MCPConnectionError: If the process exits immediately after launch.
+        """
         self.process = await asyncio.create_subprocess_exec(
             "node",
             str(self.mcp_server_path),
@@ -42,7 +62,12 @@ class MCPProcessManager:
         return self.process
 
     async def stop(self) -> None:
-        """Stop the MCP server — graceful terminate, falls back to kill."""
+        """
+        Shut down the server gracefully.
+
+        Tries terminate first, falls back to force kill after 5 seconds.
+        Safe to call if process was never started.
+        """
         if not self.process:
             return
 

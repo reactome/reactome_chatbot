@@ -41,9 +41,14 @@ Question: {question}""",
 
 def create_query_router(llm: BaseChatModel):
     """
-    Returns an async routing function that classifies a user question into
-    one of three routes: rag, mcp_search, or mcp_analysis.
-    Intended to be used with a lightweight model like gpt-4o-mini.
+    Build an async function that classifies a question into rag, mcp_search, or mcp_analysis.
+
+    Args:
+        llm: Chat model used for classification. A lightweight model like gpt-4o-mini is sufficient.
+
+    Returns:
+        Async function that takes a question string and returns a route string.
+        Falls back to 'rag' if the model returns unexpected output.
     """
     llm_chain = ROUTER_PROMPT | llm | StrOutputParser()
 

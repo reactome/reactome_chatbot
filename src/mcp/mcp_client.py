@@ -9,8 +9,11 @@ class MCPToolError(Exception):
 
 class MCPClient:
     """
-    Minimal JSON-RPC client for communicating with the Reactome MCP server
-    over stdin/stdout.
+    JSON-RPC client for communicating with the Reactome MCP server over stdin/stdout.
+
+    Args:
+        process: Running MCP server subprocess from MCPProcessManager.
+        timeout: Seconds to wait for a response before raising TimeoutError.
     """
 
     def __init__(self, process: asyncio.subprocess.Process, timeout: float = 30.0):
@@ -22,14 +25,10 @@ class MCPClient:
         """
         Send a JSON-RPC request and return the result.
 
-        Raises
-        ------
-        MCPToolError
-            If the server returns a JSON-RPC error response.
-        asyncio.TimeoutError
-            If the server does not respond within timeout seconds.
-        RuntimeError
-            If the server closes the connection unexpectedly.
+        Raises:
+            MCPToolError: If the server returns an error response.
+            asyncio.TimeoutError: If no response within timeout seconds.
+            RuntimeError: If the server closes the connection or returns invalid JSON.
         """
         if params is None:
             params = {}
@@ -72,14 +71,11 @@ class MCPClient:
 
     async def call_tool(self, tool_name: str, arguments: dict | None = None) -> str:
         """
-        Call a specific MCP tool and return the text result.
+        Call a specific MCP tool and return its text output.
 
-        Parameters
-        ----------
-        tool_name : str
-            Name of the tool (e.g. "reactome_search").
-        arguments : dict | None
-            Tool arguments.
+        Args:
+            tool_name: Name of the tool e.g. 'reactome_search'.
+            arguments: Tool arguments as key-value pairs.
         """
         if arguments is None:
             arguments = {}
