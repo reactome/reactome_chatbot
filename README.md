@@ -44,7 +44,7 @@ Follow these steps to run the complete application in Docker.
 4. Configure the application by editing environment variables in `.env`:
     - `OPENAI_API_KEY`: add your OpenAI key.
     - `CLOUDFLARE_SECRET_KEY`: keep blank to disable captcha.
-    - `CHAINLIT_IMAGE=reactome-chatbot`: set this to use your **local docker build**.
+    - `CHAINLIT_IMAGE=reactome-chatbot`: set this to use your local docker build.
     - Use the following variables to configure Auth0 (optional):
         + This will enable Chainlit user-login and chat history.
         ```
@@ -79,7 +79,7 @@ Clone and navigate to the project repository. Then in your `.env` file set the r
 ```
 CHAINLIT_IMAGE=public.ecr.aws/reactome/reactome-chatbot:2044791
 ```
-The part after `:` can be set to any commit ID from the 'main' branch.
+The part after `:` can be set to any commit ID from the `main` branch.
 
 Then run:
 ```bash
@@ -141,6 +141,10 @@ All aspects of generating, managing, uploading, and retrieving embeddings bundle
 
 - "Docker build is taking hours"
   - Use prebuilt docker image
+
+- "An error occurred (AccessDenied) 
+when calling the ListObjects operation: Access Denied when `./bin/embeddings_manager ls-remote` is called."
+  - Use `./bin/embeddings_manager install openai/text-embedding-3-large/reactome/ReleaseXX`, or directly install any embedding using available model in the format `<modelorg>/<model>` and a compatible released Reactome version.
 
 ## Developers
 
