@@ -6,11 +6,21 @@ The Reactome ChatBot is an interactive tool that provides information about biol
 ## Installation
 
 ### Supported Operating Systems
-- **Linux**
-- **MacOS**
-- **Windows** - Windows 10 version 2004 or higher, or Windows 11
-  - Windows users must use [WSl](https://learn.microsoft.com/en-us/windows/wsl/install) (Windows Subsystem for Linux).
-  - **WSL version 2.1.5 or later** is required. To check your version: `wsl --version`
+- 64-bit Unix Systems
+  - **Linux** (x64)
+  - **macOS** (Intel x64; Apple Silicon requires emulations)
+  
+- **Windows** (not supported natively)
+  - Windows 10 version 2004 or higher, or Windows 11
+  - Windows users must use [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) (Windows Subsystem for Linux).
+  - **WSL version 2.1.5 or later** is required. Check your version with:
+    ```bash
+    wsl --version
+    ```
+    If outdated, update with:
+    ```bash
+    wsl --update
+    ```
   - Recommended distribution: Ubuntu
 
 ### Prerequisites
@@ -21,7 +31,7 @@ The Reactome ChatBot is an interactive tool that provides information about biol
 - **Requirements for running the complete application:**
     + [Docker](https://docs.docker.com/get-started/get-docker/)
     + [Docker Compose](https://docs.docker.com/compose/install/)
-    + Windows users should install [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/) with WSL 2 backend enabled (Settings → Resources → WSL integration)
+    + [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/) for Windows users with WSL2 backend enabled (Settings → Resources → WSL integration)
 
 ### Option A: Docker Setup (recommended)
 
@@ -45,7 +55,7 @@ Follow these steps to run the complete application in Docker.
     - `OPENAI_API_KEY`: add your OpenAI key.
     - `CLOUDFLARE_SECRET_KEY`: keep blank to disable captcha.
     - `CHAINLIT_IMAGE=reactome-chatbot`: set this to use your local docker build.
-    - Use the following variables to configure Auth0 (optional):
+    - Use the following variables to configure Auth0:
         + This will enable Chainlit user-login and chat history.
         ```
         OAUTH_AUTH0_CLIENT_ID
@@ -56,20 +66,20 @@ Follow these steps to run the complete application in Docker.
     ```bash
     docker compose run --rm chainlit /bin/bash -c "./bin/embeddings_manager ls-remote"
     ```
-6. Install your chosen embeddings:
+6. Install your chosen embeddings (replace `ReleaseXX` with any valid release, e.g. Release89):
     ```bash
     docker compose run --rm chainlit /bin/bash -c "./bin/embeddings_manager install openai/text-embedding-3-large/reactome/ReleaseXX"
     ```
-7. Build the Docker image (do this every time you make **local changes**):
+7. Build the Docker image (do this every time you make local changes):
     ```bash
     docker build -t reactome-chatbot .
     ```
 8. Start the Chainlit application and PostgrSQL database in Docker containers:
     ```bash
-    docker-compose up
+    docker compose up
 
     # To run it in the background, use:
-    # docker-compose up -d
+    # docker compose up -d
     ```
 9. Access the app at http://localhost:8000 🎉
 
@@ -85,7 +95,7 @@ Then run:
 ```bash
 docker compose up
 
-# Nw you don't need to build the image locally
+# Now you don't need to build the image locally
 ```
 Access the app at http://localhost:8000 🎉
 
@@ -111,19 +121,24 @@ The steps to run the barebones Chainlit application.
     echo $PYTHONPATH
     # ./src
     ```
-5. List embeddings available for download:
+    Set `PYTHONPATH` to `src` if not already set:
+   ```bash
+   export PYTHONPATH=./src
+   ```
+   and then verify using `echo`
+6. List embeddings available for download:
     ```bash
     ./bin/embeddings_manager ls-remote
     ```
-6. Install your chosen embeddings:
+7. Install your chosen embeddings:
     ```bash
     ./bin/embeddings_manager install openai/text-embedding-3-large/reactome/ReleaseXX
     ```
-7. Run the Chainlit application:
+8. Run the Chainlit application:
     ```
     chainlit run bin/chat-chainlit.py -w
     ```
-8. Access the app at http://localhost:8000 🎉
+9. Access the app at http://localhost:8000 🎉
 
 ## Embeddings & Documents Bundles
 
@@ -137,14 +152,29 @@ All aspects of generating, managing, uploading, and retrieving embeddings bundle
 - Basic usage is covered in the **_Quick Start_** guide above.
 - See the [Embeddings Manager documentation](docs/embeddings_manager.md) for more information.
 
+
 ## Troubleshooting
 
-- "Docker build is taking hours"
-  - Use prebuilt docker image
+>**ISSUE: "The Docker build is taking an unusually long time"**
+  - Use prebuilt docker image.
 
-- "An error occurred (AccessDenied) 
-when calling the ListObjects operation: Access Denied when `./bin/embeddings_manager ls-remote` is called."
-  - Use `./bin/embeddings_manager install openai/text-embedding-3-large/reactome/ReleaseXX`, or directly install any embedding using available model in the format `<modelorg>/<model>` and a compatible released Reactome version.
+ 
+>**ISSUE: "Docker image: Build vs Prebuilt"**
+  - Building the Docker image locally can take a significant amount of time - potentially hours, especially on Windows. If you are not making any changes to the codebase, i.e. modyfying any code, you can use the publicly available prebuilt image.
+
+    
+>**ISSUE: "Why do I get `{"detail":"Not Found"}` when I try to access the Chatbot at http://localhost:8000?"**
+   - Use http://localhost:8000/chat
+     
+    
+>**ISSUE: " `An error occurred (AccessDenied) when calling the ListObjects operation: Access Denied` when `./bin/embeddings_manager ls-remote` is called."**
+  - If you don't have an AWS authentication use `install` command to fetch embeddings instead
+    ```bash
+    ./bin/embeddings_manager install openai/text-embedding-3-large/reactome/ReleaseXX
+    ```
+    Or install an embedding directly in the format `<modelorg>/<model>` specifying a model and a compatible released Reactome version.
+    > Example: openai/text-embedding-3-large/reactome/Release89
+
 
 ## Developers
 
