@@ -100,7 +100,7 @@ docker compose up
 Access the app at http://localhost:8000 🎉
 
 ### Option B: Quick Start
->**NOTE:** The `main` branch no longer supports the barebones method of running the application. The steps below are for reference. For running the current application, use **Option A** with docker setup instead.
+>**WARNING:** The `main` branch no longer supports the barebones method of running the application. The steps below are for reference. For running the current application, use **Option A** with docker setup instead.
 
 The steps to run the barebones Chainlit application.
 
