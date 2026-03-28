@@ -15,7 +15,7 @@ from util.embedding_environment import EmbeddingEnvironment
 def create_uniprot_rag(
     llm: BaseChatModel,
     embedding: Embeddings,
-    embeddings_directory: Path = EmbeddingEnvironment.get_dir("uniprot"),
+    embeddings_directory: Path = EmbeddingEnvironment.get_dir_or_raise("uniprot"),
     *,
     streaming: bool = False,
 ) -> Runnable:

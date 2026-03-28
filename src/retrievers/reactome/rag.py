@@ -15,7 +15,7 @@ from util.embedding_environment import EmbeddingEnvironment
 def create_reactome_rag(
     llm: BaseChatModel,
     embedding: Embeddings,
-    embeddings_directory: Path = EmbeddingEnvironment.get_dir("reactome"),
+    embeddings_directory: Path = EmbeddingEnvironment.get_dir_or_raise("reactome"),
     *,
     streaming: bool = False,
 ) -> Runnable:

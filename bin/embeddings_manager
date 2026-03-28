@@ -2,6 +2,7 @@
 
 import os
 import re
+import sys
 from argparse import ArgumentParser
 from pathlib import Path, PurePosixPath
 from shutil import rmtree
@@ -9,6 +10,7 @@ from typing import NamedTuple, Self
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import boto3
+import botocore.exceptions
 from botocore import UNSIGNED
 from botocore.client import Config
 
@@ -47,6 +49,42 @@ class EmbeddingSelection(NamedTuple):
         return cls(*match.groups())
 
 
+
+def _handle_s3_error(error: botocore.exceptions.ClientError, action: str) -> None:
+    """Print a human-readable S3 error message and exit."""
+    code = error.response["Error"]["Code"]
+    message = error.response["Error"].get("Message", "")
+    if code in ("403", "AccessDenied"):
+        print(
+            f"\nERROR: S3 access denied while trying to {action}.\n"
+            f"  Bucket : {S3_BUCKET}\n"
+            f"  Code   : {code} - {message}\n\n"
+            f"Possible causes:\n"
+            f"  - The S3 bucket is temporarily restricted.\n"
+            f"  - The requested embedding does not exist on S3.\n\n"
+            f"What to do:\n"
+            f"  1. Check open issues at https://github.com/reactome/reactome_chatbot/issues\n"
+            f"  2. Contact maintainers if the bucket should be publicly accessible.\n",
+            file=sys.stderr,
+        )
+    elif code == "NoSuchKey":
+        print(
+            f"\nERROR: Embedding not found on S3 while trying to {action}.\n"
+            f"  The requested path does not exist in the bucket.\n\n"
+            f"Run this to see available embeddings:\n"
+            f"  bin/embeddings_manager ls-remote\n",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            f"\nERROR: S3 error while trying to {action}.\n"
+            f"  Code    : {code}\n"
+            f"  Message : {message}\n",
+            file=sys.stderr,
+        )
+    sys.exit(1)
+
+
 def pull(embedding: EmbeddingSelection):
     embedding_path:Path = embedding.path(check_exists=False)
     zip_tmpfile:Path = EM_ARCHIVE / "tmp.zip"
@@ -59,6 +97,8 @@ def pull(embedding: EmbeddingSelection):
         print("Decompressing...")
         with ZipFile(zip_tmpfile, "r") as zipf:
             zipf.extractall(embedding_path)
+    except botocore.exceptions.ClientError as e:
+        _handle_s3_error(e, action=f"download '{embedding}'")
     finally:
         zip_tmpfile.unlink(missing_ok=True)
     print(f"Saved to {embedding_path}")
@@ -130,10 +170,13 @@ def ls():
 def ls_remote():
     s3 = boto3.resource("s3", config=Config(signature_version=UNSIGNED))
     s3_bucket = s3.Bucket(S3_BUCKET)
-    for obj in s3_bucket.objects.filter(Prefix=str(S3_PREFIX)):
-        relative_path = PurePosixPath(obj.key).relative_to(S3_PREFIX)
-        if len(relative_path.parts) == 4:
-            print(relative_path)
+    try:
+        for obj in s3_bucket.objects.filter(Prefix=str(S3_PREFIX)):
+            relative_path = PurePosixPath(obj.key).relative_to(S3_PREFIX)
+            if len(relative_path.parts) == 4:
+                print(relative_path)
+    except botocore.exceptions.ClientError as e:
+        _handle_s3_error(e, action="list remote embeddings")
 
 
 def which():
@@ -144,7 +187,6 @@ def which():
 if __name__ == "__main__":
     parser = ArgumentParser()
 
-    # Parent parser for selecting embeddings
     selection_parser = ArgumentParser(add_help=False)
     selection_parser.add_argument(
         "embedding",
@@ -152,7 +194,6 @@ if __name__ == "__main__":
         help="Embedding selection: <modelorg>/<model>/<database>/<version>"
     )
 
-    # Subcommands
     subparsers = parser.add_subparsers(required=True)
     pull_parser = subparsers.add_parser(
         "pull",
@@ -206,7 +247,6 @@ if __name__ == "__main__":
     )
     which_parser.set_defaults(func=which)
 
-    # Command-specific arguments
     make_parser.add_argument(
         "--openai-key",
         help="API key for OpenAI"
