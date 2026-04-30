@@ -44,13 +44,13 @@ def upload_to_chromadb(
         print("Using OpenAI embeddings")
         embeddings_instance = OpenAIEmbeddings(
             model="text-embedding-3-large",
-            chunk_size=800,
+            chunk_size=500,
             show_progress_bar=True,
         )
     elif hf_model.startswith("openai/text-embedding-"):
         embeddings_instance = OpenAIEmbeddings(
             model=hf_model[len("openai/") :],
-            chunk_size=800,
+            chunk_size=500,
             show_progress_bar=True,
         )
     elif "HUGGINGFACEHUB_API_TOKEN" in os.environ:
