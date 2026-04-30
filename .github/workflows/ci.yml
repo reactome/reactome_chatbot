@@ -97,12 +97,6 @@ jobs:
                 tags: ${{ steps.meta.outputs.tags }}
                 labels: ${{ steps.meta.outputs.labels }}
                 push: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'release' && github.event.action == 'published') }}
-                outputs: type=docker,dest=/tmp/image.tar
                 provenance: mode=max
                 cache-from: type=gha
                 cache-to: type=gha,mode=max
-
-            - uses: actions/upload-artifact@v4
-              with:
-                name: image-artifact
-                path: /tmp/image.tar
