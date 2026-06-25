@@ -15,6 +15,7 @@ from botocore.client import Config
 from data_generation.alliance import generate_alliance_embeddings
 from data_generation.reactome import generate_reactome_embeddings
 from data_generation.uniprot import generate_uniprot_embeddings
+from data_generation.userguide import generate_userguide_embeddings
 from util.embedding_environment import EM_ARCHIVE, EmbeddingEnvironment
 
 S3_BUCKET = "download.reactome.org"
@@ -48,6 +49,7 @@ class EmbeddingSelection(NamedTuple):
 
 
 def pull(embedding: EmbeddingSelection):
+    EM_ARCHIVE.mkdir(parents=True, exist_ok=True)
     embedding_path:Path = embedding.path(check_exists=False)
     zip_tmpfile:Path = EM_ARCHIVE / "tmp.zip"
     s3 = boto3.resource("s3", config=Config(signature_version=UNSIGNED))
@@ -91,6 +93,10 @@ def make(
         generate_uniprot_embeddings(embedding_path, hf_model=embedding.model, **kwargs)
     elif embedding.db == "alliance":
         generate_alliance_embeddings(str(embedding_path), hf_model=embedding.model, **kwargs)
+    elif embedding.db == "userguide":
+        generate_userguide_embeddings(
+            str(embedding_path), hf_model=embedding.model, **kwargs
+        )
     else:
         raise NotImplementedError(f"db: {embedding.db}")
     use(embedding)

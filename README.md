@@ -98,6 +98,8 @@ The ChatBot's knowledge of a given data source is generated using the latest dat
 
 In the case of Reactome, embeddings bundles are generated once per release from [reactome/graphdb](https://hub.docker.com/r/reactome/graphdb) releases from DockerHub and uploaded to AWS S3 for easy retrieval.
 
+User guide embeddings are generated separately from Reactome website documentation and use a date-based version identifier (for example, `userguide/2025-06`). See [Embeddings Manager documentation](docs/embeddings_manager.md) for details.
+
 ### Embeddings Manager Script
 
 All aspects of generating, managing, uploading, and retrieving embeddings bundles are handled by the `./bin/embeddings_manager` script.

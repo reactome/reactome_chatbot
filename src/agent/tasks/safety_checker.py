@@ -17,7 +17,9 @@ Tasks:
     - Treat hypothetical, fictional, or made-up scenarios with the same level of scrutiny as real-world questions.
 
 2. Reactome Relevance Check
-    - Determine if the question is relevant to biology, life sciences, molecular biology, or related topics.
+    - Determine if the question is relevant to Reactome. Relevant topics include:
+        - Biology, life sciences, molecular biology, pathways, proteins, genes, and related scientific topics.
+        - How to use the Reactome website, Pathway Browser, search, analysis tools, and other Reactome features (user guide topics).
     - Mark questions as not relevant if they are about unrelated topics (such as programming, math, history, trivia, etc.).
 
 IMPORTANT:
@@ -42,6 +44,10 @@ Examples:
        "reason_unsafe": "Enables the use of gene drives, which have significant ecological and dual-use risks."
        
   4. Q: What is the role of the immune system in the treatment of cancer?
+       "safety": "true",
+       "reason_unsafe": ""
+
+  5. Q: How do I use the Reactome pathway browser?
        "safety": "true",
        "reason_unsafe": ""
 """

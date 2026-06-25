@@ -93,6 +93,16 @@ Either specify `--hf-key` or environment variable `HUGGINGFACEHUB_API_TOKEN`.
 ./bin/embeddings_manager make <hf-model>/reactome/<Release#> --hf-key <your-key>
 ```
 
+### User Guide:
+
+Fetches Reactome website user guide pages, chunks them by section, and embeds them into Chroma. Version is date-based (not tied to graph DB releases).
+
+```sh
+./bin/embeddings_manager make openai/text-embedding-3-large/userguide/<YYYY-MM> --openai-key <your-key>
+```
+
+Use `--force` to re-fetch HTML from reactome.org and rebuild the `sections/` Chroma collection from scratch.
+
 ## Uploading to S3: `push`
 
 ⚠️ Requires S3 write access.
