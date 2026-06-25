@@ -40,13 +40,21 @@ class QueryIntent(BaseModel):
     )
 
 
+_FALLBACK_ORDER: tuple[SourceName, ...] = ("reactome", "userguide")
+
+
 def resolve_active_sources(
     source: SourceName,
     available_sources: frozenset[SourceName],
 ) -> list[SourceName]:
+    if not available_sources:
+        raise ValueError("available_sources must not be empty")
     if source in available_sources:
         return [source]
-    return ["reactome"]
+    for fallback in _FALLBACK_ORDER:
+        if fallback in available_sources:
+            return [fallback]
+    return [next(iter(available_sources))]
 
 
 def create_intent_classifier(llm: BaseChatModel) -> Runnable:

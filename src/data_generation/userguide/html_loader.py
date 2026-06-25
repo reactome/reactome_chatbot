@@ -87,7 +87,7 @@ def _should_collect_block(element: Tag, collected: list[Tag]) -> bool:
     if not element.get_text(strip=True):
         return False
     for other in collected:
-        if element in other.descendants or other in element.descendants:
+        if other in element.parents or element in other.parents:
             return False
     return True
 
