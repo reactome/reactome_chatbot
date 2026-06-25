@@ -48,9 +48,11 @@ def _heading_title(heading: Tag) -> str:
         return title
     image = heading.find("img", alt=True)
     if image is not None:
-        alt = image.get("alt", "").strip()
-        if alt:
-            return alt
+        alt_attr = image.get("alt")
+        if isinstance(alt_attr, str):
+            alt = alt_attr.strip()
+            if alt:
+                return alt
     return ""
 
 
