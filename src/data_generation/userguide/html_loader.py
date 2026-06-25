@@ -181,11 +181,7 @@ class UserGuideHTMLLoader(BaseLoader):
             if section_level == 0 and len(text) < MIN_CHUNK_CHARS:
                 continue
             if section_level > 0 and len(text) < MIN_CHUNK_CHARS:
-                text = (
-                    f"{section_title}\n\n{text}".strip()
-                    if text
-                    else section_title
-                )
+                text = f"{section_title}\n\n{text}".strip() if text else section_title
 
             page_content_prefix = (
                 f"URL: {url}\nPage: {page_title}\nSection: {section_title}\n\n"

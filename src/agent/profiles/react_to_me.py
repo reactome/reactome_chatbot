@@ -8,12 +8,9 @@ from langchain_core.runnables import Runnable, RunnableConfig
 from langgraph.graph.state import StateGraph
 
 from agent.profiles.base import BaseGraphBuilder, BaseState
-from agent.tasks.intent_classifier import (
-    QueryIntent,
-    SourceName,
-    create_intent_classifier,
-    resolve_active_sources,
-)
+from agent.tasks.intent_classifier import (QueryIntent, SourceName,
+                                           create_intent_classifier,
+                                           resolve_active_sources)
 from agent.tasks.safety_checker import SafetyCheck
 from agent.tasks.unsafe_question import create_unsafe_answer_generator
 from retrievers.reactome.rag import create_reactome_rag
@@ -70,7 +67,9 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
     ) -> None:
         userguide_dir = EmbeddingEnvironment.get_dir("userguide")
         if userguide_dir is None:
-            logger.info("User guide embeddings not configured; routing will use reactome only.")
+            logger.info(
+                "User guide embeddings not configured; routing will use reactome only."
+            )
             return
 
         chroma_path = userguide_dir / "sections" / "chroma.sqlite3"

@@ -85,7 +85,5 @@ def generate_userguide_embeddings(
     if not docs:
         raise RuntimeError("No user guide documents were produced")
 
-    db = upload_to_chromadb(
-        embeddings_dir, docs, CHROMA_COLLECTION, hf_model, device
-    )
+    db = upload_to_chromadb(embeddings_dir, docs, CHROMA_COLLECTION, hf_model, device)
     print(db._collection.count())
