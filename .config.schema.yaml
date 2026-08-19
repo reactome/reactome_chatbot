@@ -55,7 +55,7 @@ properties:
     type: array
     items:
       type: string
-      enum: ["React-to-Me", "Cross-Database Prototype"]
+      enum: ["React-to-Me", "Cross-Database Prototype", "Plant Reactome"]
   usage_limits:
     type: object
     properties:
