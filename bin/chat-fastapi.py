@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import os
 from string import Template
+from urllib.parse import urlsplit
 
 import requests
 from chainlit.utils import mount_chainlit
@@ -60,24 +61,31 @@ def verify_secure_cookie(cookie_value: str) -> bool:
 
 @app.middleware("http")
 async def verify_captcha_middleware(request: Request, call_next):
+    path = request.url.path
     if (
         CHAINLIT_URI
-        and not request.url.path.startswith(CHAINLIT_URI)
-        and request.url.path[-1] != "/"
+        and path != "/"
+        and (path == CHAINLIT_URI or path.startswith(f"{CHAINLIT_URI}/"))
+        and not path.endswith("/")
     ):
-        return RedirectResponse(url=f"{request.url.path}/")
+        # Safety: ensure the path is a clean, simple relative path with no
+        # scheme/host/dot-segments before echoing it back.
+        clean_path = urlsplit(path).path
+        if ".." not in clean_path:
+            return RedirectResponse(url=f"{clean_path}/")
+
     # Allow access to CAPTCHA pages and static files
     if (
-        request.url.path
+        path
         in [
             "/chat/",
             f"{CHAINLIT_URI}/verify_captcha",
             f"{CHAINLIT_URI}/verify_captcha_page",
             f"{CHAINLIT_URI}/static",
         ]
-        or request.url.path.startswith("/static")
+        or path.startswith("/static")
         or not os.getenv("CLOUDFLARE_SECRET_KEY")
-        or (CHAINLIT_URI and not request.url.path.startswith(CHAINLIT_URI))
+        or (CHAINLIT_URI and not path.startswith(CHAINLIT_URI))
     ):
         response = await call_next(request)
         return response
