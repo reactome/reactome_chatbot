@@ -64,8 +64,7 @@ async def verify_captcha_middleware(request: Request, call_next):
     path = request.url.path
     if (
         CHAINLIT_URI
-        and path != "/"
-        and (path == CHAINLIT_URI or path.startswith(f"{CHAINLIT_URI}/"))
+        and path == CHAINLIT_URI
         and not path.endswith("/")
     ):
         # Safety: ensure the path is a clean, simple relative path with no
