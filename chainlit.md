@@ -22,10 +22,10 @@ Feel free to explore any topic within Plant Reactome's database. Whether your qu
 ## Pathway Recommendations
 
 Explore pathways such as:
-- Cell Cycle
-- Glycolysis
-- Apoptosis
-- Signal Transduction
+- Circadian rhythm
+- Mitosis
+- Detoxification
+- Root gravitropism
 
 ## Additional Resources
 
@@ -41,4 +41,4 @@ _This chatbot uses large language model (LLM) technology to assist with question
 
 _The information you provide may be retained in accordance with Reactome’s AI provider’s retention policy, which is located [here](https://openai.com/enterprise-privacy/). Do not share sensitive, personal or confidential information._
 
-_The chatbot does not substitute for expert curation or peer-reviewed sources and is not a suitable resource for clinical decisions. Users are responsible for validating any output before using it for research, publication, or medical decisions. Any use of this chatbot is subject to Reactome’s [disclaimer](https://reactome.org/about/disclaimer)._
+_The chatbot does not substitute for expert curation or peer-reviewed sources and is not a suitable resource for clinical decisions. Users are responsible for validating any output before using it for research, publication, or medical decisions. Any use of this chatbot is subject to Plant Reactome’s [disclaimer](https://plantreactome.gramene.org/index.php?option=com_content&view=article&id=17&Itemid=254&lang=en)._
