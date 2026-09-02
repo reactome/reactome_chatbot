@@ -43,7 +43,10 @@ def test_guest_never_matches_identifier_patterns() -> None:
     assert match_user(["logged_in", "*@gmail.com"], GUEST) is False
 
 
-def test_empty_string_entry_raises() -> None:
-    """BUG: `entry[0]` indexes without a length check, so `users: [""]` crashes."""
-    with pytest.raises(IndexError):
-        match_user([""], LOGGED_IN)
+def test_empty_entry_is_skipped_not_a_crash() -> None:
+    """`entry[0]` used to index without a length check, so `users: [""]` raised."""
+    assert match_user([""], LOGGED_IN) is False
+    assert match_user([""], GUEST) is False
+    assert (
+        match_user(["", "all"], LOGGED_IN) is True
+    ), "a real entry after it still counts"

@@ -154,9 +154,3 @@ disable_error_code = ["typeddict-item"]
 module = ["retrievers.reactome.rag", "retrievers.uniprot.rag"]
 disable_error_code = ["assignment"]
 
-[[tool.mypy.overrides]]
-# TODO(phase-2): `self.df = None` in __init__ with the DataFrame assigned later in
-# load_data(); mypy narrows every later use to None. Fix by constructing the frame in
-# __init__ or making the None state explicit -- one root cause, ~21 reported errors.
-module = ["data_generation.uniprot.csv_generator"]
-disable_error_code = ["index", "attr-defined"]

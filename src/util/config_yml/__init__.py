@@ -67,16 +67,49 @@ class Config(BaseModel):
         return None  # not rate limited
 
     @classmethod
-    def from_yaml(cls, config_yml: Path = CONFIG_YML) -> Self | None:
-        if not config_yml.exists():
-            logging.warning(
-                f"Config file not found: {config_yml} ; falling back to {CONFIG_DEFAULT_YML}"
-            )
-            config_yml = CONFIG_DEFAULT_YML
+    def _load(cls, config_yml: Path) -> Self:
         with open(config_yml) as f:
-            yaml_data: dict = yaml.safe_load(f)
+            yaml_data = yaml.safe_load(f)
+        if not isinstance(yaml_data, dict):
+            raise ValueError(f"{config_yml} is empty or is not a YAML mapping")
+        return cls(**yaml_data)
+
+    @classmethod
+    def from_yaml(cls, config_yml: Path = CONFIG_YML) -> Self | None:
+        """Load config.yml, falling back to the shipped defaults.
+
+        A None return disables every config-driven feature *including rate
+        limiting*, so a broken config.yml must not land there if the defaults are
+        usable -- an unreadable file should not quietly remove the message quota.
+        Note config.yml is a bind mount in docker-compose: if the file is missing
+        on the host, Docker creates a directory in its place, which is why
+        IsADirectoryError is handled alongside a genuine absence.
+        """
+        if config_yml != CONFIG_DEFAULT_YML:
+            try:
+                return cls._load(config_yml)
+            except FileNotFoundError:
+                logging.warning(
+                    f"Config file not found: {config_yml} ; "
+                    f"falling back to {CONFIG_DEFAULT_YML}"
+                )
+            except (
+                ValidationError,
+                ValueError,
+                IsADirectoryError,
+                yaml.YAMLError,
+            ) as e:
+                logging.error(
+                    f"Invalid config {config_yml}; falling back to "
+                    f"{CONFIG_DEFAULT_YML}. Fix this -- the fallback is not what "
+                    f"you configured:\n{e}"
+                )
+
         try:
-            return cls(**yaml_data)
-        except ValidationError as e:
-            logging.warning(e)
+            return cls._load(CONFIG_DEFAULT_YML)
+        except Exception as e:
+            logging.error(
+                f"Default config {CONFIG_DEFAULT_YML} is unusable, so all "
+                f"config-driven features including rate limiting are OFF:\n{e}"
+            )
             return None

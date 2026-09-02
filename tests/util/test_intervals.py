@@ -25,13 +25,14 @@ def test_parses_each_supported_unit(text: str, expected: timedelta) -> None:
     "text",
     ["", "h", "3", "3x", "3 h", "-1h", "1.5h", "3H", "3hh", "1h30m"],
 )
-def test_malformed_intervals_degrade_to_zero(text: str) -> None:
-    """BUG: malformed intervals fail silently as a zero-length window.
+def test_malformed_intervals_raise(text: str) -> None:
+    """Malformed intervals must be loud.
 
-    `.config.schema.yaml` constrains `interval` to `^[0-9]+[smhdw]$`, but nothing
-    validates config.yml against that schema at runtime, so a typo here reaches
-    `MessageRate.check_rate` as timedelta(0) -- which drains the whole queue every
-    call and silently disables rate limiting. See
-    `test_zero_interval_silently_disables_rate_limiting`.
+    This used to return timedelta(0), which silently disabled rate limiting: a
+    zero-length window means every queued timestamp is already outside it, so the
+    queue drained on every call and nobody was ever limited. Config fields now
+    carry INTERVAL_PATTERN, so a bad value is rejected when config.yml loads and
+    never reaches here -- see test_usage_limits.py.
     """
-    assert parse_interval(text) == timedelta(0)
+    with pytest.raises(ValueError, match="malformed interval"):
+        parse_interval(text)

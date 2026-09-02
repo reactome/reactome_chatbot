@@ -6,6 +6,9 @@ so this is the code path that decides whether a real user gets an answer.
 
 from datetime import datetime, timedelta
 
+import pytest
+from pydantic import ValidationError
+
 from util.config_yml.usage_limits import MessageRate, UsageLimits
 
 
@@ -62,17 +65,27 @@ def test_eviction_stops_at_the_first_in_window_entry() -> None:
     assert len(queue) == 3, "the stale entry behind a fresh one is not evicted"
 
 
-def test_zero_interval_silently_disables_rate_limiting() -> None:
-    """BUG: a malformed `interval` in config.yml turns the limiter off completely.
+@pytest.mark.parametrize("bad", ["3hr", "3", "h", "", "1h30m", "-1h"])
+def test_malformed_interval_is_rejected_at_construction(bad: str) -> None:
+    """A typo in config.yml must fail loudly instead of disabling the limiter.
 
-    parse_interval() returns timedelta(0) for anything it cannot parse, so every
-    queued timestamp is 'older than the window' and the queue drains to empty on
-    every call -- the user is never rate limited. Nothing validates config.yml
-    against .config.schema.yaml at runtime, so a typo like `3hr` reaches here.
+    parse_interval() used to return timedelta(0) for anything unparseable, which
+    made the window zero-length: the queue drained on every call and no user was
+    ever limited. The field now carries the same pattern .config.schema.yaml
+    documents, so the config is rejected at load time instead.
     """
-    rate = _rate(max_messages=1, interval="3hr")  # not schema-valid; not rejected
-    for _ in range(10):
-        assert rate.check_rate([_ago(seconds=0)]) is None
+    with pytest.raises(ValidationError):
+        MessageRate(users=["all"], max_messages=1, interval=bad)
+
+
+def test_max_messages_must_be_positive() -> None:
+    """max_messages: 0 would block everyone; treat it as a config error."""
+    with pytest.raises(ValidationError):
+        MessageRate(users=["all"], max_messages=0, interval="1h")
+
+
+def test_production_interval_is_accepted() -> None:
+    assert _rate(max_messages=100, interval="3h").interval == "3h"
 
 
 def test_first_matching_rule_wins() -> None:

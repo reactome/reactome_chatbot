@@ -11,7 +11,9 @@ class UniProtDataCleaner:
         self.download_url = UniProtAPIConnector.get_download_url()
         self.xlsx_path = csv_dir / "uniprot_data.xlsx"
         self.csv_path = self.xlsx_path.with_suffix(".csv")
-        self.df = None
+        # Declared, not assigned: populated by load_data(). Using it before then
+        # raises AttributeError, which is louder than an empty DataFrame.
+        self.df: pd.DataFrame
         self.api = UniProtAPIConnector()
 
     def download_data(self):

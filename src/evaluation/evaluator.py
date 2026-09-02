@@ -1,5 +1,6 @@
 import argparse
 import os
+from pathlib import Path
 
 import pandas as pd
 from datasets import Dataset
@@ -24,6 +25,7 @@ from retrievers.reactome.metadata_info import (
     reactome_field_info,
 )
 from retrievers.reactome.prompt import reactome_qa_prompt
+from util.embedding_environment import EmbeddingEnvironment
 
 context_utilization = ContextUtilization()
 
@@ -38,6 +40,15 @@ def parse_arguments():
         type=str,
         required=True,
         help="Path to the directory containing testset Excel (.xlsx) files",
+    )
+    parser.add_argument(
+        "--embeddings-dir",
+        type=Path,
+        default=EmbeddingEnvironment.get_dir("reactome"),
+        help=(
+            "Reactome embeddings bundle to evaluate against. Defaults to the "
+            "installed one (see ./bin/embeddings_manager which)."
+        ),
     )
     parser.add_argument(
         "--model",
@@ -67,14 +78,19 @@ def load_dataset(testset_path):
         raise ValueError(f"Error reading the Excel file: {e}") from e
 
 
-def initialize_rag_chain_with_memory(embeddings_directory, model_name, rag_type):
-    """Initialize the RAGChainWithMemory system."""
+def initialize_rag_chain_with_memory(embeddings_dir: Path, model_name, rag_type):
+    """Initialize the RAGChainWithMemory system.
+
+    `embeddings_dir` is the bundle root, e.g.
+    embeddings/openai/text-embedding-3-large/reactome/Release95 . Both the BM25
+    source CSV and the Chroma collection are derived from it; they used to be
+    absolute paths into a developer's home directory, so this script could not
+    run anywhere else.
+    """
     llm = ChatOpenAI(temperature=0.0, verbose=True, model=model_name)
     retriever_list = []
 
-    loader = CSVLoader(
-        "/Users/hmohammadi/Desktop/react_to_me_github/reactome_chatbot/embeddings/openai/text-embedding-3-large/reactome/summation_csv/summations.csv"
-    )
+    loader = CSVLoader(str(embeddings_dir / "csv_files" / "summations.csv"))
     data = loader.load()
     bm25_retriever = BM25Retriever.from_documents(data)
     bm25_retriever.k = 7
@@ -82,7 +98,7 @@ def initialize_rag_chain_with_memory(embeddings_directory, model_name, rag_type)
     # Set up vectorstore SelfQuery retriever
     embedding = OpenAIEmbeddings(model="text-embedding-3-large")
     vectordb = Chroma(
-        persist_directory=embeddings_directory,
+        persist_directory=str(embeddings_dir / "summations"),
         embedding_function=embedding,
     )
 
@@ -116,7 +132,6 @@ def initialize_rag_chain_with_memory(embeddings_directory, model_name, rag_type)
 def process_testset(
     testset_path,
     qa_system,
-    embeddings_directory,
     response_dir,
     eval_dir,
     model_name,
@@ -183,10 +198,13 @@ def main():
     os.makedirs(eval_dir, exist_ok=True)
 
     # Initialize RAG Chain
-    embeddings_directory = "/Users/hmohammadi/Desktop/react_to_me_github/reactome_chatbot/embeddings/openai/text-embedding-3-large/reactome/Release90/summations"
-    qa_system = initialize_rag_chain_with_memory(
-        embeddings_directory, model_name, rag_type
-    )
+    embeddings_dir: Path | None = args.embeddings_dir
+    if embeddings_dir is None:
+        raise SystemExit(
+            "No reactome embeddings installed and --embeddings-dir not given. "
+            "Install one with ./bin/embeddings_manager install <embedding-id>."
+        )
+    qa_system = initialize_rag_chain_with_memory(embeddings_dir, model_name, rag_type)
 
     # Iterate over all .xlsx files in the directory
     for filename in os.listdir(args.testset_dir):
@@ -197,7 +215,6 @@ def main():
             process_testset(
                 testset_path,
                 qa_system,
-                embeddings_directory,
                 response_dir,
                 eval_dir,
                 model_name,

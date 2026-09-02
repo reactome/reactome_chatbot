@@ -1,15 +1,17 @@
 from datetime import datetime
 from typing import Self
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from util.config_yml.intervals import parse_interval
+from util.config_yml.intervals import INTERVAL_PATTERN, parse_interval
 
 
 class MessageRate(BaseModel):
     users: list[str]
-    max_messages: int
-    interval: str
+    max_messages: int = Field(gt=0)
+    # Validated here so a typo like '3hr' is rejected when config.yml loads,
+    # rather than reaching parse_interval and disabling the limiter.
+    interval: str = Field(pattern=INTERVAL_PATTERN)
 
     def check_rate(self, message_times_queue: list[str]) -> Self | None:
         now = datetime.now()
