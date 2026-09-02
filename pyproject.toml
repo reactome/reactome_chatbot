@@ -72,3 +72,91 @@ priority = "explicit"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+src = ["src", "bin"]
+extend-exclude = ["embeddings", "records", "data", ".venv"]
+
+[tool.ruff.lint]
+# E501 is the formatter's job; it cannot split long string literals anyway.
+# RUF001 fires on intentional typography inside LLM prompt text.
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501", "RUF001"]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "agent",
+    "data_generation",
+    "evaluation",
+    "retrievers",
+    "tools",
+    "util",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Entry-point scripts intentionally configure the app at import time.
+"bin/*" = ["E402"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "bin"]
+addopts = "-q --strict-markers --strict-config"
+markers = [
+    "requires_embeddings: needs an installed embeddings bundle (see ./bin/embeddings_manager)",
+    "requires_retrieval_stack: needs the full langchain/chromadb dependency set installed",
+]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["bin", "src", "tests"]
+exclude = "^(data|embeddings|records)/"
+mypy_path = "src"
+explicit_package_bases = true
+ignore_missing_imports = true
+# --- ratchet: currently-enforced floor (the code already largely satisfies this) ---
+check_untyped_defs = true
+no_implicit_optional = true
+strict_equality = true
+warn_redundant_casts = true
+# --- ratchet target: flip these on as annotation coverage reaches 100% ---
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+# New code is held to the full standard; legacy modules ratchet up to meet it.
+[[tool.mypy.overrides]]
+module = ["tests.*", "util.config_yml.*"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+# Script-style module, lowest value to annotate; excluded from the ratchet.
+[[tool.mypy.overrides]]
+module = ["evaluation.*"]
+check_untyped_defs = false
+
+# --- mypy baseline -------------------------------------------------------------
+# Modules that do not yet meet the floor above. Each entry is debt: fix the module,
+# then delete its block. Do not add to this list without a TODO.
+[[tool.mypy.overrides]]
+# TODO(phase-2): every node returns a partial CrossDatabaseState; the TypedDict needs
+# `total=False` or per-node Partial* types.
+module = ["agent.profiles.cross_database"]
+disable_error_code = ["typeddict-item"]
+
+[[tool.mypy.overrides]]
+# TODO(phase-2): `EmbeddingEnvironment.get_dir()` returns `Path | None` but the
+# parameter is typed `Path`, so an uninstalled bundle passes None straight through.
+# Fixed properly by moving the lookup out of the default argument (see ruff B008).
+module = ["retrievers.reactome.rag", "retrievers.uniprot.rag"]
+disable_error_code = ["assignment"]
+
+[[tool.mypy.overrides]]
+# TODO(phase-2): `self.df = None` in __init__ with the DataFrame assigned later in
+# load_data(); mypy narrows every later use to None. Fix by constructing the frame in
+# __init__ or making the None state explicit -- one root cause, ~21 reported errors.
+module = ["data_generation.uniprot.csv_generator"]
+disable_error_code = ["index", "attr-defined"]

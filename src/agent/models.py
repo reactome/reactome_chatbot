@@ -2,8 +2,7 @@ from typing import Literal
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_huggingface import (HuggingFaceEmbeddings,
-                                   HuggingFaceEndpointEmbeddings)
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
 from langchain_ollama.chat_models import ChatOllama
 from langchain_openai.chat_models.base import ChatOpenAI
 from langchain_openai.embeddings import OpenAIEmbeddings

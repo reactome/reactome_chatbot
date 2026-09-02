@@ -1,18 +1,13 @@
-from enum import StrEnum
-from typing import Callable, NamedTuple
+from collections.abc import Callable
+from typing import NamedTuple
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.graph.state import StateGraph
 
+from agent.profile_names import ProfileName
 from agent.profiles.cross_database import create_cross_database_graph
 from agent.profiles.react_to_me import create_reactome_graph
-
-
-class ProfileName(StrEnum):
-    # These should exactly match names in .config.schema.yaml
-    React_to_Me = "React-to-Me"
-    Cross_Database_Prototype = "Cross-Database Prototype"
 
 
 class Profile(NamedTuple):

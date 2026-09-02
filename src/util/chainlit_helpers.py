@@ -1,13 +1,15 @@
 import os
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import PurePosixPath
-from typing import Any, Iterable
+from typing import Any
 
 import chainlit as cl
 from chainlit.data import get_data_layer
 from chainlit.data.storage_clients.s3 import S3StorageClient
 from langchain_community.callbacks import OpenAICallbackHandler
 
+from tools.external_search.state import WebSearchResult
 from util.config_yml import Config, TriggerEvent
 from util.config_yml.usage_limits import MessageRate
 
@@ -155,7 +157,7 @@ async def static_messages(
 
 
 async def update_search_results(
-    search_results: list[dict[str, str]],
+    search_results: list[WebSearchResult],
     message: cl.Message,
 ) -> None:
     search_results_element = cl.CustomElement(

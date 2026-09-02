@@ -4,7 +4,7 @@ from typing import Self
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from agent.profiles import ProfileName
+from agent.profile_names import ProfileName
 from util.config_yml.features import Feature, Features
 from util.config_yml.messages import Message, TriggerEvent
 from util.config_yml.usage_limits import MessageRate, UsageLimits
@@ -37,8 +37,9 @@ class Config(BaseModel):
         user_id: str | None = None,
         event: TriggerEvent | None = None,
         after_messages: int | None = None,
-        last_messages: dict[str, str] = {},
+        last_messages: dict[str, str] | None = None,
     ) -> dict[str, str]:
+        last_messages = last_messages if last_messages is not None else {}
         return {
             message_id: message.message
             for message_id, message in self.messages.items()
@@ -46,7 +47,7 @@ class Config(BaseModel):
                 message.enabled
                 and match_user(message.recipients, user_id)
                 and message.trigger.match_trigger(
-                    event, after_messages, last_messages.get(message_id, None)
+                    event, after_messages, last_messages.get(message_id)
                 )
             )
         }
@@ -54,8 +55,11 @@ class Config(BaseModel):
     def get_message_rate_usage_limited(
         self,
         user_id: str | None = None,
-        message_times_queue: list[str] = [],
+        message_times_queue: list[str] | None = None,
     ) -> MessageRate | None:
+        message_times_queue = (
+            message_times_queue if message_times_queue is not None else []
+        )
         message_rate: MessageRate
         for message_rate in self.usage_limits.message_rates:
             if match_user(message_rate.users, user_id):

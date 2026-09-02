@@ -1,12 +1,11 @@
 import gzip
 import os
 import shutil
-from typing import Optional
 
 import requests
 
 
-def download_file(url: str, dest: str, force: bool) -> Optional[str]:
+def download_file(url: str, dest: str, force: bool) -> str | None:
     # Create the directory if it doesn't exist
     os.makedirs(os.path.dirname(dest), exist_ok=True)
 
@@ -28,9 +27,8 @@ def download_file(url: str, dest: str, force: bool) -> Optional[str]:
         # Check if the file is gzipped and decompress if necessary
         if dest.endswith(".gz"):
             unzipped_dest = dest[:-3]  # Remove '.gz' from the filename
-            with gzip.open(dest, "rb") as f_in:
-                with open(unzipped_dest, "wb") as f_out:
-                    shutil.copyfileobj(f_in, f_out)
+            with gzip.open(dest, "rb") as f_in, open(unzipped_dest, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
             print(f"File unzipped successfully and saved to {unzipped_dest}.")
             os.remove(dest)  # Remove the gzipped file after extraction
             return unzipped_dest

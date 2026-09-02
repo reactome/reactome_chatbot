@@ -33,11 +33,10 @@ def main(records_dir: Path):
 
     query: str = build_query()
 
-    with psycopg.connect(LANGGRAPH_NOLOGIN_DB_URI) as conn:
-        with conn.cursor() as cur:
-            cur.execute(query)
-            header = [col.name for col in cur.description] if cur.description else None
-            records = cur.fetchall()
+    with psycopg.connect(LANGGRAPH_NOLOGIN_DB_URI) as conn, conn.cursor() as cur:
+        cur.execute(query)
+        header = [col.name for col in cur.description] if cur.description else None
+        records = cur.fetchall()
 
     if len(records) == 0:
         print("No new records found.")

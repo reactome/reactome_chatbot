@@ -109,23 +109,34 @@ All aspects of generating, managing, uploading, and retrieving embeddings bundle
 
 ### Code Quality
 
-To do main consistency checks
-```bash
-poetry run ruff check .
-```
-
-To make style consistent
+All tool configuration lives in `pyproject.toml`. Ruff handles linting, import
+sorting, and formatting (it replaces `black` and `isort`).
 
 ```bash
-poetry run black .
+poetry run ruff check .          # lint (add --fix to autofix)
+poetry run ruff format .         # format
+poetry run mypy                  # type check
+poetry run pytest                # tests
 ```
 
-To make sure imports are organized
+CI runs all four on every pull request and on pushes to `main`.
 
+Optionally, run the same checks on every commit:
 
 ```bash
-poetry run isort .
+pipx install pre-commit && pre-commit install
 ```
+
+### Tests
+
+```bash
+poetry run pytest
+poetry run pytest -m "not requires_retrieval_stack"   # no ML deps needed
+```
+
+Tests that need an installed embeddings bundle are marked `requires_embeddings`
+and skip themselves when none is present. See `tests/README.md` for what is
+covered and why coverage is currently narrow.
 
 
 ### Contributing

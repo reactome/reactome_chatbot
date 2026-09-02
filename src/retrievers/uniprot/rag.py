@@ -6,8 +6,10 @@ from langchain_core.runnables import Runnable
 
 from retrievers.csv_chroma import create_bm25_chroma_ensemble_retriever
 from retrievers.rag_chain import create_rag_chain
-from retrievers.uniprot.metadata_info import (uniprot_descriptions_info,
-                                              uniprot_field_info)
+from retrievers.uniprot.metadata_info import (
+    uniprot_descriptions_info,
+    uniprot_field_info,
+)
 from retrievers.uniprot.prompt import uniprot_qa_prompt
 from util.embedding_environment import EmbeddingEnvironment
 
@@ -15,7 +17,9 @@ from util.embedding_environment import EmbeddingEnvironment
 def create_uniprot_rag(
     llm: BaseChatModel,
     embedding: Embeddings,
-    embeddings_directory: Path = EmbeddingEnvironment.get_dir("uniprot"),
+    # TODO(phase-2): resolved at import time, so importing this module requires an
+    # installed embeddings bundle. Blocks unit-testing; fix with the agent-API refactor.
+    embeddings_directory: Path = EmbeddingEnvironment.get_dir("uniprot"),  # noqa: B008
     *,
     streaming: bool = False,
 ) -> Runnable:

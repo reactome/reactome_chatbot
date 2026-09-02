@@ -1,12 +1,10 @@
 import os
-from typing import Optional
 
 import requests
 import torch
 from langchain_community.vectorstores import Chroma
 from langchain_core.embeddings import Embeddings
-from langchain_huggingface import (HuggingFaceEmbeddings,
-                                   HuggingFaceEndpointEmbeddings)
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
 from langchain_openai import OpenAIEmbeddings
 
 from data_generation.alliance.csv_generator import generate_all_csvs
@@ -33,9 +31,9 @@ def upload_to_chromadb(
     embeddings_dir: str,
     version: str,
     force: bool,  # Changed from str to bool
-    hf_model: Optional[str] = None,
-    device: Optional[str] = None,
-) -> Optional[Chroma]:
+    hf_model: str | None = None,
+    device: str | None = None,
+) -> Chroma | None:
     metadata_columns: dict[str, list] = {
         "genes": [
             "Your Input",
@@ -298,8 +296,8 @@ def upload_to_chromadb(
 def generate_alliance_embeddings(
     embeddings_dir: str,
     force: bool = False,
-    hf_model: Optional[str] = None,
-    device: Optional[str] = None,
+    hf_model: str | None = None,
+    device: str | None = None,
     **kwargs,
 ) -> None:
     release_version = get_release_version()

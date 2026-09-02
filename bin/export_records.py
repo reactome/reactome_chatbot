@@ -58,11 +58,10 @@ def main(records_dir: Path):
     since_timestamp: str | None = last_record_timestamp(records_dir)
     query: str = build_query(since_timestamp)
 
-    with psycopg.connect(CHAINLIT_DB_URI) as conn:
-        with conn.cursor() as cur:
-            cur.execute(query)
-            header = [col.name for col in cur.description] if cur.description else None
-            records = cur.fetchall()
+    with psycopg.connect(CHAINLIT_DB_URI) as conn, conn.cursor() as cur:
+        cur.execute(query)
+        header = [col.name for col in cur.description] if cur.description else None
+        records = cur.fetchall()
 
     if len(records) == 0:
         print("No new records found.")

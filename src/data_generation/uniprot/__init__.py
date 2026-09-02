@@ -1,12 +1,10 @@
 import os
 from pathlib import Path
-from typing import Optional
 
 import torch
 from langchain_community.vectorstores import Chroma
 from langchain_core.embeddings import Embeddings
-from langchain_huggingface import (HuggingFaceEmbeddings,
-                                   HuggingFaceEndpointEmbeddings)
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
 from langchain_openai import OpenAIEmbeddings
 
 from data_generation.metadata_csv_loader import MetaDataCSVLoader
@@ -17,8 +15,8 @@ def upload_to_chromadb(
     embeddings_dir: str,
     file: str,
     embedding_table: str,
-    hf_model: Optional[str] = None,
-    device: Optional[str] = None,
+    hf_model: str | None = None,
+    device: str | None = None,
 ) -> Chroma:
     metadata_columns: dict[str, list] = {
         "uniprot_data": [
@@ -76,8 +74,8 @@ def upload_to_chromadb(
 
 def generate_uniprot_embeddings(
     embedding_path: Path,
-    hf_model: Optional[str] = None,
-    device: Optional[str] = None,
+    hf_model: str | None = None,
+    device: str | None = None,
     **_,
 ) -> None:
     csv_path = generate_uniprot_csv(embedding_path)

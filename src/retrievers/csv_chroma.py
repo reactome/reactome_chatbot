@@ -1,6 +1,7 @@
 import asyncio
+from collections.abc import Coroutine
 from pathlib import Path
-from typing import Annotated, Any, Coroutine, TypedDict
+from typing import Annotated, Any, TypedDict
 
 import chromadb.config
 from langchain.chains.query_constructor.schema import AttributeInfo
@@ -216,7 +217,9 @@ class HybridRetriever(MultiQueryRetriever):
             results_iter = iter(await asyncio.gather(*subdir_results))
             doc_lists: list[list[Document]] = [
                 bm25_results + vector_results
-                for bm25_results, vector_results in zip(results_iter, results_iter)
+                for bm25_results, vector_results in zip(
+                    results_iter, results_iter, strict=False
+                )
             ]
             subdirectory_docs.extend(self.weighted_reciprocal_rank(doc_lists))
         return subdirectory_docs

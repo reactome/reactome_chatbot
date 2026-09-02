@@ -7,14 +7,19 @@ from langchain_core.runnables import Runnable, RunnableConfig
 from langgraph.graph.state import StateGraph
 
 from agent.profiles.base import BaseGraphBuilder, BaseState
-from agent.tasks.completeness_grader import (CompletenessGrade,
-                                             create_completeness_grader)
-from agent.tasks.cross_database.rewrite_reactome_with_uniprot import \
-    create_reactome_rewriter_w_uniprot
-from agent.tasks.cross_database.rewrite_uniprot_with_reactome import \
-    create_uniprot_rewriter_w_reactome
-from agent.tasks.cross_database.summarize_reactome_uniprot import \
-    create_reactome_uniprot_summarizer
+from agent.tasks.completeness_grader import (
+    CompletenessGrade,
+    create_completeness_grader,
+)
+from agent.tasks.cross_database.rewrite_reactome_with_uniprot import (
+    create_reactome_rewriter_w_uniprot,
+)
+from agent.tasks.cross_database.rewrite_uniprot_with_reactome import (
+    create_uniprot_rewriter_w_reactome,
+)
+from agent.tasks.cross_database.summarize_reactome_uniprot import (
+    create_reactome_uniprot_summarizer,
+)
 from retrievers.reactome.rag import create_reactome_rag
 from retrievers.uniprot.rag import create_uniprot_rag
 
@@ -203,7 +208,9 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
             uniprot_completeness=uniprot_completeness.binary_score,
         )
 
-    async def decide_next_steps(self, state: CrossDatabaseState) -> Literal[
+    async def decide_next_steps(
+        self, state: CrossDatabaseState
+    ) -> Literal[
         "generate_final_response",
         "perform_web_search",
         "rewrite_reactome_query",

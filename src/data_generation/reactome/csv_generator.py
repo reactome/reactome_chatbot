@@ -1,14 +1,18 @@
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import pandas as pd
 
-from data_generation.reactome.neo4j_connector import (Neo4jConnector,
-                                                      Neo4jDict, get_complexes,
-                                                      get_ewas, get_reactions,
-                                                      get_summations)
+from data_generation.reactome.neo4j_connector import (
+    Neo4jConnector,
+    Neo4jDict,
+    get_complexes,
+    get_ewas,
+    get_reactions,
+    get_summations,
+)
 
-CSV_GENERATION_MAP: dict[str, Callable[[Neo4jConnector], Neo4jDict]] = {
+CSV_GENERATION_MAP: dict[str, Callable[[Neo4jConnector], list[Neo4jDict]]] = {
     "reactions.csv": get_reactions,
     "summations.csv": get_summations,
     "complexes.csv": get_complexes,
@@ -18,7 +22,7 @@ CSV_GENERATION_MAP: dict[str, Callable[[Neo4jConnector], Neo4jDict]] = {
 
 def generate_csv(
     connector: Neo4jConnector,
-    data_fetch_func: Callable[[Neo4jConnector], Neo4jDict],
+    data_fetch_func: Callable[[Neo4jConnector], list[Neo4jDict]],
     file_name: str,
     csv_dir: Path,
     force: bool = False,
@@ -28,7 +32,7 @@ def generate_csv(
     if not force and csv_file_path.exists():
         return str(csv_file_path)
 
-    data: Neo4jDict = data_fetch_func(connector)
+    data: list[Neo4jDict] = data_fetch_func(connector)
     df: pd.DataFrame = pd.DataFrame(data)
     df["url"] = "https://reactome.org/content/detail/" + df["st_id"]
     df.to_csv(csv_file_path, index=False, lineterminator="\n")

@@ -16,7 +16,6 @@ permissions:
 
 jobs:
     lint:
-        if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
@@ -24,11 +23,27 @@ jobs:
             - name: Set up Python and Poetry
               uses: ./.github/actions/install_python_poetry
 
-            - name: Run linters
-              run: |
-                  poetry run ruff check .
-                  poetry run mypy .
-                  poetry run isort --check .
+            # ruff replaces black + isort; its `I` rules sort imports and
+            # `ruff format` is black-compatible. Config lives in pyproject.toml.
+            - name: Lint
+              run: poetry run ruff check .
+
+            - name: Check formatting
+              run: poetry run ruff format --check .
+
+            - name: Type check
+              run: poetry run mypy
+
+    test:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up Python and Poetry
+              uses: ./.github/actions/install_python_poetry
+
+            - name: Run tests
+              run: poetry run pytest
 
     poetry-check:
         if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}

@@ -25,7 +25,7 @@ class Trigger(BaseModel):
         event: TriggerEvent | None = None,
         after_messages: int | None = None,
         last_message: str | None = None,
-    ):
+    ) -> bool:
         now = datetime.now()
         if self.event and self.event != event:
             return False
@@ -35,16 +35,14 @@ class Trigger(BaseModel):
             return False
         if self.end and self.end.replace(tzinfo=None) < now:
             return False
-        if (
+        return not (
             self.freq_max
             and last_message
             and (
                 parse_interval(self.freq_max)
                 > now - datetime.fromisoformat(last_message)
             )
-        ):
-            return False
-        return True
+        )
 
 
 class Message(BaseModel):

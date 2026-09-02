@@ -1,11 +1,9 @@
 import os
-from typing import Optional
 
 import torch
 from langchain_community.vectorstores import Chroma
 from langchain_core.embeddings import Embeddings
-from langchain_huggingface import (HuggingFaceEmbeddings,
-                                   HuggingFaceEndpointEmbeddings)
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
 from langchain_openai import OpenAIEmbeddings
 
 from data_generation.metadata_csv_loader import MetaDataCSVLoader
@@ -17,8 +15,8 @@ def upload_to_chromadb(
     embeddings_dir: str,
     file: str,
     embedding_table: str,
-    hf_model: Optional[str] = None,
-    device: Optional[str] = None,
+    hf_model: str | None = None,
+    device: str | None = None,
 ) -> Chroma:
     metadata_columns: dict[str, list] = {
         "reactions": [
@@ -86,11 +84,11 @@ def upload_to_chromadb(
 def generate_reactome_embeddings(
     embeddings_dir: str,
     neo4j_uri: str = "bolt://localhost:7687",
-    neo4j_username: Optional[str] = None,
-    neo4j_password: Optional[str] = None,
+    neo4j_username: str | None = None,
+    neo4j_password: str | None = None,
     force: bool = False,
-    hf_model: Optional[str] = None,
-    device: Optional[str] = None,
+    hf_model: str | None = None,
+    device: str | None = None,
 ) -> None:
     connector = Neo4jConnector(
         uri=neo4j_uri, user=neo4j_username, password=neo4j_password

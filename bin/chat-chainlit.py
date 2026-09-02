@@ -10,9 +10,14 @@ from langchain_community.callbacks import OpenAICallbackHandler
 from agent.graph import AgentGraph
 from agent.profiles import ProfileName, get_chat_profiles
 from agent.profiles.base import OutputState
-from util.chainlit_helpers import (PrefixedS3StorageClient, is_feature_enabled,
-                                   message_rate_limited, save_openai_metrics,
-                                   static_messages, update_search_results)
+from util.chainlit_helpers import (
+    PrefixedS3StorageClient,
+    is_feature_enabled,
+    message_rate_limited,
+    save_openai_metrics,
+    static_messages,
+    update_search_results,
+)
 from util.config_yml import Config, TriggerEvent
 from util.logging import logging
 
@@ -31,6 +36,7 @@ S3_CHAINLIT_PREFIX = os.getenv("S3_CHAINLIT_PREFIX")
 if POSTGRES_CHAINLIT_DB and POSTGRES_USER and POSTGRES_PASSWORD:
     CHAINLIT_DB_URI = f"postgresql+psycopg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@postgres:5432/{POSTGRES_CHAINLIT_DB}?sslmode=disable"
 
+    storage_client: PrefixedS3StorageClient | None
     if S3_BUCKET and S3_CHAINLIT_PREFIX:
         storage_client = PrefixedS3StorageClient(S3_BUCKET, S3_CHAINLIT_PREFIX)
     else:

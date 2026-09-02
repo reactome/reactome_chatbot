@@ -6,8 +6,10 @@ from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.utils.runnable import RunnableLike
 
-from agent.tasks.completeness_grader import (CompletenessGrade,
-                                             create_completeness_grader)
+from agent.tasks.completeness_grader import (
+    CompletenessGrade,
+    create_completeness_grader,
+)
 from tools.external_search.state import SearchState
 from tools.external_search.tavily_wrapper import TavilyWrapper
 

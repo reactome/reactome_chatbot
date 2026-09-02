@@ -11,12 +11,18 @@ from langchain_community.document_loaders.csv_loader import CSVLoader
 from langchain_community.retrievers import BM25Retriever
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from ragas import evaluate
-from ragas.metrics import (ContextUtilization, answer_relevancy,
-                           context_recall, faithfulness)
+from ragas.metrics import (
+    ContextUtilization,
+    answer_relevancy,
+    context_recall,
+    faithfulness,
+)
 
 from retrievers.rag_chain import create_rag_chain
-from retrievers.reactome.metadata_info import (reactome_descriptions_info,
-                                               reactome_field_info)
+from retrievers.reactome.metadata_info import (
+    reactome_descriptions_info,
+    reactome_field_info,
+)
 from retrievers.reactome.prompt import reactome_qa_prompt
 
 context_utilization = ContextUtilization()
@@ -55,10 +61,10 @@ def load_dataset(testset_path):
         return df.to_dict(
             orient="records"
         )  # Convert DataFrame to a list of dictionaries
-    except FileNotFoundError:
-        raise FileNotFoundError(f"The file {testset_path} does not exist.")
+    except FileNotFoundError as e:
+        raise FileNotFoundError(f"The file {testset_path} does not exist.") from e
     except ValueError as e:
-        raise ValueError(f"Error reading the Excel file: {e}")
+        raise ValueError(f"Error reading the Excel file: {e}") from e
 
 
 def initialize_rag_chain_with_memory(embeddings_directory, model_name, rag_type):
