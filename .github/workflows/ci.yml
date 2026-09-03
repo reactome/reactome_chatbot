@@ -10,8 +10,15 @@ on:
     branches:
       - main
 
+# A second push to a PR makes the first run's result irrelevant; without this
+# they both run to completion and queue behind each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Least privilege by default. id-token: write is granted only to docker-push,
+# which needs it to assume the AWS role.
 permissions:
-  id-token: write
   contents: read
 
 jobs:
@@ -54,19 +61,31 @@ jobs:
 
         steps:
             - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0  # need the base branch to diff against
 
+            # Plain git rather than a third-party action: this workflow can reach
+            # AWS, so every extra action is supply-chain surface for a one-line check.
             - name: Check poetry.lock for changes
               id: check-poetry-lock
-              uses: tj-actions/changed-files@v45
-              with:
-                  files: poetry.lock
+              shell: bash
+              run: |
+                base="${{ github.base_ref }}"
+                if [ -z "$base" ]; then
+                  # manual run: no base to compare against, so always verify
+                  echo "changed=true" >> "$GITHUB_OUTPUT"
+                elif git diff --name-only "origin/$base...HEAD" -- poetry.lock | grep -q .; then
+                  echo "changed=true" >> "$GITHUB_OUTPUT"
+                else
+                  echo "changed=false" >> "$GITHUB_OUTPUT"
+                fi
 
             - name: Set up Python and Poetry
-              if: steps.check-poetry-lock.outputs.any_changed == 'true'
+              if: steps.check-poetry-lock.outputs.changed == 'true'
               uses: ./.github/actions/install_python_poetry
 
             - name: Verify Python imports
-              if: steps.check-poetry-lock.outputs.any_changed == 'true'
+              if: steps.check-poetry-lock.outputs.changed == 'true'
               env:
                   PYTHONPATH: ./bin:./src
               run: |
@@ -83,7 +102,7 @@ jobs:
               uses: docker/setup-buildx-action@v3
 
             - name: Build and push Docker image
-              uses: docker/build-push-action@v5
+              uses: docker/build-push-action@v6
               with:
                   context: .
                   file: ./Dockerfile
@@ -99,6 +118,9 @@ jobs:
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         needs: docker-build
         runs-on: ubuntu-latest
+        permissions:
+            id-token: write   # assume the AWS role via OIDC
+            contents: read
 
         steps:
             - uses: actions/download-artifact@v4
