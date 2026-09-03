@@ -3,6 +3,7 @@ import os
 import chainlit as cl
 from chainlit.data.base import BaseDataLayer
 from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
+from chainlit.oauth_providers import providers
 from chainlit.types import ThreadDict
 from dotenv import load_dotenv
 from langchain_community.callbacks import OpenAICallbackHandler
@@ -20,6 +21,7 @@ from util.chainlit_helpers import (
 )
 from util.config_yml import Config, TriggerEvent
 from util.logging import logging
+from util.orcid_provider import ORCIDOAuthProvider
 
 load_dotenv()
 config: Config | None = Config.from_yaml()
@@ -51,6 +53,9 @@ if POSTGRES_CHAINLIT_DB and POSTGRES_USER and POSTGRES_PASSWORD:
 
 else:
     logging.warning("POSTGRES_CHAINLIT_DB undefined; Chainlit persistence disabled.")
+
+if os.getenv("OAUTH_ORCID_CLIENT_ID") and not any(p.id == "orcid" for p in providers):
+    providers.append(ORCIDOAuthProvider())
 
 if os.getenv("CHAINLIT_AUTH_SECRET"):
 

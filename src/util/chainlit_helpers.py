@@ -13,7 +13,7 @@ from tools.external_search.state import WebSearchResult
 from util.config_yml import Config, TriggerEvent
 from util.config_yml.usage_limits import MessageRate
 
-guest_user_metadata: dict[str, Any] = {}
+_GUEST_METADATA_KEY = "_guest_metadata"
 
 
 class PrefixedS3StorageClient(S3StorageClient):
@@ -45,6 +45,14 @@ def get_user_id() -> str | None:
     return user.identifier if user else None
 
 
+def _get_guest_metadata() -> dict[str, Any]:
+    """Get the per-session guest metadata dict, creating it if needed."""
+    metadata: dict[str, Any] = cl.user_session.get(_GUEST_METADATA_KEY, {})
+    if not metadata:
+        cl.user_session.set(_GUEST_METADATA_KEY, metadata)
+    return metadata
+
+
 def get_user_metadata(
     key: Any,
     default: Any | None = None,
@@ -54,7 +62,7 @@ def get_user_metadata(
     if user:
         return user.metadata.get(key, default)
     elif use_guest:
-        return guest_user_metadata.get(key, default)
+        return _get_guest_metadata().get(key, default)
     else:
         return default
 
@@ -84,12 +92,11 @@ def save_openai_metrics(message_id: str, openai_cb: OpenAICallbackHandler) -> No
 
 
 def set_user_metadata(key: Any, value: Any, use_guest: bool = True) -> None:
-    global guest_user_metadata  # not ideal, but works for now
     user: cl.User | None = cl.user_session.get("user")
     if user:
         user.metadata[key] = value
     elif use_guest:
-        guest_user_metadata[key] = value
+        _get_guest_metadata()[key] = value
 
 
 async def message_rate_limited(config: Config | None) -> bool:

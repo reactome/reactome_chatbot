@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import torch
 from langchain_community.vectorstores import Chroma
@@ -24,6 +25,7 @@ def upload_to_chromadb(
             "display_name",
             "pathway_id",
             "pathway_name",
+            "species",
             "input_id",
             "input_name",
             "output_id",
@@ -31,8 +33,14 @@ def upload_to_chromadb(
             "catalyst_id",
             "catalyst_name",
         ],
-        "summations": ["st_id", "display_name", "summation"],
-        "complexes": ["st_id", "display_name", "component_id", "component_name"],
+        "summations": ["st_id", "display_name", "labels", "species", "summation"],
+        "complexes": [
+            "st_id",
+            "display_name",
+            "component_id",
+            "component_name",
+            "species",
+        ],
         "ewas": [
             "st_id",
             "display_name",
@@ -54,7 +62,7 @@ def upload_to_chromadb(
             chunk_size=400,
             show_progress_bar=True,
         )
-    elif hf_model.startswith("openai/text-embedding-"):
+    elif hf_model.startswith("openai/"):
         embeddings_instance = OpenAIEmbeddings(
             model=hf_model[len("openai/") :],
             chunk_size=400,
@@ -90,14 +98,27 @@ def generate_reactome_embeddings(
     hf_model: str | None = None,
     device: str | None = None,
 ) -> None:
-    connector = Neo4jConnector(
-        uri=neo4j_uri, user=neo4j_username, password=neo4j_password
+    csv_dir = Path(embeddings_dir) / "csv_files"
+    reactions_csv = str(csv_dir / "reactions.csv")
+    summations_csv = str(csv_dir / "summations.csv")
+    complexes_csv = str(csv_dir / "complexes.csv")
+    ewas_csv = str(csv_dir / "ewas.csv")
+
+    all_exist = not force and all(
+        Path(p).exists()
+        for p in [reactions_csv, summations_csv, complexes_csv, ewas_csv]
     )
 
-    (reactions_csv, summations_csv, complexes_csv, ewas_csv) = generate_all_csvs(
-        connector, embeddings_dir, force
-    )
-    connector.close()
+    if not all_exist:
+        connector = Neo4jConnector(
+            uri=neo4j_uri, user=neo4j_username, password=neo4j_password
+        )
+        reactions_csv, summations_csv, complexes_csv, ewas_csv = generate_all_csvs(
+            connector, embeddings_dir, force
+        )
+        connector.close()
+    else:
+        print("Using existing CSV files. Skipping Neo4j.")
 
     db = upload_to_chromadb(
         embeddings_dir, reactions_csv, "reactions", hf_model, device

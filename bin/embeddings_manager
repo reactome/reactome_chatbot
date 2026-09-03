@@ -87,6 +87,8 @@ def make(
         os.environ["HUGGINGFACEHUB_API_TOKEN"] = hf_key
     if embedding.db == "reactome":
         generate_reactome_embeddings(str(embedding_path), hf_model=embedding.model, **kwargs)
+    elif embedding.db == "plantreactome":
+        generate_reactome_embeddings(str(embedding_path), hf_model=embedding.model, **kwargs)
     elif embedding.db == "uniprot":
         generate_uniprot_embeddings(embedding_path, hf_model=embedding.model, **kwargs)
     elif embedding.db == "alliance":
