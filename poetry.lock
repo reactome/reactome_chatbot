@@ -1858,23 +1858,24 @@ tenacity = ">=8.1.0,<8.4.0 || >8.4.0,<10"
 
 [[package]]
 name = "langchain-core"
-version = "0.3.63"
+version = "0.3.84"
 description = "Building applications with LLMs through composability"
 optional = false
-python-versions = ">=3.9"
+python-versions = "<4.0.0,>=3.9.0"
 files = [
-    {file = "langchain_core-0.3.63-py3-none-any.whl", hash = "sha256:f91db8221b1bc6808f70b2e72fded1a94d50ee3f1dff1636fb5a5a514c64b7f5"},
-    {file = "langchain_core-0.3.63.tar.gz", hash = "sha256:e2e30cfbb7684a5a0319f6cbf065fc3c438bfd1060302f085a122527890fb01e"},
+    {file = "langchain_core-0.3.84-py3-none-any.whl", hash = "sha256:d0b3a7b6473e30a2b3d4588ee09dc6471b8d38c46cd48f3e7c3d1ab6547f63cb"},
+    {file = "langchain_core-0.3.84.tar.gz", hash = "sha256:814b75bfe67a8460a53f5839bae9505bbfffc7af6f1aa0a5155715563f5cc490"},
 ]
 
 [package.dependencies]
-jsonpatch = ">=1.33,<2.0"
-langsmith = ">=0.1.126,<0.4"
-packaging = ">=23.2,<25"
-pydantic = ">=2.7.4"
-PyYAML = ">=5.3"
+jsonpatch = ">=1.33.0,<2.0.0"
+langsmith = ">=0.3.45,<1.0.0"
+packaging = ">=23.2.0,<26.0.0"
+pydantic = ">=2.7.4,<3.0.0"
+PyYAML = ">=5.3.0,<7.0.0"
 tenacity = ">=8.1.0,<8.4.0 || >8.4.0,<10.0.0"
-typing-extensions = ">=4.7"
+typing-extensions = ">=4.7.0,<5.0.0"
+uuid-utils = ">=0.12.0,<1.0"
 
 [[package]]
 name = "langchain-huggingface"
@@ -2004,18 +2005,19 @@ orjson = ">=3.10.1"
 
 [[package]]
 name = "langsmith"
-version = "0.3.2"
+version = "0.3.45"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 optional = false
-python-versions = "<4.0,>=3.9"
+python-versions = ">=3.9"
 files = [
-    {file = "langsmith-0.3.2-py3-none-any.whl", hash = "sha256:48ff6bc5eda62f4729596bb68d4f96166d2654728ac32970b69b1be874c61925"},
-    {file = "langsmith-0.3.2.tar.gz", hash = "sha256:7724668e9705734ab25a7977fc34a9ee15a40ba4108987926c69293a05d40229"},
+    {file = "langsmith-0.3.45-py3-none-any.whl", hash = "sha256:5b55f0518601fa65f3bb6b1a3100379a96aa7b3ed5e9380581615ba9c65ed8ed"},
+    {file = "langsmith-0.3.45.tar.gz", hash = "sha256:1df3c6820c73ed210b2c7bc5cdb7bfa19ddc9126cd03fdf0da54e2e171e6094d"},
 ]
 
 [package.dependencies]
 httpx = ">=0.23.0,<1"
 orjson = {version = ">=3.9.14,<4.0.0", markers = "platform_python_implementation != \"PyPy\""}
+packaging = ">=23.2"
 pydantic = [
     {version = ">=1,<3", markers = "python_full_version < \"3.12.4\""},
     {version = ">=2.7.4,<3.0.0", markers = "python_full_version >= \"3.12.4\""},
@@ -2026,6 +2028,8 @@ zstandard = ">=0.23.0,<0.24.0"
 
 [package.extras]
 langsmith-pyo3 = ["langsmith-pyo3 (>=0.1.0rc2,<0.2.0)"]
+openai-agents = ["openai-agents (>=0.0.3,<0.1)"]
+otel = ["opentelemetry-api (>=1.30.0,<2.0.0)", "opentelemetry-exporter-otlp-proto-http (>=1.30.0,<2.0.0)", "opentelemetry-sdk (>=1.30.0,<2.0.0)"]
 pytest = ["pytest (>=7.0.0)", "rich (>=13.9.4,<14.0.0)"]
 
 [[package]]
@@ -5473,6 +5477,37 @@ brotli = ["brotli (>=1.0.9)", "brotlicffi (>=0.8.0)"]
 h2 = ["h2 (>=4,<5)"]
 socks = ["pysocks (>=1.5.6,!=1.5.7,<2.0)"]
 zstd = ["zstandard (>=0.18.0)"]
+
+[[package]]
+name = "uuid-utils"
+version = "0.14.1"
+description = "Fast, drop-in replacement for Python's uuid module, powered by Rust."
+optional = false
+python-versions = ">=3.9"
+files = [
+    {file = "uuid_utils-0.14.1-cp39-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:93a3b5dc798a54a1feb693f2d1cb4cf08258c32ff05ae4929b5f0a2ca624a4f0"},
+    {file = "uuid_utils-0.14.1-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:ccd65a4b8e83af23eae5e56d88034b2fe7264f465d3e830845f10d1591b81741"},
+    {file = "uuid_utils-0.14.1-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:b56b0cacd81583834820588378e432b0696186683b813058b707aedc1e16c4b1"},
+    {file = "uuid_utils-0.14.1-cp39-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:bb3cf14de789097320a3c56bfdfdd51b1225d11d67298afbedee7e84e3837c96"},
+    {file = "uuid_utils-0.14.1-cp39-abi3-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:60e0854a90d67f4b0cc6e54773deb8be618f4c9bad98d3326f081423b5d14fae"},
+    {file = "uuid_utils-0.14.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ce6743ba194de3910b5feb1a62590cd2587e33a73ab6af8a01b642ceb5055862"},
+    {file = "uuid_utils-0.14.1-cp39-abi3-manylinux_2_5_i686.manylinux1_i686.whl", hash = "sha256:043fb58fde6cf1620a6c066382f04f87a8e74feb0f95a585e4ed46f5d44af57b"},
+    {file = "uuid_utils-0.14.1-cp39-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:c915d53f22945e55fe0d3d3b0b87fd965a57f5fd15666fd92d6593a73b1dd297"},
+    {file = "uuid_utils-0.14.1-cp39-abi3-musllinux_1_2_armv7l.whl", hash = "sha256:0972488e3f9b449e83f006ead5a0e0a33ad4a13e4462e865b7c286ab7d7566a3"},
+    {file = "uuid_utils-0.14.1-cp39-abi3-musllinux_1_2_i686.whl", hash = "sha256:1c238812ae0c8ffe77d8d447a32c6dfd058ea4631246b08b5a71df586ff08531"},
+    {file = "uuid_utils-0.14.1-cp39-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:bec8f8ef627af86abf8298e7ec50926627e29b34fa907fcfbedb45aaa72bca43"},
+    {file = "uuid_utils-0.14.1-cp39-abi3-win32.whl", hash = "sha256:b54d6aa6252d96bac1fdbc80d26ba71bad9f220b2724d692ad2f2310c22ef523"},
+    {file = "uuid_utils-0.14.1-cp39-abi3-win_amd64.whl", hash = "sha256:fc27638c2ce267a0ce3e06828aff786f91367f093c80625ee21dad0208e0f5ba"},
+    {file = "uuid_utils-0.14.1-cp39-abi3-win_arm64.whl", hash = "sha256:b04cb49b42afbc4ff8dbc60cf054930afc479d6f4dd7f1ec3bbe5dbfdde06b7a"},
+    {file = "uuid_utils-0.14.1-pp311-pypy311_pp73-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:b197cd5424cf89fb019ca7f53641d05bfe34b1879614bed111c9c313b5574cd8"},
+    {file = "uuid_utils-0.14.1-pp311-pypy311_pp73-macosx_10_12_x86_64.whl", hash = "sha256:12c65020ba6cb6abe1d57fcbfc2d0ea0506c67049ee031714057f5caf0f9bc9c"},
+    {file = "uuid_utils-0.14.1-pp311-pypy311_pp73-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:0b5d2ad28063d422ccc2c28d46471d47b61a58de885d35113a8f18cb547e25bf"},
+    {file = "uuid_utils-0.14.1-pp311-pypy311_pp73-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:da2234387b45fde40b0fedfee64a0ba591caeea9c48c7698ab6e2d85c7991533"},
+    {file = "uuid_utils-0.14.1-pp311-pypy311_pp73-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:50fffc2827348c1e48972eed3d1c698959e63f9d030aa5dd82ba451113158a62"},
+    {file = "uuid_utils-0.14.1-pp311-pypy311_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c1dbe718765f70f5b7f9b7f66b6a937802941b1cc56bcf642ce0274169741e01"},
+    {file = "uuid_utils-0.14.1-pp311-pypy311_pp73-manylinux_2_5_i686.manylinux1_i686.whl", hash = "sha256:258186964039a8e36db10810c1ece879d229b01331e09e9030bc5dcabe231bd2"},
+    {file = "uuid_utils-0.14.1.tar.gz", hash = "sha256:9bfc95f64af80ccf129c604fb6b8ca66c6f256451e32bc4570f760e4309c9b69"},
+]
 
 [[package]]
 name = "uvicorn"
