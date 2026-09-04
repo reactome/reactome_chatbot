@@ -11,6 +11,7 @@ from langchain.retrievers.self_query.base import SelfQueryRetriever
 from langchain_chroma.vectorstores import Chroma
 from langchain_community.document_loaders.csv_loader import CSVLoader
 from langchain_community.retrievers import BM25Retriever
+from langchain_core.retrievers import BaseRetriever
 from langchain_core.runnables import Runnable
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from ragas import evaluate
@@ -69,11 +70,11 @@ def parse_arguments() -> argparse.Namespace:
 
 def load_dataset(testset_path: str) -> list[dict[str, Any]]:
     """Load the dataset from an Excel (.xlsx) file."""
+    # pandas types record keys as Hashable; they are column names.
     try:
         df = pd.read_excel(testset_path)
-        return df.to_dict(
-            orient="records"
-        )  # Convert DataFrame to a list of dictionaries
+        records: list[dict[str, Any]] = df.to_dict(orient="records")  # type: ignore[assignment]
+        return records
     except FileNotFoundError as e:
         raise FileNotFoundError(f"The file {testset_path} does not exist.") from e
     except ValueError as e:
@@ -92,7 +93,7 @@ def initialize_rag_chain_with_memory(
     run anywhere else.
     """
     llm = ChatOpenAI(temperature=0.0, verbose=True, model=model_name)
-    retriever_list = []
+    retriever_list: list[BaseRetriever] = []
 
     loader = CSVLoader(str(embeddings_dir / "csv_files" / "summations.csv"))
     data = loader.load()
@@ -149,7 +150,7 @@ def process_testset(
     contexts = []
 
     for question in questions:
-        response = qa_system.get_context(question)
+        response = qa_system.invoke({"input": question})
         answers.append(response["answer"])
         contexts.append([context.page_content for context in response["context"]])
 

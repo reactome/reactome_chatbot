@@ -151,11 +151,10 @@ warn_redundant_casts = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 warn_no_return = true
+warn_return_any = true
 extra_checks = true
-# TODO: enable warn_return_any and disallow_untyped_decorators once verified in an
-# environment with the full dependency set installed. They fire on third-party
-# calls that return Any only when those libraries' types are missing, so they
-# cannot be calibrated without poetry available.
+# disallow_untyped_decorators stays off: chainlit's @cl.* decorators are
+# untyped upstream, so it only ever fires on bin/chat-chainlit.py.
 
 # --- mypy baseline -------------------------------------------------------------
 # Modules that do not yet meet the floor above. Each entry is debt: fix the module,
@@ -164,7 +163,7 @@ extra_checks = true
 # TODO(phase-2): every node returns a partial state; the TypedDict needs
 # `total=False` or per-node Partial* types.
 module = ["agent.profiles.cross_database"]
-disable_error_code = ["typeddict-item"]
+disable_error_code = ["typeddict-item", "no-any-return"]
 
 [[tool.mypy.overrides]]
 # A module may appear in only one override section, so both TODOs live here.

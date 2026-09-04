@@ -86,15 +86,34 @@ def test_empty_input_is_not_an_error() -> None:
     assert _fuse([[]]) == []
 
 
-def test_weights_are_uniform_across_lists() -> None:
-    """Each subdirectory's lists are weighted 1/len(doc_lists) -- no list dominates.
+def test_ties_are_broken_by_position_not_by_score() -> None:
+    """Equal RRF scores are resolved by which list came first.
 
-    Swapping the order of equally-ranked lists must not change the outcome.
+    x is rank 1 in the first list and rank 2 in the second; y is the mirror
+    image, so both score w/61 + w/62 exactly. sorted() is stable, so the order
+    that survives is the order of chain.from_iterable(doc_lists) -- meaning the
+    caller's list order decides.
+
+    In HybridRetriever the lists are the query variants, and within each list
+    BM25's results precede the vector retriever's. So on a tie, earlier query
+    variants win, and BM25 wins over the vector store. Deterministic, but a
+    consequence of iteration order rather than of relevance.
     """
     a, b = [_doc("x"), _doc("y")], [_doc("y"), _doc("x")]
-    assert [d.page_content for d in _fuse([a, b])] == [
-        d.page_content for d in _fuse([b, a])
-    ]
+    assert [d.page_content for d in _fuse([a, b])] == ["x", "y"]
+    assert [d.page_content for d in _fuse([b, a])] == ["y", "x"]
+
+
+def test_weights_are_uniform_so_they_cannot_change_the_ordering() -> None:
+    """create_bm25_chroma_ensemble_retriever passes [1/n] * n.
+
+    A constant multiplier across every list scales all scores equally, so the
+    weighting is currently inert. It is the obvious place to put a BM25-vs-vector
+    balance, but nothing uses it today.
+    """
+    lists = [[_doc("p"), _doc("q")], [_doc("q"), _doc("r")]]
+    uniform_half = HybridRetriever.weighted_reciprocal_rank(cast(Any, None), lists)
+    assert [d.page_content for d in uniform_half] == ["q", "p", "r"]
 
 
 @pytest.mark.requires_embeddings

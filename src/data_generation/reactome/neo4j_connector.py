@@ -18,7 +18,8 @@ class Neo4jConnector:
     def execute_query(self, query: str) -> list[Neo4jDict]:
         with self._driver.session() as session:
             result = session.run(query)
-            return result.data()
+            records: list[Neo4jDict] = result.data()
+            return records
 
 
 def get_reactions(connector: Neo4jConnector) -> list[Neo4jDict]:

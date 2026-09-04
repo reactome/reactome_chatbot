@@ -1,5 +1,5 @@
 import os
-from typing import ClassVar
+from typing import Any
 
 import httpx
 from chainlit.oauth_providers import OAuthProvider
@@ -9,11 +9,13 @@ from fastapi import HTTPException
 
 class ORCIDOAuthProvider(OAuthProvider):
     id = "orcid"
-    env: ClassVar[list[str]] = ["OAUTH_ORCID_CLIENT_ID", "OAUTH_ORCID_CLIENT_SECRET"]
+    # RUF012 is silenced at the site below: the base class declares this as an
+    # instance variable, so it cannot be narrowed to ClassVar here.
+    env = ["OAUTH_ORCID_CLIENT_ID", "OAUTH_ORCID_CLIENT_SECRET"]  # noqa: RUF012
 
     def __init__(self) -> None:
-        self.client_id = os.environ.get("OAUTH_ORCID_CLIENT_ID")
-        self.client_secret = os.environ.get("OAUTH_ORCID_CLIENT_SECRET")
+        self.client_id = os.environ.get("OAUTH_ORCID_CLIENT_ID", "")
+        self.client_secret = os.environ.get("OAUTH_ORCID_CLIENT_SECRET", "")
         self.authorize_url = "https://orcid.org/oauth/authorize"
         self.token_url = "https://orcid.org/oauth/token"  # noqa: S105 (a URL, not a secret)
         self.user_info_url = "https://orcid.org/oauth/userinfo"
@@ -36,7 +38,8 @@ class ORCIDOAuthProvider(OAuthProvider):
         async with httpx.AsyncClient() as client:
             response = await client.post(self.token_url, data=payload)
             response.raise_for_status()
-            return response.json()
+            token_response: dict[str, Any] = response.json()
+            return token_response
 
     async def get_token(self, code: str, url: str) -> str:
         json = await self.get_raw_token_response(code, url)
@@ -45,7 +48,7 @@ class ORCIDOAuthProvider(OAuthProvider):
             raise HTTPException(
                 status_code=400, detail="Access token missing in the response"
             )
-        return token
+        return str(token)
 
     async def get_user_info(self, token: str) -> tuple[dict[str, str], User]:
         async with httpx.AsyncClient() as client:

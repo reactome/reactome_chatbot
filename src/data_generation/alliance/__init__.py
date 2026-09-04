@@ -16,7 +16,7 @@ def get_release_version() -> str:
     response = requests.get(url, timeout=60)
     if response.status_code == 200:
         response_json = response.json()
-        release_version = response_json.get("releaseVersion")
+        release_version: str | None = response_json.get("releaseVersion")
         if release_version:
             return release_version
         raise ValueError("Release version not found in the response.")

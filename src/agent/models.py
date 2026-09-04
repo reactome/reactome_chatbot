@@ -57,13 +57,13 @@ def get_llm(
             model=model,
             temperature=0.0,
             base_url=base_url,
-            request_timeout=request_timeout,
+            request_timeout=request_timeout,  # type: ignore[call-arg]  # pydantic-generated __init__
         )
     if provider == "ollama":
         return ChatOllama(
             model=model,
             temperature=0.0,
             base_url=base_url,
-            request_timeout=request_timeout,
+            request_timeout=request_timeout,  # type: ignore[call-arg]  # pydantic-generated __init__
         )
     raise ValueError(f"Unknown provider: {provider}")

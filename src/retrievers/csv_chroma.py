@@ -6,7 +6,6 @@ from typing import Annotated, Any, TypedDict
 import chromadb.config
 from langchain.chains.query_constructor.schema import AttributeInfo
 from langchain.retrievers import EnsembleRetriever, MultiQueryRetriever
-from langchain.retrievers.merger_retriever import MergerRetriever
 from langchain.retrievers.self_query.base import SelfQueryRetriever
 from langchain_chroma.vectorstores import Chroma
 from langchain_community.document_loaders.csv_loader import CSVLoader
@@ -75,7 +74,7 @@ def create_bm25_chroma_ensemble_retriever(
     *,
     descriptions_info: dict[str, str],
     field_info: dict[str, list[AttributeInfo]],
-) -> MergerRetriever:
+) -> "HybridRetriever":
     return HybridRetriever.from_subdirectory(
         llm,
         embedding,
