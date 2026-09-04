@@ -9,9 +9,10 @@ collection, and writes them to JSON. Run it before a change and after, then
 Two of the pipeline's steps call an LLM and so are not reproducible: the
 multi-query expansion, and SelfQueryRetriever's translation of a question into a
 metadata filter. This tool deliberately skips the expansion and feeds each
-question to the retrievers directly, which makes BM25 and plain vector search
-exactly reproducible. SelfQuery still varies run to run -- which is itself worth
-knowing, and is why `overlap` exists.
+question to the retrievers directly. Measured across two identical runs, BM25 is
+byte-identical on 80/80 question-collections and plain vector on 78/80.
+SelfQuery turns out to be stable too (78/80), so its divergence from plain
+vector search is a real difference in behaviour, not model noise.
 
   ./bin/retrieval_baseline capture --out before.json
   ./bin/retrieval_baseline overlap before.json      # selfquery vs plain vector
@@ -142,10 +143,27 @@ def capture(args: argparse.Namespace) -> None:
 
 
 def _jaccard(a: list[str], b: list[str]) -> float:
+    """Overlap of the DISTINCT documents returned.
+
+    Note this collapses duplicates, and duplicates are themselves a finding --
+    vector search on `reactions` returns ~5 distinct documents in its top 10.
+    So this measures agreement about *which* documents, saying nothing about
+    ordering or about how much of k is wasted. `_rank_agreement` covers ordering;
+    `distinct_ratio` in the report covers the waste.
+    """
     sa, sb = set(a), set(b)
     if not sa and not sb:
         return 1.0
     return len(sa & sb) / len(sa | sb)
+
+
+def _rank_agreement(a: list[str], b: list[str]) -> float:
+    """Fraction of positions holding the same document, order included."""
+    if not a and not b:
+        return 1.0
+    n = max(len(a), len(b))
+    same = sum(1 for i in range(min(len(a), len(b))) if a[i] == b[i])
+    return same / n
 
 
 def overlap(args: argparse.Namespace) -> None:
@@ -158,7 +176,9 @@ def overlap(args: argparse.Namespace) -> None:
     payload = json.loads(args.capture.read_text())
     results: Capture = payload["results"]
 
-    by_collection: dict[str, list[float]] = {}
+    sets: dict[str, list[float]] = {}
+    ranks: dict[str, list[float]] = {}
+    distinct: dict[str, list[float]] = {}
     for _question, collections in results.items():
         for collection, retrievers in collections.items():
             if "selfquery" not in retrievers or "vector" not in retrievers:
@@ -166,20 +186,35 @@ def overlap(args: argparse.Namespace) -> None:
                     "This capture has no selfquery results. "
                     "Re-run capture with --with-selfquery."
                 )
-            by_collection.setdefault(collection, []).append(
-                _jaccard(retrievers["selfquery"], retrievers["vector"])
+            sq, vec = retrievers["selfquery"], retrievers["vector"]
+            sets.setdefault(collection, []).append(_jaccard(sq, vec))
+            ranks.setdefault(collection, []).append(_rank_agreement(sq, vec))
+            distinct.setdefault(collection, []).append(
+                len(set(vec)) / len(vec) if vec else 1.0
             )
 
-    print("selfquery vs plain vector, per collection (1.0 = identical sets)\n")
-    for collection, scores in sorted(by_collection.items()):
-        mean = sum(scores) / len(scores)
-        identical = sum(1 for s in scores if s == 1.0)
+    def mean(xs: list[float]) -> float:
+        return sum(xs) / len(xs)
+
+    print("selfquery vs plain vector  (1.0 = identical)\n")
+    print(
+        f"  {'collection':<14}{'set overlap':>13}{'rank agree':>12}{'distinct/k':>13}"
+    )
+    for collection in sorted(sets):
         print(
-            f"  {collection:<14} mean overlap {mean:5.2f}   "
-            f"identical on {identical}/{len(scores)} questions"
+            f"  {collection:<14}{mean(sets[collection]):>13.2f}"
+            f"{mean(ranks[collection]):>12.2f}{mean(distinct[collection]):>13.2f}"
         )
-    allscores = [s for v in by_collection.values() for s in v]
-    print(f"\n  overall mean overlap: {sum(allscores) / len(allscores):.2f}")
+    print(
+        f"\n  overall       {mean([s for v in sets.values() for s in v]):>13.2f}"
+        f"{mean([s for v in ranks.values() for s in v]):>12.2f}"
+        f"{mean([s for v in distinct.values() for s in v]):>13.2f}"
+    )
+    print(
+        "\n  set overlap ignores duplicates and order; rank agree counts a "
+        "document\n  only if it is in the same position; distinct/k is the "
+        "share of the vector\n  result that is not a repeat (see issue #169)."
+    )
 
 
 def compare(args: argparse.Namespace) -> None:

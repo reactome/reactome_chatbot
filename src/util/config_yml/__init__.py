@@ -79,40 +79,44 @@ class Config(BaseModel):
 
     @classmethod
     def from_yaml(cls, config_yml: Path = CONFIG_YML) -> Self | None:
-        """Load config.yml, falling back to the shipped defaults.
+        """Load config.yml, or the shipped defaults when there is no config.yml.
 
-        A None return disables every config-driven feature *including rate
-        limiting*, so a broken config.yml must not land there if the defaults are
-        usable -- an unreadable file should not quietly remove the message quota.
-        Note config.yml is a bind mount in docker-compose: if the file is missing
-        on the host, Docker creates a directory in its place, which is why
-        IsADirectoryError is handled alongside a genuine absence.
+        A *present but invalid* config.yml raises. It used to be swallowed, and
+        both of the quiet options are wrong:
+
+        - returning None disables every config-driven feature including the
+          message quota, so one typo removed rate limiting for everybody;
+        - falling back to config_default.yml silently applies settings nobody
+          chose -- it would re-enable `postprocessing` (external web search, and
+          its per-message cost) for an operator who had deliberately turned it
+          off, and replace their quota with the default 100.
+
+        Refusing to start is the only option that cannot quietly do the wrong
+        thing: the typo surfaces at deploy time rather than in a bill. An absent
+        config.yml is a different case and still falls back, because running
+        with documented defaults is what a fresh checkout expects.
         """
         if config_yml != CONFIG_DEFAULT_YML:
             try:
                 return cls._load(config_yml)
-            except FileNotFoundError:
+            except (FileNotFoundError, IsADirectoryError):
+                # docker-compose bind-mounts ./config.yml; when the host file is
+                # missing Docker creates a directory in its place, so both mean
+                # "no config supplied".
                 logging.warning(
-                    f"Config file not found: {config_yml} ; "
-                    f"falling back to {CONFIG_DEFAULT_YML}"
+                    f"No config at {config_yml}; using {CONFIG_DEFAULT_YML}"
                 )
-            except (
-                ValidationError,
-                ValueError,
-                IsADirectoryError,
-                yaml.YAMLError,
-            ) as e:
-                logging.error(
-                    f"Invalid config {config_yml}; falling back to "
-                    f"{CONFIG_DEFAULT_YML}. Fix this -- the fallback is not what "
-                    f"you configured:\n{e}"
-                )
+            except (ValidationError, ValueError, yaml.YAMLError) as e:
+                raise SystemExit(
+                    f"Invalid config {config_yml}:\n{e}\n\n"
+                    "Refusing to start. Fix the file, or remove it to run with "
+                    f"the defaults in {CONFIG_DEFAULT_YML}."
+                ) from e
 
         try:
             return cls._load(CONFIG_DEFAULT_YML)
         except Exception as e:
-            logging.error(
-                f"Default config {CONFIG_DEFAULT_YML} is unusable, so all "
-                f"config-driven features including rate limiting are OFF:\n{e}"
-            )
-            return None
+            raise SystemExit(
+                f"The shipped default config {CONFIG_DEFAULT_YML} is unusable, "
+                f"which should not happen in a working checkout:\n{e}"
+            ) from e

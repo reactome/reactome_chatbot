@@ -8,6 +8,13 @@ from neo4j import Driver, GraphDatabase
 NEO4J_URI = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
 NEO4J_USER = os.environ.get("NEO4J_USERNAME", "neo4j")
 NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD")
+if not NEO4J_PASSWORD:
+    # Without this the driver constructs fine and fails later at connect time
+    # with an error that does not mention the missing variable.
+    raise SystemExit(
+        "NEO4J_PASSWORD is not set. Export it before running this script; it is "
+        "no longer hardcoded here."
+    )
 
 OUTPUT_DIR = Path("./embeddings/openai/bge-m3/plantreactome/Release68/csv_files")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

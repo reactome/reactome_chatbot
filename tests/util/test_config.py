@@ -51,41 +51,75 @@ def test_missing_config_falls_back_to_defaults(tmp_path: Path) -> None:
     assert config.usage_limits.message_rates
 
 
-def test_invalid_config_falls_back_to_defaults_not_to_none(tmp_path: Path) -> None:
-    """The important one: a bad interval must not disable the limiter.
+def test_invalid_config_refuses_to_start(tmp_path: Path) -> None:
+    """A present-but-invalid config.yml must be fatal, not silently substituted.
 
-    Before, a ValidationError returned None, and `message_rate_limited(None)`
-    reports "not limited" -- so one typo removed the quota for everybody.
+    Both quiet options are wrong. Returning None disables every config-driven
+    feature including the quota, so one typo removed rate limiting. Falling back
+    to the defaults silently applies settings nobody chose -- see
+    test_fallback_would_have_re_enabled_a_disabled_feature for why that matters.
     """
     path = tmp_path / "config.yml"
     path.write_text(VALID.replace("interval: 1h", "interval: 1hr"))
-    config = Config.from_yaml(path)
-    assert config is not None, "must fall back to defaults, not to None"
-    assert config.usage_limits.message_rates, "the fallback still carries a quota"
+    with pytest.raises(SystemExit, match="Invalid config"):
+        Config.from_yaml(path)
+
+
+def test_fallback_would_have_re_enabled_a_disabled_feature(tmp_path: Path) -> None:
+    """Why the fallback was the wrong fix, pinned so it is not reintroduced.
+
+    An operator who turns postprocessing off and makes an unrelated typo would,
+    under a silent fallback, get the default config back -- which has
+    postprocessing enabled and a quota of 100. Enabling external web search
+    because of a typo elsewhere in the file is a cost and privacy change nobody
+    asked for.
+    """
+    disabled = VALID.replace("enabled: true", "enabled: false")
+    assert "enabled: false" in disabled
+
+    good = tmp_path / "good.yml"
+    good.write_text(disabled)
+    config = Config.from_yaml(good)
+    assert config is not None
+    assert config.features.postprocessing.enabled is False
+
+    # the same file with a typo must now raise rather than quietly flip it back on
+    bad = tmp_path / "bad.yml"
+    bad.write_text(disabled.replace("interval: 1h", "interval: 1hr"))
+    with pytest.raises(SystemExit):
+        Config.from_yaml(bad)
+
+    defaults = Config.from_yaml(CONFIG_DEFAULT_YML)
+    assert defaults is not None
+    assert (
+        defaults.features.postprocessing.enabled is True
+    ), "the default this would have silently substituted"
 
 
 def test_config_yml_as_a_directory_falls_back(tmp_path: Path) -> None:
     """docker-compose bind-mounts ./config.yml; if it is absent on the host,
-    Docker creates a *directory* there and open() raises IsADirectoryError."""
+    Docker creates a *directory* there. That means "no config supplied", not
+    "broken config", so it falls back rather than refusing to start."""
     path = tmp_path / "config.yml"
     path.mkdir()
     assert Config.from_yaml(path) is not None
 
 
 @pytest.mark.parametrize("content", ["", "\n", "just a string", "[1, 2, 3]"])
-def test_non_mapping_config_falls_back(tmp_path: Path, content: str) -> None:
+def test_non_mapping_config_is_fatal(tmp_path: Path, content: str) -> None:
+    """A file that exists but is not a config mapping is a mistake, not a default."""
     path = tmp_path / "config.yml"
     path.write_text(content)
-    assert Config.from_yaml(path) is not None
+    with pytest.raises(SystemExit):
+        Config.from_yaml(path)
 
 
-def test_unknown_profile_is_rejected(tmp_path: Path) -> None:
+def test_unknown_profile_is_fatal(tmp_path: Path) -> None:
+    """Starting with a profile the agent cannot build should not be silent."""
     path = tmp_path / "config.yml"
     path.write_text(VALID.replace('["React-to-Me"]', '["Nonexistent Profile"]'))
-    config = Config.from_yaml(path)
-    # falls back rather than starting with a profile the agent cannot build
-    assert config is not None
-    assert "Nonexistent Profile" not in [str(p) for p in config.profiles]
+    with pytest.raises(SystemExit):
+        Config.from_yaml(path)
 
 
 def test_config_paths_do_not_depend_on_the_working_directory(
