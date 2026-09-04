@@ -69,6 +69,24 @@ RESULTS_PER_RETRIEVER = 10
 # request for 10 returns about 5 distinct reactions. See issue #169.
 VECTOR_OVERFETCH = 3
 
+# How many fused documents each collection contributes to the answer prompt.
+#
+# weighted_reciprocal_rank returns *every* unique document across the lists it is
+# given, not a top-N, so without this the retriever ranked ~222 documents by
+# relevance and then sent all of them -- roughly 32k tokens, a quarter of
+# gpt-4o-mini's window, on every message -- which made the ranking decorative.
+#
+# The cap is per collection rather than global on purpose: reactions, summations,
+# complexes and ewas hold different kinds of information, and one global top-N
+# would let a single collection crowd the others out. Per collection guarantees
+# each one contributes.
+#
+# This value is a starting point, not a tuned one. It matches what a single
+# retriever returns. Changing it trades recall against the model's difficulty
+# attending to the middle of a long context; the right number should come from an
+# answer-quality evaluation rather than from taste.
+MAX_DOCUMENTS_PER_COLLECTION = RESULTS_PER_RETRIEVER
+
 
 def dedupe_by_entity(docs: list[Document], limit: int) -> list[Document]:
     """Keep the highest-ranked row per Reactome stable ID, up to `limit`.
@@ -217,7 +235,9 @@ class HybridRetriever(MultiQueryRetriever):
                 # only across query variants. See issue #170.
                 doc_lists.append(dedupe_by_entity(bm25_docs, RESULTS_PER_RETRIEVER))
                 doc_lists.append(dedupe_by_entity(vector_docs, RESULTS_PER_RETRIEVER))
-            subdirectory_docs.extend(self.weighted_reciprocal_rank(doc_lists))
+            subdirectory_docs.extend(
+                self.weighted_reciprocal_rank(doc_lists)[:MAX_DOCUMENTS_PER_COLLECTION]
+            )
         return subdirectory_docs
 
     async def aretrieve_documents(
@@ -260,5 +280,7 @@ class HybridRetriever(MultiQueryRetriever):
                 dedupe_by_entity(docs, RESULTS_PER_RETRIEVER)
                 for docs in await asyncio.gather(*subdir_results)
             ]
-            subdirectory_docs.extend(self.weighted_reciprocal_rank(doc_lists))
+            subdirectory_docs.extend(
+                self.weighted_reciprocal_rank(doc_lists)[:MAX_DOCUMENTS_PER_COLLECTION]
+            )
         return subdirectory_docs

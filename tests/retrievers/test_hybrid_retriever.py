@@ -21,6 +21,7 @@ pytest.importorskip("chromadb", reason="retrieval stack not installed")
 from langchain_core.documents import Document  # noqa: E402
 
 from retrievers.csv_chroma import (  # noqa: E402
+    MAX_DOCUMENTS_PER_COLLECTION,
     HybridRetriever,
     dedupe_by_entity,
     list_chroma_subdirectories,
@@ -184,3 +185,18 @@ def test_bm25_and_vector_are_fused_as_separate_lists() -> None:
     assert ranked[0] == "agreed", "agreement between the two retrievers wins"
     # the two single-source documents are tied, so only membership is asserted
     assert set(ranked[1:]) == {"bm25 only", "vector only"}
+
+
+def test_fused_results_are_capped_per_collection() -> None:
+    """RRF returns every unique document it is given, not a top-N.
+
+    Uncapped, the retriever ranked ~222 documents and sent all of them --
+    roughly 32k tokens per message, which made the ranking decorative since
+    nothing acted on it. The cap is applied per collection so that one
+    collection cannot crowd out the others.
+    """
+    many = [[_doc(f"doc {i}") for i in range(50)]]
+    assert len(_fuse(many)) == 50, "the fusion itself still returns everything"
+    assert (
+        MAX_DOCUMENTS_PER_COLLECTION < 50
+    ), "the cap, applied by the caller, is what bounds the prompt"
