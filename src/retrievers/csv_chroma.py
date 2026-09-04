@@ -67,7 +67,11 @@ RESULTS_PER_RETRIEVER = 10
 # pathway/input/output/catalyst combination -- and those rows have distinct
 # page_content, so nothing upstream collapses them. Without over-fetching, a
 # request for 10 returns about 5 distinct reactions. See issue #169.
-VECTOR_OVERFETCH = 3
+#
+# 4x, not 3x: measured over the 20 questions in tests/golden/questions.txt, 3x
+# still came up short on `complexes` for one of them (8 distinct of 10). 4x
+# clears all 20 on every collection and 6x gains nothing further.
+VECTOR_OVERFETCH = 4
 
 # How many fused documents each collection contributes to the answer prompt.
 #
