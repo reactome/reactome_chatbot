@@ -32,9 +32,12 @@ Follow these steps to run the barebones Chainlit application.
     ```
 4. Add your OpenAI key. The chatbot cannot answer without one:
     ```bash
-    cp env_template .env
-    # then edit .env and set OPENAI_API_KEY
+    echo 'OPENAI_API_KEY=sk-...' > .env
     ```
+    Do **not** copy `env_template` for this. It sets `POSTGRES_*`, which makes the
+    app try to reach a database at host `postgres:5432` — that exists in Docker
+    Compose but not on your machine, and the failure only appears on the first
+    message. `env_template` is for the Docker setup below.
 5. Put `./src` on the `PYTHONPATH`. The entry points import from there, and
    nothing sets it for you:
     ```bash
