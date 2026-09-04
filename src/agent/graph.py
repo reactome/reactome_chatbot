@@ -29,33 +29,51 @@ DEFAULT_EMBEDDING_MODEL = "text-embedding-3-large"
 
 
 def resolve_embedding_model() -> str:
-    """Pick the embedding model, defaulting to whatever built the installed bundle.
+    """Pick the embedding model, defaulting to whatever built the installed bundles.
 
-    A query is embedded with this model and compared against vectors produced by
-    whichever model built the bundle. If they differ the comparison is
-    meaningless, so the bundle is the right source of truth rather than a
-    constant that has to be kept in sync by hand.
+    A query is embedded with this model and compared against vectors already in
+    Chroma, so it has to match the model that produced them. The bundle path
+    records that -- `openai/text-embedding-3-large/reactome/Release95` -- which
+    makes it the source of truth rather than a constant kept in sync by hand.
 
-    The default used to be a literal "bge-m3", which OpenAI has no such model
-    for -- so any deployment that did not set EMBEDDING_MODEL got a 404 on its
-    first query.
+    The default used to be a literal "bge-m3". That is the right model for the
+    Plant Reactome deployment, which serves it from a self-hosted
+    OpenAI-compatible endpoint via OPENAI_BASE_URL, but it is wrong for every
+    bundle published for Reactome: against api.openai.com it is a 404 on the
+    first query. Hardcoding either one breaks the other deployment, so neither
+    is hardcoded.
+
+    AgentGraph builds a single embedding shared by every profile, so all
+    installed bundles must agree on the model. Disagreement is a real
+    misconfiguration and is reported rather than silently resolved.
     """
     configured = os.getenv("EMBEDDING_MODEL")
-    try:
-        installed = EmbeddingEnvironment.get_model("reactome")
-    except KeyError:
-        # get_model raises when the database is not installed, unlike get_dir
-        # which returns None for the same condition.
+
+    # Bundle paths are "<provider>/<model>/<database>/<version>"; the provider is
+    # supplied separately to get_embedding, so only the model is wanted here.
+    installed = {
+        bundle.parent.parent.name for bundle in EmbeddingEnvironment.get_dict().values()
+    }
+
+    if not installed:
         return configured or DEFAULT_EMBEDDING_MODEL
 
-    # get_model returns "<provider>/<model>"; the provider is supplied separately.
-    bundle_model = installed.split("/", 1)[-1]
+    if len(installed) > 1:
+        logging.error(
+            f"Installed bundles were built with different embedding models "
+            f"({', '.join(sorted(installed))}), but one embedding is shared by "
+            "every profile. Retrieval will be meaningless for whichever does not "
+            "match. Install bundles built with the same model."
+        )
+        return configured or DEFAULT_EMBEDDING_MODEL
+
+    bundle_model = installed.pop()
     if configured and configured != bundle_model:
         logging.error(
             f"EMBEDDING_MODEL is {configured!r} but the installed bundle was built "
-            f"with {bundle_model!r}. Queries will be embedded with a different "
-            "model than the stored vectors, so retrieval results will be "
-            "meaningless. Unset EMBEDDING_MODEL, or install a matching bundle."
+            f"with {bundle_model!r}. Queries would be embedded with a different "
+            "model than the stored vectors, making retrieval meaningless. Unset "
+            "EMBEDDING_MODEL, or install a matching bundle."
         )
     return configured or bundle_model
 
