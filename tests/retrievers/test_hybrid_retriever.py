@@ -22,6 +22,7 @@ from langchain_core.documents import Document  # noqa: E402
 
 from retrievers.csv_chroma import (  # noqa: E402
     HybridRetriever,
+    dedupe_by_entity,
     list_chroma_subdirectories,
 )
 
@@ -132,3 +133,54 @@ def test_installed_bundle_exposes_the_expected_collections() -> None:
         assert (
             directory / "csv_files" / f"{collection}.csv"
         ).is_file(), f"BM25 source CSV missing for collection '{collection}'"
+
+
+def _doc_with_id(st_id: str, text: str) -> Document:
+    return Document(page_content=text, metadata={"st_id": st_id})
+
+
+def test_dedupe_keeps_the_highest_ranked_row_per_entity() -> None:
+    """One reaction occupies several CSV rows -- one per pathway/input/output
+    combination -- and those rows have different page_content, so nothing
+    upstream collapses them. Before this, vector search on `reactions` returned
+    ten results containing about five distinct reactions (issue #169)."""
+    docs = [
+        _doc_with_id("R-HSA-1", "in pathway A"),
+        _doc_with_id("R-HSA-1", "in pathway B"),
+        _doc_with_id("R-HSA-2", "second reaction"),
+        _doc_with_id("R-HSA-1", "in pathway C"),
+        _doc_with_id("R-HSA-3", "third reaction"),
+    ]
+    kept = dedupe_by_entity(docs, limit=10)
+    assert [d.metadata["st_id"] for d in kept] == ["R-HSA-1", "R-HSA-2", "R-HSA-3"]
+    assert kept[0].page_content == "in pathway A", "keeps the highest-ranked row"
+
+
+def test_dedupe_respects_the_limit() -> None:
+    docs = [_doc_with_id(f"R-HSA-{i}", f"doc {i}") for i in range(20)]
+    assert len(dedupe_by_entity(docs, limit=10)) == 10
+
+
+def test_dedupe_falls_back_to_page_content_without_st_id() -> None:
+    """A collection whose metadata lacks st_id degrades to the old behaviour
+    rather than raising."""
+    docs = [_doc("same"), _doc("same"), _doc("different")]
+    kept = dedupe_by_entity(docs, limit=10)
+    assert [d.page_content for d in kept] == ["same", "different"]
+
+
+def test_bm25_and_vector_are_fused_as_separate_lists() -> None:
+    """Both retrievers' top hits must score equally.
+
+    Concatenating them into one list put every vector result at rank 11+, so the
+    best vector hit scored 1/71 against BM25's 1/61 (issue #170). As separate
+    lists both are rank 1, and a document only one of them found cannot outrank
+    a document they agree on.
+    """
+    bm25 = [_doc("agreed"), _doc("bm25 only")]
+    vector = [_doc("agreed"), _doc("vector only")]
+
+    ranked = [d.page_content for d in _fuse([bm25, vector])]
+    assert ranked[0] == "agreed", "agreement between the two retrievers wins"
+    # the two single-source documents are tied, so only membership is asserted
+    assert set(ranked[1:]) == {"bm25 only", "vector only"}

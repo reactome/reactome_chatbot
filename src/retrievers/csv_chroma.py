@@ -61,6 +61,34 @@ ExcludedField = SkipJsonSchema[
 ]
 
 
+RESULTS_PER_RETRIEVER = 10
+# The vector store is asked for more than we intend to keep, because one
+# Reactome entity can occupy several rows -- a reaction appears once per
+# pathway/input/output/catalyst combination -- and those rows have distinct
+# page_content, so nothing upstream collapses them. Without over-fetching, a
+# request for 10 returns about 5 distinct reactions. See issue #169.
+VECTOR_OVERFETCH = 3
+
+
+def dedupe_by_entity(docs: list[Document], limit: int) -> list[Document]:
+    """Keep the highest-ranked row per Reactome stable ID, up to `limit`.
+
+    Falls back to page_content for documents with no st_id, so a collection
+    without that metadata degrades to the previous behaviour rather than raising.
+    """
+    seen: set[str] = set()
+    kept: list[Document] = []
+    for doc in docs:
+        key = str(doc.metadata.get("st_id") or doc.page_content)
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(doc)
+        if len(kept) == limit:
+            break
+    return kept
+
+
 def list_chroma_subdirectories(directory: Path) -> list[str]:
     return [
         chroma_file.parent.name for chroma_file in directory.glob("*/chroma.sqlite3")
@@ -118,7 +146,7 @@ class HybridRetriever(MultiQueryRetriever):
                     text.casefold(), language="english"
                 ),
             )
-            bm25_retriever.k = 10
+            bm25_retriever.k = RESULTS_PER_RETRIEVER
 
             # set up vectorstore SelfQuery retriever
             vectordb = Chroma(
@@ -132,7 +160,7 @@ class HybridRetriever(MultiQueryRetriever):
                 vectorstore=vectordb,
                 document_contents=descriptions_info[subdirectory],
                 metadata_field_info=field_info[subdirectory],
-                search_kwargs={"k": 10},
+                search_kwargs={"k": RESULTS_PER_RETRIEVER * VECTOR_OVERFETCH},
             )
 
             _retrievers[subdirectory] = {
@@ -182,7 +210,13 @@ class HybridRetriever(MultiQueryRetriever):
                         )
                     },
                 )
-                doc_lists.append(bm25_docs + vector_docs)
+                # Separate lists, not `bm25_docs + vector_docs`. RRF scores by
+                # position, so concatenating put every vector result at rank 11+
+                # and scored the best of them 1/71 against BM25's 1/61 -- and it
+                # meant the two retrievers were never fused against each other,
+                # only across query variants. See issue #170.
+                doc_lists.append(dedupe_by_entity(bm25_docs, RESULTS_PER_RETRIEVER))
+                doc_lists.append(dedupe_by_entity(vector_docs, RESULTS_PER_RETRIEVER))
             subdirectory_docs.extend(self.weighted_reciprocal_rank(doc_lists))
         return subdirectory_docs
 
@@ -220,12 +254,11 @@ class HybridRetriever(MultiQueryRetriever):
                 )
         subdirectory_docs: list[Document] = []
         for subdir_results in subdirectory_results.values():
-            results_iter = iter(await asyncio.gather(*subdir_results))
+            # Separate lists, de-duplicated per entity, matching the synchronous
+            # path above. See issues #169 and #170.
             doc_lists: list[list[Document]] = [
-                bm25_results + vector_results
-                for bm25_results, vector_results in zip(
-                    results_iter, results_iter, strict=False
-                )
+                dedupe_by_entity(docs, RESULTS_PER_RETRIEVER)
+                for docs in await asyncio.gather(*subdir_results)
             ]
             subdirectory_docs.extend(self.weighted_reciprocal_rank(doc_lists))
         return subdirectory_docs
