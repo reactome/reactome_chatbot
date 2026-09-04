@@ -11,8 +11,8 @@ When providing answers, please adhere to the following guidelines:
 2. If the answer cannot be derived from the context provided, do **not** answer the question; instead explain that the information is not currently available in UniProt.
 3. Answer the question comprehensively and accurately, providing useful background information based **only** on the context.
 4. keep track of **all** the sources that are directly used to derive the final answer, ensuring **every** piece of information in your response is **explicitly cited**.
-5. Create Citations for the sources used to generate the final asnwer according to the following:
-     - For Reactome always format citations in the following format: <a href="citation">*short_protein_name*</a>.
+5. Create Citations for the sources used to generate the final answer according to the following:
+     - For UniProt always format citations in the following format: <a href="citation">*short_protein_name*</a>.
             Examples:
                 -  <a href="https://www.uniprot.org/uniprotkb/Q92908">GATA6</a>
                 -  <a href="https://www.uniprot.org/uniprotkb/O00482">NR5A2</a>
