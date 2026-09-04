@@ -8,14 +8,21 @@ runs:
       with:
         python-version: '3.12'
 
+    # Deliberately `pip install` into the interpreter set up above, not pipx.
+    # pipx gives Poetry its own interpreter -- on the macOS runner that is
+    # Homebrew's Python 3.14 -- and Poetry then builds the project venv with it.
+    # pydantic-core publishes no 3.14 wheel yet, so the build falls back to
+    # compiling and fails: PyO3 0.22 does not support 3.14.
     - name: Install Poetry
       shell: bash
-      run: pipx install poetry==1.8.4
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install poetry==1.8.4
 
     # poetry.toml sets virtualenvs.in-project, so the environment lands in
     # ./.venv and can be cached wholesale. Without this every job reinstalls the
     # dependency set from scratch -- which includes a ~200 MB torch wheel -- and
-    # there are now several jobs per run.
+    # there are several jobs per run.
     - name: Cache the virtualenv
       uses: actions/cache@v4
       with:
