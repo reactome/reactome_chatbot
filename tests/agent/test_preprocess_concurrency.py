@@ -56,9 +56,9 @@ def test_safety_and_language_overlap() -> None:
 
     spans = {name: (start, end) for name, start, end in log}
     safety, language = spans["safety"], spans["language"]
-    assert (
-        safety[0] < language[1] and language[0] < safety[1]
-    ), "safety and language detection did not overlap"
+    # Two intervals overlap when each starts before the other ends.
+    assert safety[0] < language[1], "safety started after language detection finished"
+    assert language[0] < safety[1], "language detection started after safety finished"
 
     # Three sequential calls would take 3 * DELAY; overlapping two takes about 2.
     assert (
