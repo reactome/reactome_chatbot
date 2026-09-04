@@ -47,6 +47,9 @@ pyyaml = "^6.0.2"
 tavily-python = "^0.5.0"
 openpyxl = "^3.1.5"
 nltk = "^3.9.1"
+beautifulsoup4 = "^4.12.0"
+lxml = "^5.0.0"
+requests = "^2.32.0"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.7.1"
@@ -142,10 +145,21 @@ check_untyped_defs = false
 # Modules that do not yet meet the floor above. Each entry is debt: fix the module,
 # then delete its block. Do not add to this list without a TODO.
 [[tool.mypy.overrides]]
-# TODO(phase-2): every node returns a partial CrossDatabaseState; the TypedDict needs
+# TODO(phase-2): every node returns a partial state; the TypedDict needs
 # `total=False` or per-node Partial* types.
 module = ["agent.profiles.cross_database"]
 disable_error_code = ["typeddict-item"]
+
+[[tool.mypy.overrides]]
+# A module may appear in only one override section, so both TODOs live here.
+# TODO(phase-2): partial-state returns, as for cross_database above.
+# TODO(phase-2): preprocess() narrows BaseState to ReactToMeState, which is an LSP
+# violation -- parameters may widen, not narrow. The fix is to make BaseGraphBuilder
+# generic in its state type (BaseGraphBuilder[StateT]) so each profile declares its
+# own. Deferred because base.py is also modified by the safetycheck and analysis
+# branches, and a generics refactor there would collide with both.
+module = ["agent.profiles.react_to_me"]
+disable_error_code = ["typeddict-item", "override"]
 
 [[tool.mypy.overrides]]
 # TODO(phase-2): `EmbeddingEnvironment.get_dir()` returns `Path | None` but the
@@ -155,6 +169,7 @@ module = [
     "retrievers.reactome.rag",
     "retrievers.uniprot.rag",
     "retrievers.plantreactome.rag",
+    "retrievers.userguide.rag",
 ]
 disable_error_code = ["assignment"]
 
