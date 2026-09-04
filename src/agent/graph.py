@@ -16,6 +16,7 @@ from psycopg_pool import AsyncConnectionPool
 from agent.models import get_embedding, get_llm
 from agent.profiles import ProfileName, create_profile_graphs
 from agent.profiles.base import InputState, OutputState
+from util.embedding_environment import EmbeddingEnvironment
 from util.logging import logging
 
 LANGGRAPH_DB_URI = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_LANGGRAPH_DB')}?sslmode=disable"
@@ -24,13 +25,66 @@ if not os.getenv("POSTGRES_LANGGRAPH_DB"):
     logging.warning("POSTGRES_LANGGRAPH_DB undefined; falling back to MemorySaver.")
 
 
+DEFAULT_EMBEDDING_MODEL = "text-embedding-3-large"
+
+
+def resolve_embedding_model() -> str:
+    """Pick the embedding model, defaulting to whatever built the installed bundles.
+
+    A query is embedded with this model and compared against vectors already in
+    Chroma, so it has to match the model that produced them. The bundle path
+    records that -- `openai/text-embedding-3-large/reactome/Release95` -- which
+    makes it the source of truth rather than a constant kept in sync by hand.
+
+    The default used to be a literal "bge-m3". That is the right model for the
+    Plant Reactome deployment, which serves it from a self-hosted
+    OpenAI-compatible endpoint via OPENAI_BASE_URL, but it is wrong for every
+    bundle published for Reactome: against api.openai.com it is a 404 on the
+    first query. Hardcoding either one breaks the other deployment, so neither
+    is hardcoded.
+
+    AgentGraph builds a single embedding shared by every profile, so all
+    installed bundles must agree on the model. Disagreement is a real
+    misconfiguration and is reported rather than silently resolved.
+    """
+    configured = os.getenv("EMBEDDING_MODEL")
+
+    # Bundle paths are "<provider>/<model>/<database>/<version>"; the provider is
+    # supplied separately to get_embedding, so only the model is wanted here.
+    installed = {
+        bundle.parent.parent.name for bundle in EmbeddingEnvironment.get_dict().values()
+    }
+
+    if not installed:
+        return configured or DEFAULT_EMBEDDING_MODEL
+
+    if len(installed) > 1:
+        logging.error(
+            f"Installed bundles were built with different embedding models "
+            f"({', '.join(sorted(installed))}), but one embedding is shared by "
+            "every profile. Retrieval will be meaningless for whichever does not "
+            "match. Install bundles built with the same model."
+        )
+        return configured or DEFAULT_EMBEDDING_MODEL
+
+    bundle_model = installed.pop()
+    if configured and configured != bundle_model:
+        logging.error(
+            f"EMBEDDING_MODEL is {configured!r} but the installed bundle was built "
+            f"with {bundle_model!r}. Queries would be embedded with a different "
+            "model than the stored vectors, making retrieval meaningless. Unset "
+            "EMBEDDING_MODEL, or install a matching bundle."
+        )
+    return configured or bundle_model
+
+
 class AgentGraph:
     def __init__(
         self,
         profiles: list[ProfileName],
     ) -> None:
         # Get base models
-        embedding_model = os.getenv("EMBEDDING_MODEL", "bge-m3")
+        embedding_model = resolve_embedding_model()
         llm_model = os.getenv("LLM_MODEL", "gpt-4o-mini")
         llm_base_url = os.getenv("LLM_BASE_URL", None)
         llm: BaseChatModel = get_llm(

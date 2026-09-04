@@ -14,3 +14,10 @@ CHAINLIT_IMAGE=public.ecr.aws/reactome/reactome-chatbot:latest
 CHAINLIT_URI=/chat
 CHAINLIT_ROOT_PATH=
 TAVILY_API_KEY=
+
+# Embedding model. Leave unset: it defaults to whatever built the installed
+# bundle, which is what the stored vectors were produced with. Setting it to
+# anything else makes retrieval meaningless.
+#EMBEDDING_MODEL=
+# LLM used for answers; defaults to gpt-4o-mini.
+#LLM_MODEL=
