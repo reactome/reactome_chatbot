@@ -9,6 +9,6 @@ class WebSearchResult(TypedDict):
 
 class SearchState(TypedDict, total=False):
     input: str  # LLM enhanced User question
-    generation: str  # LLM generated reponse to the user question
+    generation: str  # LLM generated response to the user question
     complete: str  # "Yes" or "No" to search for external resources
     search_results: list[WebSearchResult]  # Results from searching the web

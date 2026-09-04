@@ -30,24 +30,33 @@ Follow these steps to run the barebones Chainlit application.
     ```bash
     poetry install
     ```
-4. Verify your `PYTHONPATH` environment variable includes `./src`:
+4. Add your OpenAI key. The chatbot cannot answer without one:
     ```bash
-    echo $PYTHONPATH
-    # ./src
+    echo 'OPENAI_API_KEY=sk-...' > .env
     ```
-5. List embeddings available for download:
+    Do **not** copy `env_template` for this. It sets `POSTGRES_*`, which makes the
+    app try to reach a database at host `postgres:5432` — that exists in Docker
+    Compose but not on your machine, and the failure only appears on the first
+    message. `env_template` is for the Docker setup below.
+5. Put `./src` on the `PYTHONPATH`. The entry points import from there, and
+   nothing sets it for you:
     ```bash
-    ./bin/embeddings_manager ls-remote
+    export PYTHONPATH="./src:$PYTHONPATH"
     ```
-6. Install your chosen embeddings:
+6. List embeddings available for download. `poetry run` puts the project's
+   dependencies on the path:
     ```bash
-    ./bin/embeddings_manager install openai/text-embedding-3-large/reactome/ReleaseXX
+    poetry run ./bin/embeddings_manager ls-remote
     ```
-7. Run the Chainlit application:
+7. Install your chosen embeddings. These are multi-gigabyte downloads:
+    ```bash
+    poetry run ./bin/embeddings_manager install openai/text-embedding-3-large/reactome/ReleaseXX
     ```
-    chainlit run bin/chat-chainlit.py -w
+8. Run the Chainlit application:
+    ```bash
+    poetry run chainlit run bin/chat-chainlit.py -w
     ```
-8. Access the app at http://localhost:8000 🎉
+9. Access the app at http://localhost:8000 🎉
 
 ### Docker Setup
 

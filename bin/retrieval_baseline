@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Record what each retriever returns, so a change to retrieval can be diffed.
 
 Retrieval quality has no right answer, only a "did this change". This captures
