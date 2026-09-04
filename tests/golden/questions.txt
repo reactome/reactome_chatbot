@@ -1,0 +1,28 @@
+# Fixed question set for the retrieval baseline. One per line; blank lines and
+# `#` comments are ignored.
+#
+# Chosen to span the four Chroma collections and several query shapes: named
+# entities, processes, complexes, gene/protein lookups, disease context, and a
+# couple of vaguer questions where retrieval has to work harder. Keep this list
+# stable -- changing it invalidates comparison against an earlier capture.
+
+What does CDK5 phosphorylate in Alzheimer's disease?
+How does TP53 regulate PTEN transcription?
+What is the role of CDK12 in DNA repair gene expression?
+Which proteins are in the RNA polymerase II elongation complex?
+What happens during Golgi fragmentation in neurodegeneration?
+How is oxidative stress handled by peroxiredoxins?
+What reactions involve EGFR autophosphorylation?
+Describe the components of the proteasome
+What is the function of BRCA1 in homologous recombination?
+Which pathways involve insulin receptor signalling?
+What role does p53 play in apoptosis?
+How does the electron transport chain generate ATP?
+What is the mechanism of ubiquitin-mediated protein degradation?
+Which complexes contain histone deacetylases?
+What are the steps of glycolysis?
+How do Wnt signalling pathways control gene transcription?
+What is the role of mTOR in cell growth?
+Which reactions produce nitric oxide?
+What proteins interact with beta-catenin?
+How does autophagy degrade cellular components?

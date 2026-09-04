@@ -1,0 +1,263 @@
+#!/usr/bin/env python
+"""Record what each retriever returns, so a change to retrieval can be diffed.
+
+Retrieval quality has no right answer, only a "did this change". This captures
+the documents each retriever returns for a fixed question set, per Chroma
+collection, and writes them to JSON. Run it before a change and after, then
+`compare` the two files.
+
+Two of the pipeline's steps call an LLM and so are not reproducible: the
+multi-query expansion, and SelfQueryRetriever's translation of a question into a
+metadata filter. This tool deliberately skips the expansion and feeds each
+question to the retrievers directly, which makes BM25 and plain vector search
+exactly reproducible. SelfQuery still varies run to run -- which is itself worth
+knowing, and is why `overlap` exists.
+
+  ./bin/retrieval_baseline capture --out before.json
+  ./bin/retrieval_baseline overlap before.json      # selfquery vs plain vector
+  ./bin/retrieval_baseline compare before.json after.json
+
+Requires an installed reactome embeddings bundle and OPENAI_API_KEY.
+"""
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+from typing import Any
+
+import nltk
+from dotenv import load_dotenv
+from langchain.retrievers.self_query.base import SelfQueryRetriever
+from langchain_chroma.vectorstores import Chroma
+from langchain_community.document_loaders.csv_loader import CSVLoader
+from langchain_community.retrievers import BM25Retriever
+from langchain_core.documents import Document
+from langchain_core.retrievers import BaseRetriever
+from nltk.tokenize import word_tokenize
+
+from agent.models import get_embedding, get_llm
+from retrievers.csv_chroma import chroma_settings, list_chroma_subdirectories
+from retrievers.reactome.metadata_info import (
+    reactome_descriptions_info,
+    reactome_field_info,
+)
+from util.embedding_environment import EmbeddingEnvironment
+
+DEFAULT_QUESTIONS = Path(__file__).parent.parent / "tests" / "golden" / "questions.txt"
+DEFAULT_K = 10
+
+# {question: {collection: {retriever: [doc id, ...]}}}
+Capture = dict[str, dict[str, dict[str, list[str]]]]
+
+
+def read_questions(path: Path) -> list[str]:
+    lines = path.read_text().splitlines()
+    return [ln.strip() for ln in lines if ln.strip() and not ln.startswith("#")]
+
+
+def doc_id(doc: Document) -> str:
+    """Reactome stable IDs survive a bundle rebuild; row numbers do not."""
+    st_id = doc.metadata.get("st_id")
+    return str(st_id) if st_id else f"row:{doc.metadata.get('row', '?')}"
+
+
+def build_retrievers(
+    embeddings_dir: Path, collection: str, k: int, *, with_selfquery: bool
+) -> dict[str, BaseRetriever]:
+    llm = get_llm("openai", "gpt-4o-mini")
+    embedding = get_embedding("openai", "text-embedding-3-large")
+
+    csv_path = embeddings_dir / "csv_files" / f"{collection}.csv"
+    bm25 = BM25Retriever.from_documents(
+        CSVLoader(file_path=str(csv_path)).load(),
+        preprocess_func=lambda text: word_tokenize(text.casefold(), language="english"),
+    )
+    bm25.k = k
+
+    vectordb = Chroma(
+        persist_directory=str(embeddings_dir / collection),
+        embedding_function=embedding,
+        client_settings=chroma_settings,
+    )
+
+    retrievers: dict[str, BaseRetriever] = {
+        "bm25": bm25,
+        # The plain semantic retriever: similarity search with no LLM in the loop.
+        "vector": vectordb.as_retriever(search_kwargs={"k": k}),
+    }
+    if with_selfquery:
+        retrievers["selfquery"] = SelfQueryRetriever.from_llm(
+            llm=llm,
+            vectorstore=vectordb,
+            document_contents=reactome_descriptions_info[collection],
+            metadata_field_info=reactome_field_info[collection],
+            search_kwargs={"k": k},
+        )
+    return retrievers
+
+
+def capture(args: argparse.Namespace) -> None:
+    embeddings_dir: Path | None = args.embeddings_dir
+    if embeddings_dir is None:
+        raise SystemExit(
+            "No reactome embeddings installed. "
+            "Run ./bin/embeddings_manager install <embedding-id>, or pass "
+            "--embeddings-dir."
+        )
+    questions = read_questions(args.questions)
+    collections = sorted(list_chroma_subdirectories(embeddings_dir))
+    if not collections:
+        raise SystemExit(f"No Chroma collections found under {embeddings_dir}")
+
+    print(
+        f"{len(questions)} questions x {len(collections)} collections "
+        f"({', '.join(collections)}), k={args.k}",
+        file=sys.stderr,
+    )
+
+    result: Capture = {q: {} for q in questions}
+    for collection in collections:
+        print(f"  {collection}: building retrievers...", file=sys.stderr)
+        retrievers = build_retrievers(
+            embeddings_dir, collection, args.k, with_selfquery=args.with_selfquery
+        )
+        for i, question in enumerate(questions, start=1):
+            print(f"    [{i}/{len(questions)}] {question[:60]}", file=sys.stderr)
+            per_retriever: dict[str, list[str]] = {}
+            for name, retriever in retrievers.items():
+                docs = retriever.invoke(question)
+                per_retriever[name] = [doc_id(d) for d in docs]
+            result[question][collection] = per_retriever
+
+    payload: dict[str, Any] = {
+        "bundle": str(embeddings_dir),
+        "k": args.k,
+        "collections": collections,
+        "results": result,
+    }
+    args.out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    print(f"\nWrote {args.out}", file=sys.stderr)
+
+
+def _jaccard(a: list[str], b: list[str]) -> float:
+    sa, sb = set(a), set(b)
+    if not sa and not sb:
+        return 1.0
+    return len(sa & sb) / len(sa | sb)
+
+
+def overlap(args: argparse.Namespace) -> None:
+    """How far does plain vector search land from SelfQuery on the same question?
+
+    This is the evidence for whether SelfQueryRetriever can be replaced by a
+    plain semantic retriever: high overlap means the LLM-built metadata filter
+    is rarely changing which documents come back.
+    """
+    payload = json.loads(args.capture.read_text())
+    results: Capture = payload["results"]
+
+    by_collection: dict[str, list[float]] = {}
+    for _question, collections in results.items():
+        for collection, retrievers in collections.items():
+            if "selfquery" not in retrievers or "vector" not in retrievers:
+                raise SystemExit(
+                    "This capture has no selfquery results. "
+                    "Re-run capture with --with-selfquery."
+                )
+            by_collection.setdefault(collection, []).append(
+                _jaccard(retrievers["selfquery"], retrievers["vector"])
+            )
+
+    print("selfquery vs plain vector, per collection (1.0 = identical sets)\n")
+    for collection, scores in sorted(by_collection.items()):
+        mean = sum(scores) / len(scores)
+        identical = sum(1 for s in scores if s == 1.0)
+        print(
+            f"  {collection:<14} mean overlap {mean:5.2f}   "
+            f"identical on {identical}/{len(scores)} questions"
+        )
+    allscores = [s for v in by_collection.values() for s in v]
+    print(f"\n  overall mean overlap: {sum(allscores) / len(allscores):.2f}")
+
+
+def compare(args: argparse.Namespace) -> None:
+    before: Capture = json.loads(args.before.read_text())["results"]
+    after: Capture = json.loads(args.after.read_text())["results"]
+
+    changed = 0
+    total = 0
+    for question, collections in before.items():
+        if question not in after:
+            print(f"! question missing from the newer capture: {question}")
+            continue
+        for collection, retrievers in collections.items():
+            for name, ids in retrievers.items():
+                new_ids = after[question].get(collection, {}).get(name)
+                if new_ids is None:
+                    continue
+                total += 1
+                if new_ids == ids:
+                    continue
+                changed += 1
+                same_set = set(new_ids) == set(ids)
+                kind = "REORDERED" if same_set else "DIFFERENT DOCS"
+                print(f"\n{kind}  [{collection}/{name}]  {question}")
+                print(f"    before: {ids}")
+                print(f"    after:  {new_ids}")
+                if not same_set:
+                    print(f"    dropped: {sorted(set(ids) - set(new_ids))}")
+                    print(f"    added:   {sorted(set(new_ids) - set(ids))}")
+
+    print(f"\n{changed}/{total} retriever results changed.")
+    if changed:
+        sys.exit(1)
+
+
+def main() -> None:
+    load_dotenv()
+    try:
+        nltk.data.find("tokenizers/punkt_tab")
+    except LookupError:
+        print("Downloading nltk punkt_tab...", file=sys.stderr)
+        nltk.download("punkt_tab", quiet=True)
+    if not os.getenv("OPENAI_API_KEY"):
+        raise SystemExit("OPENAI_API_KEY is not set.")
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(required=True)
+
+    p_capture = sub.add_parser("capture", help="Record retriever output to JSON")
+    p_capture.add_argument("--out", type=Path, required=True)
+    p_capture.add_argument("--questions", type=Path, default=DEFAULT_QUESTIONS)
+    p_capture.add_argument("--k", type=int, default=DEFAULT_K)
+    p_capture.add_argument(
+        "--embeddings-dir",
+        type=Path,
+        default=EmbeddingEnvironment.get_dir("reactome"),
+    )
+    p_capture.add_argument(
+        "--with-selfquery",
+        action="store_true",
+        help="Also run SelfQueryRetriever (one LLM call per question per collection)",
+    )
+    p_capture.set_defaults(func=capture)
+
+    p_overlap = sub.add_parser(
+        "overlap", help="Compare selfquery against plain vector within one capture"
+    )
+    p_overlap.add_argument("capture", type=Path)
+    p_overlap.set_defaults(func=overlap)
+
+    p_compare = sub.add_parser("compare", help="Diff two captures")
+    p_compare.add_argument("before", type=Path)
+    p_compare.add_argument("after", type=Path)
+    p_compare.set_defaults(func=compare)
+
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()
