@@ -11,8 +11,12 @@ from util.config_yml.usage_limits import MessageRate, UsageLimits
 from util.config_yml.user_matching import match_user
 from util.logging import logging
 
-CONFIG_YML = Path("config.yml")
-CONFIG_DEFAULT_YML = Path("config_default.yml")
+# Anchored to the repo rather than the working directory, so these resolve the
+# same whether the process starts from the repo root, a subdirectory, or /app in
+# the container. Matches util.embedding_environment.REPO_ROOT.
+REPO_ROOT: Path = Path(__file__).parent.parent.parent.parent
+CONFIG_YML = REPO_ROOT / "config.yml"
+CONFIG_DEFAULT_YML = REPO_ROOT / "config_default.yml"
 
 
 class Config(BaseModel):

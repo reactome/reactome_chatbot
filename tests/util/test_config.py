@@ -9,9 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from util.config_yml import CONFIG_DEFAULT_YML, Config
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from util.config_yml import CONFIG_DEFAULT_YML, CONFIG_YML, Config
 
 VALID = """
 profiles: ["React-to-Me"]
@@ -30,12 +28,6 @@ messages:
     trigger:
       event: on_chat_start
 """
-
-
-@pytest.fixture(autouse=True)
-def _in_repo_root(monkeypatch: pytest.MonkeyPatch) -> None:
-    """CONFIG_DEFAULT_YML is a relative path, so the fallback needs the repo root."""
-    monkeypatch.chdir(REPO_ROOT)
 
 
 def test_the_shipped_default_config_is_valid() -> None:
@@ -94,3 +86,18 @@ def test_unknown_profile_is_rejected(tmp_path: Path) -> None:
     # falls back rather than starting with a profile the agent cannot build
     assert config is not None
     assert "Nonexistent Profile" not in [str(p) for p in config.profiles]
+
+
+def test_config_paths_do_not_depend_on_the_working_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The defaults must resolve from anywhere, not just the repo root.
+
+    These used to be Path("config.yml") / Path("config_default.yml"), i.e.
+    relative to the process working directory, so running from a subdirectory
+    silently lost the config.
+    """
+    assert CONFIG_YML.is_absolute()
+    assert CONFIG_DEFAULT_YML.is_absolute()
+    monkeypatch.chdir(tmp_path)
+    assert Config.from_yaml(CONFIG_DEFAULT_YML) is not None
