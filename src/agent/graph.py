@@ -50,8 +50,38 @@ class AgentGraph:
         self.pool: AsyncConnectionPool[AsyncConnection[dict[str, Any]]] | None = None
 
     def __del__(self) -> None:
-        if self.pool:
-            asyncio.run(self.close_pool())
+        """Close the connection pool if nothing else did.
+
+        This used to call asyncio.run() unconditionally, which raises
+        RuntimeError when a loop is already running -- and __del__ can fire at
+        any point, including inside the running server. Exceptions in __del__ are
+        swallowed and printed, so it surfaced as noise in production logs with the
+        pool still open.
+
+        Scheduling the close with loop.create_task() is not a fix either: the
+        task is not guaranteed to run if the loop is shutting down, which is
+        exactly when a graph is usually collected.
+
+        Nothing calls close_pool() explicitly today, so this is the only cleanup
+        there is. The real fix is an explicit lifecycle -- close the pool from the
+        application's shutdown hook -- which belongs with the agent-API work.
+        """
+        if self.pool is None:
+            return
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            # No loop running, so we can drive the close to completion.
+            try:
+                asyncio.run(self.close_pool())
+            except Exception as e:
+                logging.warning(f"Could not close the connection pool: {e}")
+            return
+        logging.warning(
+            "AgentGraph was garbage-collected while an event loop is running; "
+            "its Postgres pool is still open. Close it explicitly from the "
+            "application shutdown hook."
+        )
 
     async def initialize(self) -> dict[str, CompiledStateGraph]:
         checkpointer: BaseCheckpointSaver[str] = await self.create_checkpointer()

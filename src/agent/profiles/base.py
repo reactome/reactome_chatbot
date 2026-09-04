@@ -1,3 +1,4 @@
+import asyncio
 from typing import Annotated, Literal, TypedDict
 
 from langchain_core.embeddings import Embeddings
@@ -57,11 +58,15 @@ class BaseGraphBuilder:
             },
             config,
         )
-        safety_check: SafetyCheck = await self.safety_checker.ainvoke(
-            {"rephrased_input": rephrased_input}, config
-        )
-        detected_language: str = await self.language_detector.ainvoke(
-            {"user_input": state["user_input"]}, config
+        # The safety check needs the rephrased text, so it has to follow. Language
+        # detection reads the raw user input and does not, so the two overlap
+        # instead of running back to back -- one LLM round trip saved on every
+        # message, on the path every profile uses.
+        safety_check: SafetyCheck
+        detected_language: str
+        safety_check, detected_language = await asyncio.gather(
+            self.safety_checker.ainvoke({"rephrased_input": rephrased_input}, config),
+            self.language_detector.ainvoke({"user_input": state["user_input"]}, config),
         )
         return BaseState(
             rephrased_input=rephrased_input,
