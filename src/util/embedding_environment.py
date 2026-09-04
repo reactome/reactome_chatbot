@@ -6,15 +6,15 @@ EM_CURRENT: Path = EM_ARCHIVE / "current"
 
 
 class EmbeddingEnvironment:
-    def __init__(self, env_path: str):
-        self.embeddings: dict[str, Path] = dict()
+    def __init__(self, env_path: str) -> None:
+        self.embeddings: dict[str, Path] = {}
         if env_path != "":
             for embedding_path in map(Path, env_path.split(":")):
                 db: str = embedding_path.parent.name
                 self.embeddings[db] = embedding_path
 
     @classmethod
-    def _get(cls):  # -> Self
+    def _get(cls) -> "EmbeddingEnvironment":
         if EM_CURRENT.exists():
             with EM_CURRENT.open("r") as current_fp:
                 env_path = current_fp.read()
@@ -30,8 +30,7 @@ class EmbeddingEnvironment:
     def get_dir(cls, key: str) -> Path | None:
         if key in cls._get().embeddings:
             return EM_ARCHIVE / cls._get().embeddings[key]
-        else:
-            return None
+        return None
 
     @classmethod
     def get_model(cls, key: str) -> str:

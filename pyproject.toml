@@ -47,6 +47,9 @@ pyyaml = "^6.0.2"
 tavily-python = "^0.5.0"
 openpyxl = "^3.1.5"
 nltk = "^3.9.1"
+beautifulsoup4 = "^4.12.0"
+lxml = "^5.0.0"
+requests = "^2.32.0"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.7.1"
@@ -72,3 +75,116 @@ priority = "explicit"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+src = ["src", "bin"]
+extend-exclude = ["embeddings", "records", "data", ".venv"]
+
+[tool.ruff.lint]
+# One rule set for the whole repo. E501 is the formatter's job -- it cannot split
+# long string literals anyway -- and RUF001 fires on intentional typography inside
+# LLM prompt text.
+select = [
+    "E", "F", "I", "UP", "B", "SIM", "RUF",  # the core set
+    "S",      # bandit: security
+    "C4",     # comprehensions
+    "RET",    # return-statement hygiene
+    "PIE", "PT", "ISC", "INT", "ICN", "TID", "A", "LOG", "G", "ERA", "N",
+]
+ignore = ["E501", "RUF001", "ISC001"]
+
+# Not yet enforced. Each needs a decision rather than a mechanical fix, so they
+# are listed here instead of being silently dropped:
+#   PTH  ~41 os.path -> pathlib rewrites; mechanical but touches files the
+#        retriever work will rewrite. Worth its own commit afterwards.
+#   DTZ  datetime.now() without tzinfo. The rate limiter and static-message
+#        throttle deliberately store naive local timestamps in user metadata;
+#        changing that is a storage-format decision, not a lint fix.
+#   ARG  unused arguments -- several are required by LangGraph node signatures.
+#   BLE  blind `except Exception` in top-level scripts.
+#   C901 two functions over the complexity threshold.
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "agent",
+    "data_generation",
+    "evaluation",
+    "retrievers",
+    "tools",
+    "util",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Entry-point scripts intentionally configure the app at import time.
+"bin/*" = ["E402"]
+# assert is how pytest asserts.
+"tests/*" = ["S101"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "bin"]
+addopts = "-q --strict-markers --strict-config"
+markers = [
+    "requires_embeddings: needs an installed embeddings bundle (see ./bin/embeddings_manager)",
+    "requires_retrieval_stack: needs the full langchain/chromadb dependency set installed",
+]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["bin", "src", "tests", ".github", "export_csvs.py"]
+exclude = "^(data|embeddings|records)/"
+mypy_path = "src"
+explicit_package_bases = true
+ignore_missing_imports = true
+# --- ratchet: currently-enforced floor (the code already largely satisfies this) ---
+check_untyped_defs = true
+no_implicit_optional = true
+strict_equality = true
+warn_redundant_casts = true
+# Annotation coverage reached 100%, so these are enforced repo-wide rather than
+# per-module. There is now one standard for every file.
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_no_return = true
+warn_return_any = true
+extra_checks = true
+# disallow_untyped_decorators stays off: chainlit's @cl.* decorators are
+# untyped upstream, so it only ever fires on bin/chat-chainlit.py.
+
+# --- mypy baseline -------------------------------------------------------------
+# Modules that do not yet meet the floor above. Each entry is debt: fix the module,
+# then delete its block. Do not add to this list without a TODO.
+[[tool.mypy.overrides]]
+# TODO(phase-2): every node returns a partial state; the TypedDict needs
+# `total=False` or per-node Partial* types.
+module = ["agent.profiles.cross_database"]
+disable_error_code = ["typeddict-item", "no-any-return"]
+
+[[tool.mypy.overrides]]
+# A module may appear in only one override section, so both TODOs live here.
+# TODO(phase-2): partial-state returns, as for cross_database above.
+# TODO(phase-2): preprocess() narrows BaseState to ReactToMeState, which is an LSP
+# violation -- parameters may widen, not narrow. The fix is to make BaseGraphBuilder
+# generic in its state type (BaseGraphBuilder[StateT]) so each profile declares its
+# own. Deferred because base.py is also modified by the safetycheck and analysis
+# branches, and a generics refactor there would collide with both.
+module = ["agent.profiles.react_to_me"]
+disable_error_code = ["typeddict-item", "override"]
+
+[[tool.mypy.overrides]]
+# TODO(phase-2): `EmbeddingEnvironment.get_dir()` returns `Path | None` but the
+# parameter is typed `Path`, so an uninstalled bundle passes None straight through.
+# Fixed properly by moving the lookup out of the default argument (see ruff B008).
+module = [
+    "retrievers.reactome.rag",
+    "retrievers.uniprot.rag",
+    "retrievers.plantreactome.rag",
+    "retrievers.userguide.rag",
+]
+disable_error_code = ["assignment"]
+

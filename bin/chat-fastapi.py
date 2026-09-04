@@ -1,7 +1,9 @@
 import hashlib
 import hmac
 import os
+from collections.abc import Awaitable, Callable
 from string import Template
+from urllib.parse import urlsplit
 
 import requests
 from chainlit.utils import mount_chainlit
@@ -59,28 +61,31 @@ def verify_secure_cookie(cookie_value: str) -> bool:
 
 
 @app.middleware("http")
-async def verify_captcha_middleware(request: Request, call_next):
-    if (
-        CHAINLIT_URI
-        and not request.url.path.startswith(CHAINLIT_URI)
-        and request.url.path[-1] != "/"
-    ):
-        return RedirectResponse(url=f"{request.url.path}/")
+async def verify_captcha_middleware(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    path = request.url.path
+    if CHAINLIT_URI and path == CHAINLIT_URI and not path.endswith("/"):
+        # Safety: ensure the path is a clean, simple relative path with no
+        # scheme/host/dot-segments before echoing it back.
+        clean_path = urlsplit(path).path
+        if ".." not in clean_path:
+            return RedirectResponse(url=f"{clean_path}/")
+
     # Allow access to CAPTCHA pages and static files
     if (
-        request.url.path
+        path
         in [
             "/chat/",
             f"{CHAINLIT_URI}/verify_captcha",
             f"{CHAINLIT_URI}/verify_captcha_page",
             f"{CHAINLIT_URI}/static",
         ]
-        or request.url.path.startswith("/static")
+        or path.startswith("/static")
         or not os.getenv("CLOUDFLARE_SECRET_KEY")
-        or (CHAINLIT_URI and not request.url.path.startswith(CHAINLIT_URI))
+        or (CHAINLIT_URI and not path.startswith(CHAINLIT_URI))
     ):
-        response = await call_next(request)
-        return response
+        return await call_next(request)
 
     host = request.headers.get("referer")
     if host and host.startswith("http:"):
@@ -96,13 +101,12 @@ async def verify_captcha_middleware(request: Request, call_next):
     if not captcha_verified or not verify_secure_cookie(captcha_verified):
         return RedirectResponse(url=f"{CHAINLIT_URI}/verify_captcha_page")
 
-    response = await call_next(request)
-    return response
+    return await call_next(request)
 
 
 # Serve the CAPTCHA verification page (basic HTML form)
 @app.get(f"{CHAINLIT_URI}/verify_captcha_page")
-async def captcha_page():
+async def captcha_page() -> Response:
     html_content = f"""
     <html>
         <head>
@@ -128,7 +132,7 @@ async def captcha_page():
 
 
 @app.post(f"{CHAINLIT_URI}/verify_captcha")
-async def verify_captcha(request: Request):
+async def verify_captcha(request: Request) -> Response:
     form_data = await request.form()
     cf_turnstile_response = form_data.get("cf-turnstile-response")
     if not isinstance(cf_turnstile_response, str):
@@ -167,7 +171,7 @@ async def verify_captcha(request: Request):
     }
 
     # Perform request to Cloudflare Turnstile verification endpoint
-    response = requests.post(url, data=data)
+    response = requests.post(url, data=data, timeout=10)
     result = response.json()
 
     # If CAPTCHA validation fails, return an error
@@ -199,7 +203,7 @@ async def verify_captcha(request: Request):
 
 
 @app.get("/chat/")
-async def landing_page():
+async def landing_page() -> HTMLResponse:
     html_content = Template(
         """
     <html>

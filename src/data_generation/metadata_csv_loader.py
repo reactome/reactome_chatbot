@@ -1,6 +1,6 @@
 import csv
 from io import TextIOWrapper
-from typing import Any, Optional
+from typing import Any
 
 from langchain_community.document_loaders.base import BaseLoader
 from langchain_community.document_loaders.helpers import detect_file_encodings
@@ -31,11 +31,11 @@ class MetaDataCSVLoader(BaseLoader):
     def __init__(
         self,
         file_path: str,
-        source_column: Optional[str] = None,
-        metadata_columns: Optional[list[str]] = None,
-        content_columns: Optional[list[str]] = None,
-        csv_args: dict[str, Any] = dict(),
-        encoding: Optional[str] = None,
+        source_column: str | None = None,
+        metadata_columns: list[str] | None = None,
+        content_columns: list[str] | None = None,
+        csv_args: dict[str, Any] | None = None,
+        encoding: str | None = None,
         autodetect_encoding: bool = False,
     ) -> None:
         """
@@ -51,11 +51,11 @@ class MetaDataCSVLoader(BaseLoader):
             autodetect_encoding: Whether to try to autodetect the file encoding.
         """
         self.file_path: str = file_path
-        self.source_column: Optional[str] = source_column
-        self.metadata_columns: Optional[list[str]] = metadata_columns
-        self.content_columns: Optional[list[str]] = content_columns
-        self.encoding: Optional[str] = encoding
-        self.csv_args: dict[str, Any] = csv_args
+        self.source_column: str | None = source_column
+        self.metadata_columns: list[str] | None = metadata_columns
+        self.content_columns: list[str] | None = content_columns
+        self.encoding: str | None = encoding
+        self.csv_args: dict[str, Any] = csv_args if csv_args is not None else {}
         self.autodetect_encoding: bool = autodetect_encoding
 
     def load(self) -> list[Document]:
@@ -99,10 +99,10 @@ class MetaDataCSVLoader(BaseLoader):
                     if self.source_column is not None
                     else self.file_path
                 )
-            except KeyError:
+            except KeyError as e:
                 raise ValueError(
                     f"Source column '{self.source_column}' not found in CSV file."
-                )
+                ) from e
 
             # Construct content from content_columns if provided, otherwise use all columns
             if self.content_columns:
@@ -122,10 +122,10 @@ class MetaDataCSVLoader(BaseLoader):
                 for col in self.metadata_columns:
                     try:
                         metadata[col] = row[col]
-                    except KeyError:
+                    except KeyError as e:
                         raise ValueError(
                             f"Metadata column '{col}' not found in CSV file."
-                        )
+                        ) from e
 
             doc = Document(page_content=content, metadata=metadata)
             docs.append(doc)

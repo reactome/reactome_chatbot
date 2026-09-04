@@ -1,15 +1,19 @@
 import asyncio
+from collections.abc import Coroutine
 from pathlib import Path
-from typing import Annotated, Any, Coroutine, TypedDict
+from typing import Annotated, Any, TypedDict
 
 import chromadb.config
 from langchain.chains.query_constructor.schema import AttributeInfo
 from langchain.retrievers import EnsembleRetriever, MultiQueryRetriever
-from langchain.retrievers.merger_retriever import MergerRetriever
 from langchain.retrievers.self_query.base import SelfQueryRetriever
 from langchain_chroma.vectorstores import Chroma
 from langchain_community.document_loaders.csv_loader import CSVLoader
 from langchain_community.retrievers import BM25Retriever
+from langchain_core.callbacks import (
+    AsyncCallbackManagerForRetrieverRun,
+    CallbackManagerForRetrieverRun,
+)
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -57,11 +61,56 @@ ExcludedField = SkipJsonSchema[
 ]
 
 
+RESULTS_PER_RETRIEVER = 10
+# The vector store is asked for more than we intend to keep, because one
+# Reactome entity can occupy several rows -- a reaction appears once per
+# pathway/input/output/catalyst combination -- and those rows have distinct
+# page_content, so nothing upstream collapses them. Without over-fetching, a
+# request for 10 returns about 5 distinct reactions. See issue #169.
+VECTOR_OVERFETCH = 3
+
+# How many fused documents each collection contributes to the answer prompt.
+#
+# weighted_reciprocal_rank returns *every* unique document across the lists it is
+# given, not a top-N, so without this the retriever ranked ~222 documents by
+# relevance and then sent all of them -- roughly 32k tokens, a quarter of
+# gpt-4o-mini's window, on every message -- which made the ranking decorative.
+#
+# The cap is per collection rather than global on purpose: reactions, summations,
+# complexes and ewas hold different kinds of information, and one global top-N
+# would let a single collection crowd the others out. Per collection guarantees
+# each one contributes.
+#
+# This value is a starting point, not a tuned one. It matches what a single
+# retriever returns. Changing it trades recall against the model's difficulty
+# attending to the middle of a long context; the right number should come from an
+# answer-quality evaluation rather than from taste.
+MAX_DOCUMENTS_PER_COLLECTION = RESULTS_PER_RETRIEVER
+
+
+def dedupe_by_entity(docs: list[Document], limit: int) -> list[Document]:
+    """Keep the highest-ranked row per Reactome stable ID, up to `limit`.
+
+    Falls back to page_content for documents with no st_id, so a collection
+    without that metadata degrades to the previous behaviour rather than raising.
+    """
+    seen: set[str] = set()
+    kept: list[Document] = []
+    for doc in docs:
+        key = str(doc.metadata.get("st_id") or doc.page_content)
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(doc)
+        if len(kept) == limit:
+            break
+    return kept
+
+
 def list_chroma_subdirectories(directory: Path) -> list[str]:
-    subdirectories = list(
+    return [
         chroma_file.parent.name for chroma_file in directory.glob("*/chroma.sqlite3")
-    )
-    return subdirectories
+    ]
 
 
 def create_bm25_chroma_ensemble_retriever(
@@ -71,7 +120,7 @@ def create_bm25_chroma_ensemble_retriever(
     *,
     descriptions_info: dict[str, str],
     field_info: dict[str, list[AttributeInfo]],
-) -> MergerRetriever:
+) -> "HybridRetriever":
     return HybridRetriever.from_subdirectory(
         llm,
         embedding,
@@ -100,8 +149,8 @@ class HybridRetriever(MultiQueryRetriever):
         *,
         descriptions_info: dict[str, str],
         field_info: dict[str, list[AttributeInfo]],
-        include_original=False,
-    ):
+        include_original: bool = False,
+    ) -> "HybridRetriever":
         _retrievers: dict[str, RetrieverDict] = {}
         for subdirectory in list_chroma_subdirectories(embeddings_directory):
             # set up BM25 retriever
@@ -115,7 +164,7 @@ class HybridRetriever(MultiQueryRetriever):
                     text.casefold(), language="english"
                 ),
             )
-            bm25_retriever.k = 10
+            bm25_retriever.k = RESULTS_PER_RETRIEVER
 
             # set up vectorstore SelfQuery retriever
             vectordb = Chroma(
@@ -129,7 +178,7 @@ class HybridRetriever(MultiQueryRetriever):
                 vectorstore=vectordb,
                 document_contents=descriptions_info[subdirectory],
                 metadata_field_info=field_info[subdirectory],
-                search_kwargs={"k": 10},
+                search_kwargs={"k": RESULTS_PER_RETRIEVER * VECTOR_OVERFETCH},
             )
 
             _retrievers[subdirectory] = {
@@ -154,7 +203,9 @@ class HybridRetriever(MultiQueryRetriever):
             retrievers=[], weights=[1 / len(doc_lists)] * len(doc_lists)
         ).weighted_reciprocal_rank(doc_lists)
 
-    def retrieve_documents(self, queries: list[str], run_manager) -> list[Document]:
+    def retrieve_documents(
+        self, queries: list[str], run_manager: CallbackManagerForRetrieverRun
+    ) -> list[Document]:
         subdirectory_docs: list[Document] = []
         for subdirectory, retrievers in self._retrievers.items():
             bm25_retriever = retrievers["bm25"]
@@ -177,12 +228,22 @@ class HybridRetriever(MultiQueryRetriever):
                         )
                     },
                 )
-                doc_lists.append(bm25_docs + vector_docs)
-            subdirectory_docs.extend(self.weighted_reciprocal_rank(doc_lists))
+                # Separate lists, not `bm25_docs + vector_docs`. RRF scores by
+                # position, so concatenating put every vector result at rank 11+
+                # and scored the best of them 1/71 against BM25's 1/61 -- and it
+                # meant the two retrievers were never fused against each other,
+                # only across query variants. See issue #170.
+                doc_lists.append(dedupe_by_entity(bm25_docs, RESULTS_PER_RETRIEVER))
+                doc_lists.append(dedupe_by_entity(vector_docs, RESULTS_PER_RETRIEVER))
+            subdirectory_docs.extend(
+                self.weighted_reciprocal_rank(doc_lists)[:MAX_DOCUMENTS_PER_COLLECTION]
+            )
         return subdirectory_docs
 
     async def aretrieve_documents(
-        self, queries: list[str], run_manager
+        self,
+        queries: list[str],
+        run_manager: AsyncCallbackManagerForRetrieverRun,
     ) -> list[Document]:
         subdirectory_results: dict[str, list[Coroutine[Any, Any, list[Document]]]] = {}
         for subdirectory, retrievers in self._retrievers.items():
@@ -213,10 +274,13 @@ class HybridRetriever(MultiQueryRetriever):
                 )
         subdirectory_docs: list[Document] = []
         for subdir_results in subdirectory_results.values():
-            results_iter = iter(await asyncio.gather(*subdir_results))
+            # Separate lists, de-duplicated per entity, matching the synchronous
+            # path above. See issues #169 and #170.
             doc_lists: list[list[Document]] = [
-                bm25_results + vector_results
-                for bm25_results, vector_results in zip(results_iter, results_iter)
+                dedupe_by_entity(docs, RESULTS_PER_RETRIEVER)
+                for docs in await asyncio.gather(*subdir_results)
             ]
-            subdirectory_docs.extend(self.weighted_reciprocal_rank(doc_lists))
+            subdirectory_docs.extend(
+                self.weighted_reciprocal_rank(doc_lists)[:MAX_DOCUMENTS_PER_COLLECTION]
+            )
         return subdirectory_docs

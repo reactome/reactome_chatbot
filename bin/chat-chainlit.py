@@ -3,6 +3,7 @@ import os
 import chainlit as cl
 from chainlit.data.base import BaseDataLayer
 from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
+from chainlit.oauth_providers import providers
 from chainlit.types import ThreadDict
 from dotenv import load_dotenv
 from langchain_community.callbacks import OpenAICallbackHandler
@@ -10,11 +11,17 @@ from langchain_community.callbacks import OpenAICallbackHandler
 from agent.graph import AgentGraph
 from agent.profiles import ProfileName, get_chat_profiles
 from agent.profiles.base import OutputState
-from util.chainlit_helpers import (PrefixedS3StorageClient, is_feature_enabled,
-                                   message_rate_limited, save_openai_metrics,
-                                   static_messages, update_search_results)
+from util.chainlit_helpers import (
+    PrefixedS3StorageClient,
+    is_feature_enabled,
+    message_rate_limited,
+    save_openai_metrics,
+    static_messages,
+    update_search_results,
+)
 from util.config_yml import Config, TriggerEvent
 from util.logging import logging
+from util.orcid_provider import ORCIDOAuthProvider
 
 load_dotenv()
 config: Config | None = Config.from_yaml()
@@ -31,6 +38,7 @@ S3_CHAINLIT_PREFIX = os.getenv("S3_CHAINLIT_PREFIX")
 if POSTGRES_CHAINLIT_DB and POSTGRES_USER and POSTGRES_PASSWORD:
     CHAINLIT_DB_URI = f"postgresql+psycopg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@postgres:5432/{POSTGRES_CHAINLIT_DB}?sslmode=disable"
 
+    storage_client: PrefixedS3StorageClient | None
     if S3_BUCKET and S3_CHAINLIT_PREFIX:
         storage_client = PrefixedS3StorageClient(S3_BUCKET, S3_CHAINLIT_PREFIX)
     else:
@@ -45,6 +53,9 @@ if POSTGRES_CHAINLIT_DB and POSTGRES_USER and POSTGRES_PASSWORD:
 
 else:
     logging.warning("POSTGRES_CHAINLIT_DB undefined; Chainlit persistence disabled.")
+
+if os.getenv("OAUTH_ORCID_CLIENT_ID") and not any(p.id == "orcid" for p in providers):
+    providers.append(ORCIDOAuthProvider())
 
 if os.getenv("CHAINLIT_AUTH_SECRET"):
 

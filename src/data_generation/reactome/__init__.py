@@ -1,11 +1,10 @@
 import os
-from typing import Optional
+from pathlib import Path
 
 import torch
 from langchain_community.vectorstores import Chroma
 from langchain_core.embeddings import Embeddings
-from langchain_huggingface import (HuggingFaceEmbeddings,
-                                   HuggingFaceEndpointEmbeddings)
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
 from langchain_openai import OpenAIEmbeddings
 
 from data_generation.metadata_csv_loader import MetaDataCSVLoader
@@ -17,8 +16,8 @@ def upload_to_chromadb(
     embeddings_dir: str,
     file: str,
     embedding_table: str,
-    hf_model: Optional[str] = None,
-    device: Optional[str] = None,
+    hf_model: str | None = None,
+    device: str | None = None,
 ) -> Chroma:
     metadata_columns: dict[str, list] = {
         "reactions": [
@@ -26,6 +25,7 @@ def upload_to_chromadb(
             "display_name",
             "pathway_id",
             "pathway_name",
+            "species",
             "input_id",
             "input_name",
             "output_id",
@@ -33,8 +33,14 @@ def upload_to_chromadb(
             "catalyst_id",
             "catalyst_name",
         ],
-        "summations": ["st_id", "display_name", "summation"],
-        "complexes": ["st_id", "display_name", "component_id", "component_name"],
+        "summations": ["st_id", "display_name", "labels", "species", "summation"],
+        "complexes": [
+            "st_id",
+            "display_name",
+            "component_id",
+            "component_name",
+            "species",
+        ],
         "ewas": [
             "st_id",
             "display_name",
@@ -53,13 +59,13 @@ def upload_to_chromadb(
     embeddings_instance: Embeddings
     if hf_model is None:  # Use OpenAI
         embeddings_instance = OpenAIEmbeddings(
-            chunk_size=500,
+            chunk_size=400,
             show_progress_bar=True,
         )
-    elif hf_model.startswith("openai/text-embedding-"):
+    elif hf_model.startswith("openai/"):
         embeddings_instance = OpenAIEmbeddings(
             model=hf_model[len("openai/") :],
-            chunk_size=500,
+            chunk_size=400,
             show_progress_bar=True,
         )
     elif "HUGGINGFACEHUB_API_TOKEN" in os.environ:
@@ -86,20 +92,33 @@ def upload_to_chromadb(
 def generate_reactome_embeddings(
     embeddings_dir: str,
     neo4j_uri: str = "bolt://localhost:7687",
-    neo4j_username: Optional[str] = None,
-    neo4j_password: Optional[str] = None,
+    neo4j_username: str | None = None,
+    neo4j_password: str | None = None,
     force: bool = False,
-    hf_model: Optional[str] = None,
-    device: Optional[str] = None,
+    hf_model: str | None = None,
+    device: str | None = None,
 ) -> None:
-    connector = Neo4jConnector(
-        uri=neo4j_uri, user=neo4j_username, password=neo4j_password
+    csv_dir = Path(embeddings_dir) / "csv_files"
+    reactions_csv = str(csv_dir / "reactions.csv")
+    summations_csv = str(csv_dir / "summations.csv")
+    complexes_csv = str(csv_dir / "complexes.csv")
+    ewas_csv = str(csv_dir / "ewas.csv")
+
+    all_exist = not force and all(
+        Path(p).exists()
+        for p in [reactions_csv, summations_csv, complexes_csv, ewas_csv]
     )
 
-    (reactions_csv, summations_csv, complexes_csv, ewas_csv) = generate_all_csvs(
-        connector, embeddings_dir, force
-    )
-    connector.close()
+    if not all_exist:
+        connector = Neo4jConnector(
+            uri=neo4j_uri, user=neo4j_username, password=neo4j_password
+        )
+        reactions_csv, summations_csv, complexes_csv, ewas_csv = generate_all_csvs(
+            connector, embeddings_dir, force
+        )
+        connector.close()
+    else:
+        print("Using existing CSV files. Skipping Neo4j.")
 
     db = upload_to_chromadb(
         embeddings_dir, reactions_csv, "reactions", hf_model, device

@@ -1,9 +1,9 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum, auto
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from util.config_yml.intervals import parse_interval
+from util.config_yml.intervals import INTERVAL_PATTERN, parse_interval
 
 
 class TriggerEvent(StrEnum):
@@ -13,38 +13,49 @@ class TriggerEvent(StrEnum):
     on_message = auto()
 
 
+def _as_utc(value: datetime) -> datetime:
+    """Treat a naive datetime as UTC; convert an aware one to UTC."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 class Trigger(BaseModel):
     event: TriggerEvent | None = None
     after_messages: int | None = None
     start: datetime | None = None
     end: datetime | None = None
-    freq_max: str | None = None
+    freq_max: str | None = Field(default=None, pattern=INTERVAL_PATTERN)
 
     def match_trigger(
         self,
         event: TriggerEvent | None = None,
         after_messages: int | None = None,
         last_message: str | None = None,
-    ):
-        now = datetime.now()
+    ) -> bool:
         if self.event and self.event != event:
             return False
         if self.after_messages and self.after_messages != after_messages:
             return False
-        if self.start and self.start.replace(tzinfo=None) > now:
+        # start/end come from config.yml and are usually written with an offset
+        # ("2025-01-01T00:00:00Z"). These used to be compared by stripping tzinfo,
+        # which discards the offset instead of converting, shifting the window by
+        # the host's UTC offset.
+        now_utc = datetime.now(UTC)
+        if self.start and _as_utc(self.start) > now_utc:
             return False
-        if self.end and self.end.replace(tzinfo=None) < now:
+        if self.end and _as_utc(self.end) < now_utc:
             return False
-        if (
+        # last_message is written by chainlit_helpers as a naive local
+        # datetime.now().isoformat(), so it keeps its own naive local clock.
+        return not (
             self.freq_max
             and last_message
             and (
                 parse_interval(self.freq_max)
-                > now - datetime.fromisoformat(last_message)
+                > datetime.now() - datetime.fromisoformat(last_message)
             )
-        ):
-            return False
-        return True
+        )
 
 
 class Message(BaseModel):

@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 from neo4j import GraphDatabase
 
@@ -6,7 +6,7 @@ Neo4jDict = dict[str, Any]
 
 
 class Neo4jConnector:
-    def __init__(self, uri: str, user: Optional[str], password: Optional[str]):
+    def __init__(self, uri: str, user: str | None, password: str | None) -> None:
         if user is None or password is None:
             self._driver = GraphDatabase.driver(uri)
         else:
@@ -18,7 +18,8 @@ class Neo4jConnector:
     def execute_query(self, query: str) -> list[Neo4jDict]:
         with self._driver.session() as session:
             result = session.run(query)
-            return result.data()
+            records: list[Neo4jDict] = result.data()
+            return records
 
 
 def get_reactions(connector: Neo4jConnector) -> list[Neo4jDict]:

@@ -12,7 +12,7 @@ LANGGRAPH_NOLOGIN_DB_URI = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.geten
 
 
 def build_query() -> str:
-    query = """
+    return """
         SELECT
             thread_id,
             checkpoint_id,
@@ -25,19 +25,17 @@ def build_query() -> str:
         ORDER BY
             checkpoint->'ts';
     """
-    return query
 
 
-def main(records_dir: Path):
+def main(records_dir: Path) -> None:
     records_dir.mkdir(exist_ok=True)
 
     query: str = build_query()
 
-    with psycopg.connect(LANGGRAPH_NOLOGIN_DB_URI) as conn:
-        with conn.cursor() as cur:
-            cur.execute(query)
-            header = [col.name for col in cur.description] if cur.description else None
-            records = cur.fetchall()
+    with psycopg.connect(LANGGRAPH_NOLOGIN_DB_URI) as conn, conn.cursor() as cur:
+        cur.execute(query)
+        header = [col.name for col in cur.description] if cur.description else None
+        records = cur.fetchall()
 
     if len(records) == 0:
         print("No new records found.")

@@ -11,10 +11,14 @@ load_dotenv()
 CHAINLIT_DB_URI = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_CHAINLIT_DB')}?sslmode=disable"
 
 
-def build_query(since_timestamp: str | None) -> str:
-    if since_timestamp is None:
-        since_timestamp = ""
-    query = f"""
+def build_query() -> str:
+    """The since-timestamp is bound as a parameter, not interpolated.
+
+    It comes from a previously exported CSV, i.e. from values the database
+    produced -- but building SQL by string interpolation is the wrong habit to
+    keep in a script that runs against the production chat history.
+    """
+    return """
         SELECT
             steps."threadId",
             steps."createdAt",
@@ -31,7 +35,7 @@ def build_query(since_timestamp: str | None) -> str:
             threads ON steps."threadId" = threads.id
         WHERE
             steps.type IN ('user_message', 'assistant_message') AND
-            steps."createdAt" > '{since_timestamp}'
+            steps."createdAt" > %(since_timestamp)s
         ORDER BY
             (
                 SELECT MIN(s."createdAt")
@@ -40,29 +44,26 @@ def build_query(since_timestamp: str | None) -> str:
             ),
             steps."createdAt";
     """
-    return query
 
 
 def last_record_timestamp(records_dir: Path) -> str | None:
-    record_names: list[str] = list(f.stem for f in records_dir.glob("records_*.csv"))
+    record_names: list[str] = [f.stem for f in records_dir.glob("records_*.csv")]
     if len(record_names) > 0:
         last_record: str = max(record_names)
         return last_record[len("records_") :]
-    else:
-        return None
+    return None
 
 
-def main(records_dir: Path):
+def main(records_dir: Path) -> None:
     records_dir.mkdir(exist_ok=True)
 
     since_timestamp: str | None = last_record_timestamp(records_dir)
-    query: str = build_query(since_timestamp)
+    query: str = build_query()
 
-    with psycopg.connect(CHAINLIT_DB_URI) as conn:
-        with conn.cursor() as cur:
-            cur.execute(query)
-            header = [col.name for col in cur.description] if cur.description else None
-            records = cur.fetchall()
+    with psycopg.connect(CHAINLIT_DB_URI) as conn, conn.cursor() as cur:
+        cur.execute(query, {"since_timestamp": since_timestamp or ""})
+        header = [col.name for col in cur.description] if cur.description else None
+        records = cur.fetchall()
 
     if len(records) == 0:
         print("No new records found.")

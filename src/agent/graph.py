@@ -1,6 +1,6 @@
 import asyncio
 import os
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.callbacks.base import Callbacks
 from langchain_core.embeddings import Embeddings
@@ -30,8 +30,16 @@ class AgentGraph:
         profiles: list[ProfileName],
     ) -> None:
         # Get base models
-        llm: BaseChatModel = get_llm("openai", "gpt-4o-mini")
-        embedding: Embeddings = get_embedding("openai", "text-embedding-3-large")
+        embedding_model = os.getenv("EMBEDDING_MODEL", "bge-m3")
+        llm_model = os.getenv("LLM_MODEL", "gpt-4o-mini")
+        llm_base_url = os.getenv("LLM_BASE_URL", None)
+        llm: BaseChatModel = get_llm(
+            "openai", llm_model, base_url=llm_base_url, request_timeout=360.0
+        )
+        embedding_base_url = os.getenv("OPENAI_BASE_URL", None)
+        embedding: Embeddings = get_embedding(
+            "openai", embedding_model, base_url=embedding_base_url
+        )
 
         self.uncompiled_graph: dict[str, StateGraph] = create_profile_graphs(
             profiles, llm, embedding
@@ -87,14 +95,19 @@ class AgentGraph:
             self.graph = await self.initialize()
         if profile not in self.graph:
             return OutputState()
-        result: OutputState = await self.graph[profile].ainvoke(
-            InputState(user_input=user_input),
-            config=RunnableConfig(
-                callbacks=callbacks,
-                configurable={
-                    "thread_id": thread_id,
-                    "enable_postprocess": enable_postprocess,
-                },
+        # ainvoke is typed dict[str, Any] | Any; the graph's output schema is
+        # OutputState.
+        result: OutputState = cast(
+            "OutputState",
+            await self.graph[profile].ainvoke(
+                InputState(user_input=user_input),
+                config=RunnableConfig(
+                    callbacks=callbacks,
+                    configurable={
+                        "thread_id": thread_id,
+                        "enable_postprocess": enable_postprocess,
+                    },
+                ),
             ),
         )
         return result

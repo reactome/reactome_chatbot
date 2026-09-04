@@ -1,12 +1,11 @@
 import gzip
 import os
 import shutil
-from typing import Optional
 
 import requests
 
 
-def download_file(url: str, dest: str, force: bool) -> Optional[str]:
+def download_file(url: str, dest: str, force: bool) -> str | None:
     # Create the directory if it doesn't exist
     os.makedirs(os.path.dirname(dest), exist_ok=True)
 
@@ -16,7 +15,7 @@ def download_file(url: str, dest: str, force: bool) -> Optional[str]:
         return dest
 
     # Send the GET request
-    response = requests.get(url)
+    response = requests.get(url, timeout=60)
 
     # Check if the request was successful
     if response.status_code == 200:
@@ -28,18 +27,16 @@ def download_file(url: str, dest: str, force: bool) -> Optional[str]:
         # Check if the file is gzipped and decompress if necessary
         if dest.endswith(".gz"):
             unzipped_dest = dest[:-3]  # Remove '.gz' from the filename
-            with gzip.open(dest, "rb") as f_in:
-                with open(unzipped_dest, "wb") as f_out:
-                    shutil.copyfileobj(f_in, f_out)
+            with gzip.open(dest, "rb") as f_in, open(unzipped_dest, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
             print(f"File unzipped successfully and saved to {unzipped_dest}.")
             os.remove(dest)  # Remove the gzipped file after extraction
             return unzipped_dest
         return dest
-    else:
-        print(
-            f"Failed to download the file from {url}. Status code: {response.status_code}"
-        )
-        return None
+    print(
+        f"Failed to download the file from {url}. Status code: {response.status_code}"
+    )
+    return None
 
 
 def get_genes(version: str, force: bool) -> str:
@@ -96,7 +93,7 @@ def get_genes(version: str, force: bool) -> str:
     }
 
     # Send the POST request
-    response = requests.post(url, data=form_data)
+    response = requests.post(url, data=form_data, timeout=60)
 
     if response.status_code == 200:
         # Save the response content to a file

@@ -2,5 +2,12 @@ data/
 embeddings/
 embeddings_bak/
 csv_files/
+records/
 .venv/
 .env
+.env.*
+.git/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

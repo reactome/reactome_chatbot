@@ -1,12 +1,10 @@
 import os
-from typing import Optional
 
 import requests
 import torch
 from langchain_community.vectorstores import Chroma
 from langchain_core.embeddings import Embeddings
-from langchain_huggingface import (HuggingFaceEmbeddings,
-                                   HuggingFaceEndpointEmbeddings)
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
 from langchain_openai import OpenAIEmbeddings
 
 from data_generation.alliance.csv_generator import generate_all_csvs
@@ -15,27 +13,25 @@ from data_generation.metadata_csv_loader import MetaDataCSVLoader
 
 def get_release_version() -> str:
     url: str = "https://www.alliancegenome.org/api/releaseInfo"
-    response = requests.get(url)
+    response = requests.get(url, timeout=60)
     if response.status_code == 200:
         response_json = response.json()
-        release_version = response_json.get("releaseVersion")
+        release_version: str | None = response_json.get("releaseVersion")
         if release_version:
             return release_version
-        else:
-            raise ValueError("Release version not found in the response.")
-    else:
-        raise ConnectionError(
-            f"Failed to get the response. Status code: {response.status_code}"
-        )
+        raise ValueError("Release version not found in the response.")
+    raise ConnectionError(
+        f"Failed to get the response. Status code: {response.status_code}"
+    )
 
 
 def upload_to_chromadb(
     embeddings_dir: str,
     version: str,
     force: bool,  # Changed from str to bool
-    hf_model: Optional[str] = None,
-    device: Optional[str] = None,
-) -> Optional[Chroma]:
+    hf_model: str | None = None,
+    device: str | None = None,
+) -> Chroma | None:
     metadata_columns: dict[str, list] = {
         "genes": [
             "Your Input",
@@ -108,7 +104,7 @@ def upload_to_chromadb(
             "AnatomyTermQualifierIDs",
             "AnatomyTermQualifierTermNames",
             "SourceURL",
-            "Source," "Reference",
+            "Source,Reference",
         ],
         "molecular_interaction": [
             "ID(s) interactor A",
@@ -138,7 +134,7 @@ def upload_to_chromadb(
             "Annotation(s) interactor A",
             "Annotation(s) interactor B",
             "Interaction annotation(s)",
-            "Host organism(s)" "Interaction parameter(s)",
+            "Host organism(s)Interaction parameter(s)",
             "Creation date",
             "Update date",
             "Checksum(s) interactor A",
@@ -298,9 +294,9 @@ def upload_to_chromadb(
 def generate_alliance_embeddings(
     embeddings_dir: str,
     force: bool = False,
-    hf_model: Optional[str] = None,
-    device: Optional[str] = None,
-    **kwargs,
+    hf_model: str | None = None,
+    device: str | None = None,
+    **kwargs: object,
 ) -> None:
     release_version = get_release_version()
     print(f"Release Version: {release_version}")

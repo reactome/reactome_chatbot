@@ -6,8 +6,10 @@ from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.utils.runnable import RunnableLike
 
-from agent.tasks.completeness_grader import (CompletenessGrade,
-                                             create_completeness_grader)
+from agent.tasks.completeness_grader import (
+    CompletenessGrade,
+    create_completeness_grader,
+)
 from tools.external_search.state import SearchState
 from tools.external_search.tavily_wrapper import TavilyWrapper
 
@@ -15,11 +17,10 @@ from tools.external_search.tavily_wrapper import TavilyWrapper
 def decide_next_steps(state: SearchState) -> Literal["perform_web_search", "no_search"]:
     if state["complete"] == "No":
         return "perform_web_search"
-    else:
-        return "no_search"
+    return "no_search"
 
 
-def no_search(_) -> SearchState:
+def no_search(_: SearchState) -> SearchState:
     return SearchState(search_results=[])
 
 

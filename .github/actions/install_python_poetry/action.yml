@@ -1,16 +1,34 @@
 name: 'Setup Python and Poetry'
-description: 'Setup Python environment and install Poetry'
+description: 'Setup Python environment and install Poetry, with the venv cached'
 runs:
   using: 'composite'
   steps:
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.12'
 
-    - name: Install dependencies
+    # Deliberately `pip install` into the interpreter set up above, not pipx.
+    # pipx gives Poetry its own interpreter -- on the macOS runner that is
+    # Homebrew's Python 3.14 -- and Poetry then builds the project venv with it.
+    # pydantic-core publishes no 3.14 wheel yet, so the build falls back to
+    # compiling and fails: PyO3 0.22 does not support 3.14.
+    - name: Install Poetry
       shell: bash
       run: |
-        pip install --upgrade pip
-        pip install poetry==1.8.4
-        poetry install --no-root
+        python -m pip install --upgrade pip
+        python -m pip install poetry==1.8.4
+
+    # poetry.toml sets virtualenvs.in-project, so the environment lands in
+    # ./.venv and can be cached wholesale. Without this every job reinstalls the
+    # dependency set from scratch -- which includes a ~200 MB torch wheel -- and
+    # there are several jobs per run.
+    - name: Cache the virtualenv
+      uses: actions/cache@v4
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-${{ runner.arch }}-py3.12-${{ hashFiles('poetry.lock') }}
+
+    - name: Install dependencies
+      shell: bash
+      run: poetry install --no-root

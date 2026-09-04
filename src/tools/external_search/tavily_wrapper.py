@@ -16,7 +16,7 @@ class TavilyWrapper:
         search_depth: Literal["basic", "advanced"] = "advanced",
         max_results: int = 5,
         rate_limit: int = 100,  # requests per minute
-    ):
+    ) -> None:
         self.tavily_client: AsyncTavilyClient | None = None
         self.search_depth = search_depth
         self.max_results = max_results
