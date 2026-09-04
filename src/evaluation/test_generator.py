@@ -1,5 +1,6 @@
 import argparse
 import os
+from typing import Any
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -8,7 +9,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from ragas.testset.synthesizers.generate import TestsetGenerator
 
 
-def parse_arguments():
+def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Generate a test set based on given documents and distributions."
     )
@@ -46,7 +47,7 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def save_testset(testset, filename):
+def save_testset(testset: Any, filename: str) -> None:
     output_dir = "testsets"
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, f"{filename}_testset.xlsx")
@@ -65,7 +66,7 @@ def save_testset(testset, filename):
     print(f"Filtered testset saved to {output_path}")
 
 
-def main():
+def main() -> None:
     try:
         # Load environment variables
         load_dotenv()
@@ -82,10 +83,22 @@ def main():
         embeddings = OpenAIEmbeddings()
 
         # Parse test type distributions
-        distributions = {
-            eval(key): float(value)
-            for key, value in (dist.split("=") for dist in args.distributions)
-        }
+        # TODO: this targets the ragas 0.1 API. `distributions` took evolution
+        # objects (simple, reasoning, multi_context, conditional) imported from
+        # ragas.testset.evolutions, which 0.2 replaced with synthesizers, and the
+        # generate_with_langchain_docs keyword changed too. The names were
+        # previously resolved with eval() on argv -- removed here because that
+        # executes arbitrary input, and because those names are not imported, so
+        # it raised NameError rather than working. Porting this to 0.2 needs the
+        # current ragas API.
+        distributions: dict[str, float] = {}
+        for dist in args.distributions:
+            key, sep, value = dist.partition("=")
+            if not sep:
+                raise SystemExit(
+                    f"Malformed --distributions entry {dist!r}; use name=weight"
+                )
+            distributions[key] = float(value)
 
         # Setup and run test set generator
         generator = TestsetGenerator.from_langchain(

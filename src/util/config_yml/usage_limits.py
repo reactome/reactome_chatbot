@@ -25,8 +25,7 @@ class MessageRate(BaseModel):
         if len(message_times_queue) < self.max_messages:
             message_times_queue.append(now.isoformat())
             return None  # not rate limited
-        else:
-            return self
+        return self
 
 
 class UsageLimits(BaseModel):

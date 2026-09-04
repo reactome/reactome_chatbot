@@ -61,10 +61,9 @@ def get_user_metadata(
     user: cl.User | None = cl.user_session.get("user")
     if user:
         return user.metadata.get(key, default)
-    elif use_guest:
+    if use_guest:
         return _get_guest_metadata().get(key, default)
-    else:
-        return default
+    return default
 
 
 def is_feature_enabled(config: Config | None, feature_id: str) -> bool:
@@ -153,12 +152,12 @@ async def static_messages(
 
     chat_profile: str = cl.user_session.get("chat_profile")
 
-    messages_formatted: Iterable[str] = map(
-        lambda msg: msg.format(
+    messages_formatted: Iterable[str] = (
+        msg.format(
             chat_profile=chat_profile,
             user_id=user_id,
-        ),
-        messages.values(),
+        )
+        for msg in messages.values()
     )
     await send_messages(messages_formatted)
 

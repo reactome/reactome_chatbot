@@ -11,6 +11,10 @@ from langchain.retrievers.self_query.base import SelfQueryRetriever
 from langchain_chroma.vectorstores import Chroma
 from langchain_community.document_loaders.csv_loader import CSVLoader
 from langchain_community.retrievers import BM25Retriever
+from langchain_core.callbacks import (
+    AsyncCallbackManagerForRetrieverRun,
+    CallbackManagerForRetrieverRun,
+)
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -59,10 +63,9 @@ ExcludedField = SkipJsonSchema[
 
 
 def list_chroma_subdirectories(directory: Path) -> list[str]:
-    subdirectories = list(
+    return [
         chroma_file.parent.name for chroma_file in directory.glob("*/chroma.sqlite3")
-    )
-    return subdirectories
+    ]
 
 
 def create_bm25_chroma_ensemble_retriever(
@@ -101,8 +104,8 @@ class HybridRetriever(MultiQueryRetriever):
         *,
         descriptions_info: dict[str, str],
         field_info: dict[str, list[AttributeInfo]],
-        include_original=False,
-    ):
+        include_original: bool = False,
+    ) -> "HybridRetriever":
         _retrievers: dict[str, RetrieverDict] = {}
         for subdirectory in list_chroma_subdirectories(embeddings_directory):
             # set up BM25 retriever
@@ -155,7 +158,9 @@ class HybridRetriever(MultiQueryRetriever):
             retrievers=[], weights=[1 / len(doc_lists)] * len(doc_lists)
         ).weighted_reciprocal_rank(doc_lists)
 
-    def retrieve_documents(self, queries: list[str], run_manager) -> list[Document]:
+    def retrieve_documents(
+        self, queries: list[str], run_manager: CallbackManagerForRetrieverRun
+    ) -> list[Document]:
         subdirectory_docs: list[Document] = []
         for subdirectory, retrievers in self._retrievers.items():
             bm25_retriever = retrievers["bm25"]
@@ -183,7 +188,9 @@ class HybridRetriever(MultiQueryRetriever):
         return subdirectory_docs
 
     async def aretrieve_documents(
-        self, queries: list[str], run_manager
+        self,
+        queries: list[str],
+        run_manager: AsyncCallbackManagerForRetrieverRun,
     ) -> list[Document]:
         subdirectory_results: dict[str, list[Coroutine[Any, Any, list[Document]]]] = {}
         for subdirectory, retrievers in self._retrievers.items():

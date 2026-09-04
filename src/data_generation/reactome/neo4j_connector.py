@@ -6,7 +6,7 @@ Neo4jDict = dict[str, Any]
 
 
 class Neo4jConnector:
-    def __init__(self, uri: str, user: str | None, password: str | None):
+    def __init__(self, uri: str, user: str | None, password: str | None) -> None:
         if user is None or password is None:
             self._driver = GraphDatabase.driver(uri)
         else:

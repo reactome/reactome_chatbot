@@ -62,7 +62,7 @@ def generate_userguide_embeddings(
     force: bool = False,
     hf_model: str | None = None,
     device: str | None = None,
-    **_,
+    **_: object,
 ) -> None:
     embeddings_path = Path(embeddings_dir)
     chroma_dir = embeddings_path / CHROMA_COLLECTION

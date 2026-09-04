@@ -13,18 +13,16 @@ from data_generation.metadata_csv_loader import MetaDataCSVLoader
 
 def get_release_version() -> str:
     url: str = "https://www.alliancegenome.org/api/releaseInfo"
-    response = requests.get(url)
+    response = requests.get(url, timeout=60)
     if response.status_code == 200:
         response_json = response.json()
         release_version = response_json.get("releaseVersion")
         if release_version:
             return release_version
-        else:
-            raise ValueError("Release version not found in the response.")
-    else:
-        raise ConnectionError(
-            f"Failed to get the response. Status code: {response.status_code}"
-        )
+        raise ValueError("Release version not found in the response.")
+    raise ConnectionError(
+        f"Failed to get the response. Status code: {response.status_code}"
+    )
 
 
 def upload_to_chromadb(
@@ -106,7 +104,7 @@ def upload_to_chromadb(
             "AnatomyTermQualifierIDs",
             "AnatomyTermQualifierTermNames",
             "SourceURL",
-            "Source," "Reference",
+            "Source,Reference",
         ],
         "molecular_interaction": [
             "ID(s) interactor A",
@@ -136,7 +134,7 @@ def upload_to_chromadb(
             "Annotation(s) interactor A",
             "Annotation(s) interactor B",
             "Interaction annotation(s)",
-            "Host organism(s)" "Interaction parameter(s)",
+            "Host organism(s)Interaction parameter(s)",
             "Creation date",
             "Update date",
             "Checksum(s) interactor A",
@@ -298,7 +296,7 @@ def generate_alliance_embeddings(
     force: bool = False,
     hf_model: str | None = None,
     device: str | None = None,
-    **kwargs,
+    **kwargs: object,
 ) -> None:
     release_version = get_release_version()
     print(f"Release Version: {release_version}")

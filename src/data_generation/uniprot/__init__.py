@@ -76,7 +76,7 @@ def generate_uniprot_embeddings(
     embedding_path: Path,
     hf_model: str | None = None,
     device: str | None = None,
-    **_,
+    **_: object,
 ) -> None:
     csv_path = generate_uniprot_csv(embedding_path)
     db = upload_to_chromadb(

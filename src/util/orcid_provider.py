@@ -11,11 +11,11 @@ class ORCIDOAuthProvider(OAuthProvider):
     id = "orcid"
     env: ClassVar[list[str]] = ["OAUTH_ORCID_CLIENT_ID", "OAUTH_ORCID_CLIENT_SECRET"]
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.client_id = os.environ.get("OAUTH_ORCID_CLIENT_ID")
         self.client_secret = os.environ.get("OAUTH_ORCID_CLIENT_SECRET")
         self.authorize_url = "https://orcid.org/oauth/authorize"
-        self.token_url = "https://orcid.org/oauth/token"
+        self.token_url = "https://orcid.org/oauth/token"  # noqa: S105 (a URL, not a secret)
         self.user_info_url = "https://orcid.org/oauth/userinfo"
         self.authorize_params = {
             "response_type": "code",

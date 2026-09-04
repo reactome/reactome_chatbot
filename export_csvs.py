@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 import csv
+import os
 from pathlib import Path
 
-from neo4j import GraphDatabase
+from neo4j import Driver, GraphDatabase
 
-NEO4J_URI = "bolt://localhost:7687"
-NEO4J_USER = "neo4j"
-NEO4J_PASSWORD = "react-app-user_pw"
+NEO4J_URI = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+NEO4J_USER = os.environ.get("NEO4J_USERNAME", "neo4j")
+NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD")
 
 OUTPUT_DIR = Path("./embeddings/openai/bge-m3/plantreactome/Release68/csv_files")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -55,7 +56,7 @@ QUERIES = {
 }
 
 
-def clean_value(v):
+def clean_value(v: object) -> str:
     if v is None:
         return ""
     if isinstance(v, list):
@@ -68,7 +69,7 @@ def clean_value(v):
     return s
 
 
-def run_query(driver, query):
+def run_query(driver: Driver, query: str) -> list[dict[str, str]]:
     with driver.session() as session:
         result = session.run(query)
         records = [r.data() for r in result]
@@ -83,7 +84,7 @@ def run_query(driver, query):
     return cleaned
 
 
-def main():
+def main() -> None:
     driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
     for name, query in QUERIES.items():
         print(f"Exporting {name}...")

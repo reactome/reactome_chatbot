@@ -15,8 +15,7 @@ class Feature(BaseModel):
     def matches_user_group(self, user_id: str | None) -> bool:
         if self.user_group == UserGroup.logged_in:
             return user_id is not None
-        else:
-            return True
+        return True
 
 
 class Features(BaseModel):

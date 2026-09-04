@@ -12,7 +12,7 @@ LANGGRAPH_NOLOGIN_DB_URI = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.geten
 
 
 def build_query() -> str:
-    query = """
+    return """
         SELECT
             thread_id,
             checkpoint_id,
@@ -25,10 +25,9 @@ def build_query() -> str:
         ORDER BY
             checkpoint->'ts';
     """
-    return query
 
 
-def main(records_dir: Path):
+def main(records_dir: Path) -> None:
     records_dir.mkdir(exist_ok=True)
 
     query: str = build_query()

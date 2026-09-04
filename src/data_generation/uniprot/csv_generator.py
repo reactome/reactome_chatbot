@@ -7,7 +7,7 @@ from data_generation.uniprot.api_connector import UniProtAPIConnector
 
 
 class UniProtDataCleaner:
-    def __init__(self, csv_dir: Path):
+    def __init__(self, csv_dir: Path) -> None:
         self.download_url = UniProtAPIConnector.get_download_url()
         self.xlsx_path = csv_dir / "uniprot_data.xlsx"
         self.csv_path = self.xlsx_path.with_suffix(".csv")
@@ -16,7 +16,7 @@ class UniProtDataCleaner:
         self.df: pd.DataFrame
         self.api = UniProtAPIConnector()
 
-    def download_data(self):
+    def download_data(self) -> None:
         """Downloads data batch by batch using UniProt API connector."""
         progress = 0
         with open(self.xlsx_path, "wb") as f:
@@ -26,12 +26,12 @@ class UniProtDataCleaner:
                 print(f"Downloaded {progress} batches; Total: {total}")
         print(f"✅ UniProt data downloaded successfully to {self.xlsx_path}")
 
-    def load_data(self):
+    def load_data(self) -> None:
         """Loads data from Excel file into a DataFrame."""
         print(f"Loading data from {self.xlsx_path}")
         self.df = pd.read_excel(self.xlsx_path)
 
-    def clean_data(self):
+    def clean_data(self) -> None:
         """Cleans the UniProt data using predefined processing steps."""
         self.load_data()
         self.remove_prefixes()
@@ -44,7 +44,7 @@ class UniProtDataCleaner:
         self.df.to_csv(self.csv_path, index=False)
         print(f"Cleaned data saved to {self.csv_path}")
 
-    def remove_prefixes(self):
+    def remove_prefixes(self) -> None:
         """Remove prefixes from specified columns."""
         prefix_map = {
             "Entry Name": "_HUMAN",
@@ -65,12 +65,12 @@ class UniProtDataCleaner:
                     self.df[column].str.replace(prefix, "", regex=False).str.strip()
                 )
 
-    def add_url(self):
+    def add_url(self) -> None:
         """Replace 'Entry' column with URLs constructed from entry IDs."""
         base_url = "https://www.uniprot.org/uniprotkb/"
         self.df["Entry"] = base_url + self.df["Entry"].astype(str) + "/entry"
 
-    def format_names(self):
+    def format_names(self) -> None:
         """Format gene synonyms and protein names with semicolons and proper punctuation."""
         self.df["Gene Names"] = (
             self.df["Gene Names"].str.replace(" ", "; ", regex=False).str.strip("; ")
@@ -86,12 +86,12 @@ class UniProtDataCleaner:
             )
         )
 
-    def format_mass(self):
+    def format_mass(self) -> None:
         """Format the 'Mass' column by appending ' Da' to each mass value."""
         if "Mass" in self.df.columns:
             self.df["Mass"] = self.df["Mass"].apply(lambda x: f"{x} Da")
 
-    def clean_evidence_codes(self):
+    def clean_evidence_codes(self) -> None:
         """Remove citations and evidence codes from textual columns."""
         patterns = [r"\{ECO:[^\}]*\}", r"\(PubMed:[^\)]*\)", r"\[MIM:[^\]]*\]", r"  +"]
         for column in self.df.columns:
@@ -100,10 +100,10 @@ class UniProtDataCleaner:
                     self.df[column].str.replace(pattern, "", regex=True).str.strip()
                 )
 
-    def clean_columns(self):
+    def clean_columns(self) -> None:
         """Reformat entries in the 'Motif' column."""
 
-        def reformat_motif(entry):
+        def reformat_motif(entry: str) -> str:
             if pd.isna(entry):
                 return entry
             pattern = r"MOTIF (\d+\.\.\d+); /note=\"([^\"]*)\"; /evidence=\"[^\"]*\""
@@ -115,7 +115,7 @@ class UniProtDataCleaner:
                 ]
             )
 
-        def reformat_domain(entry):
+        def reformat_domain(entry: str) -> str:
             if pd.isna(entry):
                 return entry
             pattern = r"DOMAIN (\d+\.\.\d+); /note=\"([^\"]*)\"; /evidence=\"[^\"]*\""
@@ -130,7 +130,7 @@ class UniProtDataCleaner:
         self.df["Motif"] = self.df["Motif"].apply(reformat_motif)
         self.df["Domain [FT]"] = self.df["Domain [FT]"].apply(reformat_domain)
 
-    def rename_columns(self):
+    def rename_columns(self) -> None:
         """Rename columns as specified."""
         new_column_names = {
             "Entry": "url",

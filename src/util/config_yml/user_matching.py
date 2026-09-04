@@ -16,7 +16,7 @@ def match_user(users_spec: list[str] | None, user_id: str | None) -> bool:
         else:
             if entry == "logged_in":
                 return True
-            elif entry[0] == "/" and entry[-1] == "/":
+            if entry[0] == "/" and entry[-1] == "/":
                 if re.search(entry[1:-1], user_id):
                     return True
             else:

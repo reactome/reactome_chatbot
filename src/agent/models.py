@@ -26,16 +26,15 @@ def get_embedding(
         provider, model = provider.split("/", 1)
     if provider == "openai":
         return OpenAIEmbeddings(model=model, base_url=base_url)
-    elif provider == "huggingfacehub":
+    if provider == "huggingfacehub":
         return HuggingFaceEndpointEmbeddings(model=model)
-    elif provider == "huggingfacelocal":
+    if provider == "huggingfacelocal":
         return HuggingFaceEmbeddings(
             model_name=model,
             model_kwargs={"device": device, "trust_remote_code": True},
             encode_kwargs={"batch_size": 12, "normalize_embeddings": False},
         )
-    else:
-        raise ValueError(f"Unknown provider: {provider}")
+    raise ValueError(f"Unknown provider: {provider}")
 
 
 def get_llm(
@@ -60,12 +59,11 @@ def get_llm(
             base_url=base_url,
             request_timeout=request_timeout,
         )
-    elif provider == "ollama":
+    if provider == "ollama":
         return ChatOllama(
             model=model,
             temperature=0.0,
             base_url=base_url,
             request_timeout=request_timeout,
         )
-    else:
-        raise ValueError(f"Unknown provider: {provider}")
+    raise ValueError(f"Unknown provider: {provider}")

@@ -15,7 +15,7 @@ def download_file(url: str, dest: str, force: bool) -> str | None:
         return dest
 
     # Send the GET request
-    response = requests.get(url)
+    response = requests.get(url, timeout=60)
 
     # Check if the request was successful
     if response.status_code == 200:
@@ -33,11 +33,10 @@ def download_file(url: str, dest: str, force: bool) -> str | None:
             os.remove(dest)  # Remove the gzipped file after extraction
             return unzipped_dest
         return dest
-    else:
-        print(
-            f"Failed to download the file from {url}. Status code: {response.status_code}"
-        )
-        return None
+    print(
+        f"Failed to download the file from {url}. Status code: {response.status_code}"
+    )
+    return None
 
 
 def get_genes(version: str, force: bool) -> str:
@@ -94,7 +93,7 @@ def get_genes(version: str, force: bool) -> str:
     }
 
     # Send the POST request
-    response = requests.post(url, data=form_data)
+    response = requests.post(url, data=form_data, timeout=60)
 
     if response.status_code == 200:
         # Save the response content to a file

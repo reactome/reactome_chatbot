@@ -110,8 +110,7 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
                 reactome_answer="",
                 uniprot_answer="",
             )
-        else:
-            return CrossDatabaseState()
+        return CrossDatabaseState()
 
     async def conduct_research(
         self, state: CrossDatabaseState, config: RunnableConfig
@@ -220,12 +219,11 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
         uniprot_complete = state["uniprot_completeness"] != "No"
         if reactome_complete and uniprot_complete:
             return "generate_final_response"
-        elif not reactome_complete and uniprot_complete:
+        if not reactome_complete and uniprot_complete:
             return "rewrite_reactome_query"
-        elif reactome_complete and not uniprot_complete:
+        if reactome_complete and not uniprot_complete:
             return "rewrite_uniprot_query"
-        else:
-            return "perform_web_search"
+        return "perform_web_search"
 
     async def generate_final_response(
         self, state: CrossDatabaseState, config: RunnableConfig

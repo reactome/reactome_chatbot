@@ -33,8 +33,7 @@ class Config(BaseModel):
         if feature_id in self.features.model_fields:
             feature: Feature = getattr(self.features, feature_id)
             return feature.enabled and feature.matches_user_group(user_id)
-        else:
-            return True
+        return True
 
     def get_messages(
         self,
