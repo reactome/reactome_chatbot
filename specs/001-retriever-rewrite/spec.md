@@ -133,9 +133,21 @@ with no LLM in the loop.
 - **It removes the component most likely to break on LangChain 1.x.** SelfQuery
   depends on `lark` and on structured-output behaviour that has moved between
   versions.
-- **Retrieval results change materially.** #171 measured SelfQuery as *stable run
-  to run*, agreeing with plain vector on 0.48 of documents and 0.19 of positions.
-  This is a real change in what reaches the model, not the removal of noise.
+- **Retrieval results change materially.** Recaptured 2026-09-08 against current
+  `main`, with both retrievers at `k = 10 x VECTOR_OVERFETCH` collapsed to 10
+  distinct entities -- the configuration the pipeline actually uses:
+
+  | collection | set overlap | rank agreement |
+  |---|---|---|
+  | complexes | 0.49 | 0.18 |
+  | ewas | 0.54 | 0.17 |
+  | reactions | 0.58 | 0.14 |
+  | summations | 0.57 | 0.24 |
+  | **overall** | **0.55** | **0.18** |
+
+  SelfQuery and plain semantic search return **about half the same documents, in
+  almost entirely different order**. SelfQuery is stable run to run, so this is a
+  real change in what reaches the model, not the removal of noise.
 - **Metadata filtering is lost as a capability**, not merely as code. SelfQuery
   translated a question into a Chroma metadata filter; nothing replaces that.
 - **339 lines across the `metadata_info.py` files become dead in the retrieval
@@ -143,9 +155,12 @@ with no LLM in the loop.
   `bin/retrieval_baseline`, which construct SelfQuery for comparison. They should
   not be deleted while those still need them.
 
-**Verification**: recapture #171's numbers against current `main` first. They
-predate the #169 and #170 fixes, which changed what the vector side returns, so
-the 0.48/0.19 figures describe a retriever that no longer exists.
+**Verification**: done. The figures above supersede the 0.48/0.19 in #171, which
+predated the #169 and #170 fixes and described a retriever that no longer exists.
+Set overlap moved 0.48 -> 0.55 once both sides were measured at the pipeline's
+real configuration; rank agreement was unchanged at ~0.18. The conclusion is
+unmoved: this is a substantial change to retrieval, and it should be judged on
+answer quality rather than on overlap, which cannot say which set is better.
 
 ### D2 — The budget is per collection — DECIDED
 

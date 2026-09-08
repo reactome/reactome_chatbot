@@ -39,7 +39,12 @@ from langchain_core.retrievers import BaseRetriever
 from nltk.tokenize import word_tokenize
 
 from agent.models import get_embedding, get_llm
-from retrievers.csv_chroma import chroma_settings, list_chroma_subdirectories
+from retrievers.csv_chroma import (
+    VECTOR_OVERFETCH,
+    chroma_settings,
+    dedupe_by_entity,
+    list_chroma_subdirectories,
+)
 from retrievers.reactome.metadata_info import (
     reactome_descriptions_info,
     reactome_field_info,
@@ -83,10 +88,16 @@ def build_retrievers(
         client_settings=chroma_settings,
     )
 
+    # Both vector-side retrievers are asked for more than k and collapsed to k
+    # distinct entities, exactly as HybridRetriever does. Measuring a raw k here
+    # would compare against a configuration the pipeline no longer uses -- stale
+    # numbers that look fresh.
+    overfetch = k * VECTOR_OVERFETCH
+
     retrievers: dict[str, BaseRetriever] = {
         "bm25": bm25,
         # The plain semantic retriever: similarity search with no LLM in the loop.
-        "vector": vectordb.as_retriever(search_kwargs={"k": k}),
+        "vector": vectordb.as_retriever(search_kwargs={"k": overfetch}),
     }
     if with_selfquery:
         retrievers["selfquery"] = SelfQueryRetriever.from_llm(
@@ -94,7 +105,7 @@ def build_retrievers(
             vectorstore=vectordb,
             document_contents=reactome_descriptions_info[collection],
             metadata_field_info=reactome_field_info[collection],
-            search_kwargs={"k": k},
+            search_kwargs={"k": overfetch},
         )
     return retrievers
 
@@ -129,6 +140,10 @@ def capture(args: argparse.Namespace) -> None:
             per_retriever: dict[str, list[str]] = {}
             for name, retriever in retrievers.items():
                 docs = retriever.invoke(question)
+                if name != "bm25":
+                    # BM25 returns distinct rows already; the vector side needs
+                    # the same collapse the pipeline applies.
+                    docs = dedupe_by_entity(docs, args.k)
                 per_retriever[name] = [doc_id(d) for d in docs]
             result[question][collection] = per_retriever
 
@@ -189,6 +204,10 @@ def overlap(args: argparse.Namespace) -> None:
             sq, vec = retrievers["selfquery"], retrievers["vector"]
             sets.setdefault(collection, []).append(_jaccard(sq, vec))
             ranks.setdefault(collection, []).append(_rank_agreement(sq, vec))
+            # Measured AFTER de-duplication, so this is 1.0 by construction and
+            # says nothing about duplication in the raw result. Kept only as a
+            # guard: anything below 1.0 means dedupe_by_entity failed to fill k,
+            # i.e. VECTOR_OVERFETCH is too low (see #177).
             distinct.setdefault(collection, []).append(
                 len(set(vec)) / len(vec) if vec else 1.0
             )
@@ -212,8 +231,9 @@ def overlap(args: argparse.Namespace) -> None:
     )
     print(
         "\n  set overlap ignores duplicates and order; rank agree counts a "
-        "document\n  only if it is in the same position; distinct/k is the "
-        "share of the vector\n  result that is not a repeat (see issue #169)."
+        "document\n  only if it is in the same position. distinct/k is measured "
+        "after\n  de-duplication, so 1.00 is expected; below 1.00 means the "
+        "over-fetch\n  is too low to fill k (see #177)."
     )
 
 
