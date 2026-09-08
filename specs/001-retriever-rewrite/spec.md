@@ -4,7 +4,7 @@
 
 **Created**: 2026-09-08
 
-**Status**: Draft — decisions D1–D4 open
+**Status**: Decisions settled — D1 by Helia, D2–D4 recorded below. Ready for `/speckit-plan`.
 
 **Input**: Rewrite the Reactome retriever: replace the `HybridRetriever` that subclasses `MultiQueryRetriever` with a plain `BaseRetriever`, decide whether `SelfQueryRetriever` is replaced by plain semantic search, and make the context budget caller-supplied.
 
@@ -100,12 +100,18 @@ An operator can see, and change, how many LLM calls a single message costs in re
 
 - **FR-001**: The retriever MUST implement `langchain_core.retrievers.BaseRetriever` via `_get_relevant_documents` / `_aget_relevant_documents` and MUST NOT subclass `MultiQueryRetriever`.
 - **FR-002**: Reciprocal Rank Fusion MUST be owned by this repository rather than borrowed from `EnsembleRetriever`, and its constant, tie-break and de-duplication key MUST be explicit and tested.
-- **FR-003**: BM25 and vector results MUST be fused as separate ranked lists (preserving the #170 fix), and per-collection weights MUST be adjustable.
+- **FR-003**: BM25 and plain semantic results MUST be fused as separate ranked lists
+  (preserving the #170 fix), and the BM25-vs-vector weighting MUST be adjustable --
+  today it is `[1/n]*n`, which cannot affect ordering at all.
 - **FR-004**: Results MUST be de-duplicated per Reactome entity, falling back to page content where no `st_id` exists (preserving the #169 fix).
-- **FR-005**: The context budget MUST be supplied per call, with a documented default.
+- **FR-005**: The context budget MUST be supplied per call, counted in documents per
+  collection (D2, D3), with a documented default matching today's behaviour.
 - **FR-006**: The embeddings bundle MUST be an explicit argument, not resolved at import time in a default argument.
 - **FR-007**: Synchronous and asynchronous paths MUST return identical results for identical inputs, and MUST be tested together.
-- **FR-008**: Behaviour MUST be measured with `bin/retrieval_baseline` before and after, on the committed question set.
+- **FR-008**: Behaviour MUST be measured with `bin/retrieval_baseline` before and after,
+  on the committed question set.
+- **FR-009**: The vector retriever MUST NOT make an LLM call (D1). Retrieval MUST make
+  exactly one LLM call per message, for query expansion (D4).
 
 ### Key Entities
 
@@ -113,21 +119,81 @@ An operator can see, and change, how many LLM calls a single message costs in re
 - **Document** — a `langchain_core.documents.Document`, identified by `st_id` where present.
 - **Budget** — how many documents a caller wants, per collection.
 
-## Open Decisions
+## Decisions
 
-These are the reason this spec exists. Each needs a human decision, and each changes the implementation.
+### D1 — `SelfQueryRetriever` is replaced by plain semantic search — DECIDED (Helia)
 
-- **D1 — Is `SelfQueryRetriever` replaced by plain semantic search?**
-  Proposed by Helia. It removes 20 LLM calls per message and the component most likely to break on LangChain 1.x. Measured evidence in #171: SelfQuery and plain vector agree on only **0.48** of documents and **0.19** of positions, and SelfQuery is **stable run to run** — so this is a real change in retrieval behaviour, not the removal of noise. Those numbers predate the #169/#170 fixes and want recapturing.
+BM25 stays; the vector side becomes `vectordb.as_retriever(search_kwargs={"k": ...})`
+with no LLM in the loop.
 
-- **D2 — Is the budget per collection or global?**
-  Today it is per collection, which guarantees each contributes. A global budget is simpler and lets the ranking decide, at the risk of one collection crowding out the others.
+**Consequences, stated plainly because this is not a free simplification:**
 
-- **D3 — Documents or tokens?**
-  #139 proposed a token budget, which bounds the real constraint. Measured: 40 documents range 5,796–9,531 tokens, a 1.6× spread. Not currently binding at 7% of the window.
+- **LLM calls in retrieval drop from 21 to 1 per message** — one expansion call,
+  down from one expansion plus 4 collections x 5 query variants of self-querying.
+- **It removes the component most likely to break on LangChain 1.x.** SelfQuery
+  depends on `lark` and on structured-output behaviour that has moved between
+  versions.
+- **Retrieval results change materially.** #171 measured SelfQuery as *stable run
+  to run*, agreeing with plain vector on 0.48 of documents and 0.19 of positions.
+  This is a real change in what reaches the model, not the removal of noise.
+- **Metadata filtering is lost as a capability**, not merely as code. SelfQuery
+  translated a question into a Chroma metadata filter; nothing replaces that.
+- **339 lines across the `metadata_info.py` files become dead in the retrieval
+  path**, still referenced only by `src/evaluation/evaluator.py` and
+  `bin/retrieval_baseline`, which construct SelfQuery for comparison. They should
+  not be deleted while those still need them.
 
-- **D4 — Does multi-query expansion stay?**
-  It costs one LLM call and multiplies every downstream retrieval by five. Its value has never been measured.
+**Verification**: recapture #171's numbers against current `main` first. They
+predate the #169 and #170 fixes, which changed what the vector side returns, so
+the 0.48/0.19 figures describe a retriever that no longer exists.
+
+### D2 — The budget is per collection — DECIDED
+
+Not global. The decisive reason is technical rather than editorial: each
+collection is fused independently, so an RRF score of 0.03 in `reactions` and
+0.03 in `summations` are not comparable quantities. A global top-N would sort by
+a comparison that has no meaning.
+
+The secondary reason is coverage: `reactions` holds mechanism, `summations` holds
+prose description, `complexes` composition, `ewas` protein identity. A global cap
+could return 40 reactions and no descriptions. Measured today, the per-collection
+cap yields an even 10/10/10/10 split.
+
+Revisit only if the collections are ever fused into one ranked list, at which
+point the scores would be comparable and this reasoning would no longer hold.
+
+### D3 — The budget is counted in documents — DECIDED, with a caveat
+
+Tokens are the better unit in principle, and #139 was right to say so. But the
+measurement does not currently justify the complexity: 40 documents span
+5,796-9,531 tokens, a 1.6x spread, at roughly 7% of the context window. A token
+ceiling would tighten a bound that is not binding.
+
+Documents are also the unit a caller can reason about when asking for "less"
+alongside search results.
+
+**Caveat**: keep it a single named parameter so a token ceiling can be added as a
+second bound without changing the interface. `tiktoken` is already in the
+lockfile via `langchain-openai`, so that costs no new dependency when it is
+wanted.
+
+### D4 — Multi-query expansion stays, for now — DECIDED
+
+Keep it, and measure it separately afterwards.
+
+The reason is not that it is known to be valuable — its value has never been
+measured — but that D1 already changes retrieval materially. Removing expansion
+in the same change would make any quality difference impossible to attribute.
+This is the same principle as rewriting before upgrading LangChain: change one
+variable at a time.
+
+It is also cheap in relative terms once D1 lands: with self-querying gone,
+expansion is the *only* LLM call in retrieval. Its real cost is multiplying
+retrieval work by five, which is local Chroma and BM25 work rather than API
+calls.
+
+**Follow-up**: measure expansion on its own after D1, using
+`bin/retrieval_baseline` with and without it.
 
 ## Success Criteria *(mandatory)*
 
@@ -137,7 +203,8 @@ These are the reason this spec exists. Each needs a human decision, and each cha
 - **SC-002**: `bin/retrieval_baseline compare` before and after shows only differences attributable to a decision recorded above, not to incidental refactoring.
 - **SC-003**: Sync and async return identical documents for the same query set, asserted by a test.
 - **SC-004**: Two callers with different budgets get different amounts of context in the same process.
-- **SC-005**: LLM calls per message in retrieval are stated in the code and match a test's count.
+- **SC-005**: Retrieval makes exactly one LLM call per message, down from 21, asserted
+  by a test that counts them.
 - **SC-006**: The four mypy baseline entries for `retrievers.*.rag` -- reactome, uniprot,
   plantreactome and userguide -- are deleted, not carried forward. All four share the
   same cause: `EmbeddingEnvironment.get_dir()` resolved in a default argument (FR-006).
