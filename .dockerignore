@@ -11,3 +11,6 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+# Spec Kit and agent tooling: development-time only.
+.specify/
+.claude/
