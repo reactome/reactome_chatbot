@@ -15,6 +15,14 @@ packages = [
 [tool.poetry.dependencies]
 python = ">=3.12, <4"
 langchain = "^1.4.0"
+# Declared, not inherited. LangChain 1.0 moved the pre-LCEL chain builders here
+# (retrievers/rag_chain.py, the metadata_info modules), so this repository
+# imports langchain_classic directly and must depend on it directly. It arrived
+# transitively while langchain-community 0.4 was briefly installed, which is
+# exactly why a stale virtualenv made the code look fine locally and CI did not.
+langchain-classic = "^1.0.8"
+# Same: data_generation imports RecursiveCharacterTextSplitter from it.
+langchain-text-splitters = "^1.1.2"
 # 2.x, required by langchain-openai 1.x (openai>=2.45). Used directly only by
 # bin/probe_model_temperature, for models.list().
 openai = "^2.45.0"
