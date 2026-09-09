@@ -46,9 +46,7 @@ def test_safety_and_language_overlap() -> None:
     log: list[tuple[str, float, float]] = []
     state = BaseState(user_input="what is TP53?")  # type: ignore[typeddict-item]
 
-    elapsed = time.perf_counter()
     result = asyncio.run(_builder(log).preprocess(state, RunnableConfig()))
-    elapsed = time.perf_counter() - elapsed
 
     assert result["rephrased_input"] == "rephrased"
     assert result["safety"] == "true"
@@ -60,10 +58,21 @@ def test_safety_and_language_overlap() -> None:
     assert safety[0] < language[1], "safety started after language detection finished"
     assert language[0] < safety[1], "language detection started after safety finished"
 
-    # Three sequential calls would take 3 * DELAY; overlapping two takes about 2.
-    assert (
-        elapsed < DELAY * 2.8
-    ), f"took {elapsed:.2f}s, expected roughly {DELAY * 2:.2f}s"
+    # How MUCH they overlap, not how long the whole call took.
+    #
+    # This used to assert `elapsed < DELAY * 2.8` against the wall clock, and it
+    # failed on CI at 0.63s against a 0.56s budget. That budget covers the two
+    # sleeps plus asyncio.run start-up, three coroutine hand-offs and whatever
+    # else a shared runner is doing, so it measures the runner as much as the
+    # code. The claim being made is that these two steps run concurrently, and
+    # the overlap measures exactly that -- from the same perf_counter marks the
+    # assertions above use. Two steps that ran back to back overlap by ~0; two
+    # started together overlap by ~DELAY.
+    overlap = min(safety[1], language[1]) - max(safety[0], language[0])
+    assert overlap > DELAY / 2, (
+        f"safety and language overlapped for only {overlap:.3f}s of {DELAY}s; "
+        "they are running sequentially again"
+    )
 
 
 def test_rephrase_still_precedes_the_safety_check() -> None:
