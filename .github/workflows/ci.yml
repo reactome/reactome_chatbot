@@ -76,10 +76,22 @@ jobs:
               shell: bash
               run: |
                 base="${{ github.base_ref }}"
+                before="${{ github.event.before }}"
                 if [ -z "$base" ] && [ "${{ github.event_name }}" = "push" ]; then
-                  # A push has no base branch; compare against what main was
+                  # A push has no base branch; compare against where main was
                   # before it, so this stays as cheap here as it is on a PR.
-                  if git diff --name-only HEAD^ HEAD -- poetry.lock | grep -q .; then
+                  #
+                  # github.event.before, not HEAD^. Rebase merges are enabled on
+                  # this repository, so one push can advance main by several
+                  # commits -- HEAD^ would then inspect only the last of them and
+                  # miss a poetry.lock change in any earlier one, reporting
+                  # changed=false and skipping the verification entirely.
+                  # It is all zeros for the first push to a ref, and a force push
+                  # can leave it unreachable, so fall back to verifying.
+                  if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ] \
+                     || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
+                    echo "changed=true" >> "$GITHUB_OUTPUT"
+                  elif git diff --name-only "$before" HEAD -- poetry.lock | grep -q .; then
                     echo "changed=true" >> "$GITHUB_OUTPUT"
                   else
                     echo "changed=false" >> "$GITHUB_OUTPUT"
