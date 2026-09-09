@@ -20,4 +20,12 @@ TAVILY_API_KEY=
 # anything else makes retrieval meaningless.
 #EMBEDDING_MODEL=
 # LLM used for answers; defaults to gpt-4o-mini.
+# gpt-5.6-luna is verified to work end to end. It answers with noticeably more
+# grounding in the retrieved Reactome records, and takes roughly twice as long
+# per question (41s vs 22s, averaged over three questions).
 #LLM_MODEL=
+# Sampling temperature. Leave unset: it defaults to 0.0, except for the
+# gpt-5.5/5.6/6 families, which accept only their own default of 1 and return a
+# 400 for anything else. Set this only for a model that rule does not yet know
+# about; see resolve_temperature in src/agent/graph.py.
+#LLM_TEMPERATURE=
