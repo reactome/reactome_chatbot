@@ -20,14 +20,37 @@ from retrievers.csv_chroma import RRF_K, reciprocal_rank_fusion
 
 pytest.importorskip("langchain", reason="retrieval stack not installed")
 
-from langchain.retrievers import EnsembleRetriever  # noqa: E402
+from langchain_classic.retrievers import EnsembleRetriever  # noqa: E402
+from langchain_core.retrievers import BaseRetriever  # noqa: E402
 
 pytestmark = pytest.mark.requires_retrieval_stack
 
 
+class _NoopRetriever(BaseRetriever):
+    """Never invoked; it exists only to satisfy a length check.
+
+    LangChain 1.0 made EnsembleRetriever validate that len(weights) equals
+    len(retrievers), so `EnsembleRetriever(retrievers=[], weights=[...])` -- the
+    empty-ensemble trick this repository used to reach `weighted_reciprocal_rank`
+    -- now raises. That trick was removed from the pipeline by the retriever
+    rewrite; it survived only here, in the test that compares against it.
+
+    The upgrade breaking it is the argument for the rewrite, restated: the method
+    is public, but every route to it is not.
+    """
+
+    def _get_relevant_documents(self, query: str, **kwargs: object) -> list[Document]:
+        return []
+
+
+def _ensemble(n: int) -> EnsembleRetriever:
+    return EnsembleRetriever(
+        retrievers=[_NoopRetriever() for _ in range(n)], weights=[1 / n] * n
+    )
+
+
 def _langchain_rrf(doc_lists: list[list[Document]]) -> list[str]:
-    n = len(doc_lists)
-    ensemble = EnsembleRetriever(retrievers=[], weights=[1 / n] * n)
+    ensemble = _ensemble(len(doc_lists))
     return [d.page_content for d in ensemble.weighted_reciprocal_rank(doc_lists)]
 
 
@@ -36,7 +59,7 @@ def _ours(doc_lists: list[list[Document]]) -> list[str]:
 
 
 def test_the_constant_matches_the_source_it_was_copied_from() -> None:
-    assert EnsembleRetriever(retrievers=[], weights=[1.0]).c == RRF_K
+    assert _ensemble(1).c == RRF_K
 
 
 @pytest.mark.parametrize("seed", range(25))

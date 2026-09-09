@@ -216,11 +216,21 @@ def test_the_vector_side_makes_no_llm_call() -> None:
     would pass just as well against a cached or mocked LLM.
     """
     source = Path(csv_chroma.__file__).read_text()
-    # Checks the import, not the word: the name still appears in a comment
+    # Checks imports, not the word: the name still appears in a comment
     # explaining what was replaced, and that comment is worth keeping.
+    #
+    # Matched on the module tail rather than the full path. LangChain 1.0 moved
+    # this to langchain_classic.retrievers.self_query, and a test pinned to
+    # "from langchain.retrievers.self_query" would have gone quietly green
+    # against the new path while claiming the vector side was still LLM-free.
+    imports = [
+        line
+        for line in source.splitlines()
+        if line.startswith(("import ", "from ")) and "retrievers.self_query" in line
+    ]
     assert (
-        "from langchain.retrievers.self_query" not in source
-    ), "the vector side must not reintroduce an LLM-backed retriever"
+        not imports
+    ), f"the vector side must not reintroduce an LLM-backed retriever: {imports}"
     assert "as_retriever(" in source, "plain similarity search is expected"
 
 

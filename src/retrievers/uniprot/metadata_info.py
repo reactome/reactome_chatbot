@@ -1,4 +1,4 @@
-from langchain.chains.query_constructor.base import AttributeInfo
+from langchain_classic.chains.query_constructor.schema import AttributeInfo
 
 uniprot_descriptions_info = {
     "uniprot_data": "Contains detailed protein information about gene names, protein names, subcellular localizations, family classifications, biological pathway associations, domains, motifs, disease associations, and functional descriptions. ",
