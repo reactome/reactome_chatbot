@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+"""Re-derive which models refuse temperature=0.0.
+
+`resolve_temperature` in src/agent/graph.py carries a list of models that accept
+only their own default temperature of 1. No endpoint reports which values a model
+takes, so that list is empirical -- and it interleaves in a way no name pattern
+predicts: gpt-5 refuses 0.0, gpt-5.1/5.2/5.4 accept it, gpt-5.5 and gpt-5.6 refuse
+it again.
+
+This is the tool that produced it. Run it when a model is added, or when a 400
+says a temperature is unsupported, and paste the printed set into graph.py. It
+sends one one-token request per model.
+
+  ./bin/probe_model_temperature            # every chat model the key can see
+  ./bin/probe_model_temperature gpt-6-nova # just these
+
+Requires OPENAI_API_KEY.
+"""
+
+import os
+import sys
+from concurrent.futures import ThreadPoolExecutor
+
+import openai
+from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
+
+# Not chat models, or not reachable through /v1/chat/completions. Probing them
+# yields 404s that say nothing about temperature.
+NOT_CHAT = (
+    "audio", "image", "realtime", "transcribe", "tts", "whisper", "sora",
+    "moderation", "embedding", "search", "deep-research", "computer-use",
+    "instruct", "davinci", "babbage", "curie", "codex", "live", "-pro",
+)
+
+
+def is_candidate(model_id: str) -> bool:
+    return model_id.startswith(("gpt-", "o1", "o3", "o4", "chat-latest")) and not any(
+        skip in model_id for skip in NOT_CHAT
+    )
+
+
+def probe(model: str) -> tuple[str, str]:
+    """Send the smallest possible request and read the error, if any."""
+    try:
+        ChatOpenAI(model=model, temperature=0.0, max_tokens=1).invoke("hi")
+        return model, "accepts"
+    except Exception as exc:  # noqa: BLE001 -- the error text is the result
+        text = str(exc)
+        if "does not support 0.0" in text:
+            return model, "refuses"
+        return model, "unknown"
+
+
+def main() -> None:
+    load_dotenv()
+    if not os.getenv("OPENAI_API_KEY"):
+        raise SystemExit("OPENAI_API_KEY is not set.")
+
+    client = openai.OpenAI()
+    models = sys.argv[1:] or sorted(
+        {m.id for m in client.models.list() if is_candidate(m.id)}
+    )
+    print(f"Probing {len(models)} models with temperature=0.0...\n", file=sys.stderr)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = sorted(pool.map(probe, models))
+
+    for model, verdict in results:
+        print(f"  {verdict:<9}{model}", file=sys.stderr)
+
+    refuses = sorted(m for m, v in results if v == "refuses")
+    unknown = sorted(m for m, v in results if v == "unknown")
+    if unknown:
+        print(
+            f"\n{len(unknown)} could not be probed (not a chat model, or no access): "
+            + ", ".join(unknown),
+            file=sys.stderr,
+        )
+
+    print("\nPaste into FIXED_TEMPERATURE_MODELS in src/agent/graph.py,")
+    print("dropping any -YYYY-MM-DD snapshot suffix (those are handled there):\n")
+    for model in refuses:
+        print(f'    "{model}",')
+
+
+if __name__ == "__main__":
+    main()

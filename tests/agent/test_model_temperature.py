@@ -18,7 +18,11 @@ pytest.importorskip("langchain_openai", reason="LLM stack not installed")
 
 from langchain_openai.chat_models.base import ChatOpenAI  # noqa: E402
 
-from agent.graph import FIXED_TEMPERATURE, resolve_temperature  # noqa: E402
+from agent.graph import (  # noqa: E402
+    FIXED_TEMPERATURE,
+    FIXED_TEMPERATURE_MODELS,
+    resolve_temperature,
+)
 from agent.models import get_llm  # noqa: E402
 
 
@@ -35,31 +39,81 @@ def _no_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LLM_TEMPERATURE", raising=False)
 
 
-@pytest.mark.parametrize(
-    "model",
-    ["gpt-5.5", "gpt-5.5-2026-04-23", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-6-astra"],
-)
+# Every verdict below was measured against the API by ./bin/probe_model_temperature
+# on 2026-09-09, not inferred from the name. See test_the_set_is_not_a_name_pattern.
+REFUSES_ZERO = [
+    "chat-latest",
+    "gpt-5",
+    "gpt-5-2025-08-07",
+    "gpt-5-mini",
+    "gpt-5-nano",
+    "gpt-5.5",
+    "gpt-5.5-2026-04-23",
+    "gpt-5.6-luna",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-6-astra",
+    "o3",
+    "o3-2025-04-16",
+    "o4-mini",
+    "o4-mini-2025-04-16",
+]
+ACCEPTS_ZERO = [
+    "gpt-3.5-turbo",
+    "gpt-4",
+    "gpt-4o-mini",
+    "gpt-4.1",
+    "gpt-4.1-nano",
+    "gpt-5.1",
+    "gpt-5.2",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.4-nano-2026-03-17",
+]
+
+
+@pytest.mark.parametrize("model", REFUSES_ZERO)
 def test_models_that_refuse_zero_get_their_only_supported_value(model: str) -> None:
     assert resolve_temperature(model) == FIXED_TEMPERATURE == 1.0
 
 
-@pytest.mark.parametrize("model", ["gpt-4o-mini", "gpt-4.1", "gpt-5", "gpt-5.4-mini"])
+@pytest.mark.parametrize("model", ACCEPTS_ZERO)
 def test_every_other_model_still_gets_zero(model: str) -> None:
-    """Determinism stays the default; only the models that refuse it lose it.
-
-    gpt-5 and gpt-5.4-mini are in this list deliberately: they are newer than
-    gpt-4o-mini and they do accept 0.0, so the rule is not "new models".
-    """
+    """Determinism stays the default; only the models that refuse it lose it."""
     assert resolve_temperature(model) == 0.0
 
 
-def test_the_prefix_table_covers_dated_snapshots() -> None:
-    """gpt-5.6-luna and a dated pin of it must resolve the same way.
+def test_the_set_is_not_a_name_pattern() -> None:
+    """The reason this is an exact-match set and not a prefix match.
 
-    Matching on prefix is why this table needs no edit each time OpenAI pins a
-    snapshot of a family already listed.
+    The behaviour interleaves inside one family: gpt-5 refuses 0.0, gpt-5.1,
+    gpt-5.2 and gpt-5.4 accept it, gpt-5.5 and gpt-5.6 refuse it again. A "gpt-5"
+    prefix -- which this file used to have -- also matches gpt-5.1, and was wrong
+    for eleven models.
+    """
+    assert resolve_temperature("gpt-5") == FIXED_TEMPERATURE
+    for accepted in ("gpt-5.1", "gpt-5.2", "gpt-5.4"):
+        assert (
+            resolve_temperature(accepted) == 0.0
+        ), f"{accepted} accepts 0.0; a gpt-5 prefix would have caught it"
+    assert resolve_temperature("gpt-5.5") == FIXED_TEMPERATURE
+
+
+def test_dated_snapshots_resolve_as_the_model_they_pin() -> None:
+    """`<model>-YYYY-MM-DD` behaves as `<model>`, so the suffix is stripped.
+
+    This is what keeps the set from needing an edit every time OpenAI pins one.
     """
     assert resolve_temperature("gpt-5.6-luna-2026-06-01") == FIXED_TEMPERATURE
+    assert resolve_temperature("gpt-5.4-mini-2026-03-17") == 0.0
+
+
+def test_every_listed_model_is_bare_of_a_snapshot_suffix() -> None:
+    """A dated id in the set would be dead: the suffix is stripped before lookup."""
+    for model in FIXED_TEMPERATURE_MODELS:
+        assert (
+            resolve_temperature(model) == FIXED_TEMPERATURE
+        ), f"{model} is in the set but does not resolve through it"
 
 
 def test_the_override_wins_over_the_table(monkeypatch: pytest.MonkeyPatch) -> None:

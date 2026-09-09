@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 from typing import Any, cast
 
 from langchain_core.callbacks.base import Callbacks
@@ -89,12 +90,37 @@ def resolve_embedding_model() -> str:
 # when the argument is omitted, and these models reject that too -- so the value
 # has to be 1.0 explicitly.
 #
-# Unlike the embedding model, which is read from the bundle that built it, this
-# cannot be derived: no endpoint reports which values a model accepts. Matched on
-# prefix so dated snapshots (gpt-5.5-2026-04-23) and new members of a family
-# need no edit. LLM_TEMPERATURE overrides, for a model this list has not met.
-FIXED_TEMPERATURE_MODEL_PREFIXES = ("gpt-5.5", "gpt-5.6", "gpt-6")
+# This is an exact-match set and not a name pattern, because the behaviour
+# interleaves: gpt-5 refuses 0.0, gpt-5.1/5.2/5.4 accept it, and gpt-5.5/5.6
+# refuse it again. A "gpt-5" prefix would have caught gpt-5.1 as well, and an
+# earlier version of this file did exactly that -- and was wrong for eleven
+# models, including the gpt-5 and o-series entries below.
+#
+# The list is empirical: no endpoint reports which values a model accepts, so it
+# was measured. `./bin/probe_model_temperature` is the tool that measured it and
+# prints this set; run it rather than reasoning about a name.
+#
+# Measured 2026-09-09. LLM_TEMPERATURE overrides, for a model added since.
+FIXED_TEMPERATURE_MODELS = frozenset(
+    {
+        "chat-latest",
+        "gpt-5",
+        "gpt-5-mini",
+        "gpt-5-nano",
+        "gpt-5.5",
+        "gpt-5.6-luna",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-6-astra",
+        "o3",
+        "o4-mini",
+    }
+)
 FIXED_TEMPERATURE = 1.0
+
+# OpenAI pins dated snapshots of a model as `<model>-YYYY-MM-DD`. They behave as
+# the model they pin, so the suffix is stripped rather than listing every one.
+_SNAPSHOT_SUFFIX = re.compile(r"-\d{4}-\d{2}-\d{2}$")
 
 
 def resolve_temperature(model: str) -> float:
@@ -109,7 +135,7 @@ def resolve_temperature(model: str) -> float:
             return float(override)
         except ValueError:
             raise SystemExit(f"LLM_TEMPERATURE={override!r} is not a number.") from None
-    if model.startswith(FIXED_TEMPERATURE_MODEL_PREFIXES):
+    if _SNAPSHOT_SUFFIX.sub("", model) in FIXED_TEMPERATURE_MODELS:
         return FIXED_TEMPERATURE
     return 0.0
 
