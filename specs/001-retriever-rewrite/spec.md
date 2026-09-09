@@ -4,7 +4,7 @@
 
 **Created**: 2026-09-08
 
-**Status**: Decisions settled — D1 by Helia, D2–D4 recorded below. Ready for `/speckit-plan`.
+**Status**: **Complete.** All three stages shipped 2026-09-09 (#182, #183, #185). Outcome recorded at the end of this file, including two predictions that were wrong.
 
 **Input**: Rewrite the Reactome retriever: replace the `HybridRetriever` that subclasses `MultiQueryRetriever` with a plain `BaseRetriever`, decide whether `SelfQueryRetriever` is replaced by plain semantic search, and make the context budget caller-supplied.
 
@@ -230,3 +230,52 @@ calls.
 - BM25 stays. Helia's proposal keeps it, it is deterministic, and it costs no LLM call.
 - Answer quality is judged by the ragas work, not by this spec. This spec changes *what reaches the model*; whether that improves answers is measured separately.
 - The rewrite happens before the LangChain upgrade, so that a behaviour change and an upgrade change cannot be confused for one another.
+
+
+---
+
+## Outcome (2026-09-09)
+
+All three stages shipped. `HybridRetriever` is a plain `BaseRetriever`;
+`SelfQueryRetriever` is gone from the pipeline; the bundle and the context budget
+are constructor arguments. Retrieval makes **one LLM call per message, down from
+21**. The five reaches into LangChain internals are zero, so the upgrade is
+unblocked — which was the point.
+
+Suppressions deleted rather than annotated: four `retrievers.*.rag` mypy baseline
+entries and four `B008` noqa comments.
+
+| stage | PR | what landed |
+|---|---|---|
+| 1 | #182 | plain `BaseRetriever`, RRF vendored, byte-identical results |
+| 2 | #183 | plain semantic search replaces SelfQuery |
+| 3 | #185 | `require_dir` for the bundle, budget as a constructor argument |
+
+### Two predictions in the plan were wrong
+
+Recorded because the point of this file is that the next person does not repeat
+them.
+
+1. **"Stage 1 must show *zero* difference"** was unfalsifiable as written. Chroma's
+   ANN search has a noise floor — two identical runs already differed on 2 of 8
+   question-collections — so "zero" could never have been observed, and a real
+   regression of that size would have been invisible against it. An exit criterion
+   has to be stated against measured noise, not against an ideal.
+
+2. **"Stage 2 becomes deterministic"** did not happen. Removing the LLM from the
+   vector side removed *that* source of variance; the ANN variance underneath it
+   stayed. Removing one of two causes does not make an effect go away, and the plan
+   asserted it would without checking which cause dominated.
+
+### One thing this rewrite did not do
+
+It changed what reaches the model four times over — over-fetch, de-duplication,
+genuine BM25/vector fusion, and plain semantic search — and **none of those changes
+has been evaluated for answer quality**. The plan said so under Out of Scope, which
+made it a known gap rather than an oversight, but it is still a gap.
+
+`src/evaluation/evaluator.py` is the tool for it and cannot be used as it stands: it
+builds its own `SelfQueryRetriever` + `EnsembleRetriever` + `MergerRetriever` rather
+than the shipping pipeline, so after Stage 2 it measures a configuration that no
+longer exists. Carried into [spec 002](../002-default-llm-choice/spec.md) as its P1,
+where the same fix serves both.

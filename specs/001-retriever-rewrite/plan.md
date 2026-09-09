@@ -2,6 +2,10 @@
 
 **Branch**: `plan/retriever-rewrite` | **Date**: 2026-09-08 | **Spec**: [spec.md](./spec.md)
 
+**Status**: Executed. See [Outcome](./spec.md#outcome-2026-09-09) in the spec —
+two of the exit criteria below turned out to be unfalsifiable or wrong, and
+which ones is recorded there.
+
 **Input**: Feature specification from `/specs/001-retriever-rewrite/spec.md`
 
 ## Summary
