@@ -4,8 +4,6 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 import chromadb.config
-from langchain.chains.query_constructor.schema import AttributeInfo
-from langchain.retrievers.self_query.base import SelfQueryRetriever
 from langchain_chroma.vectorstores import Chroma
 from langchain_community.document_loaders.csv_loader import CSVLoader
 from langchain_community.retrievers import BM25Retriever
@@ -196,23 +194,18 @@ def create_bm25_chroma_ensemble_retriever(
     llm: BaseChatModel,
     embedding: Embeddings,
     embeddings_directory: Path,
-    *,
-    descriptions_info: dict[str, str],
-    field_info: dict[str, list[AttributeInfo]],
 ) -> "HybridRetriever":
     return HybridRetriever.from_subdirectory(
         llm,
         embedding,
         embeddings_directory,
-        descriptions_info=descriptions_info,
-        field_info=field_info,
         include_original=True,
     )
 
 
 class RetrieverDict(TypedDict):
     bm25: BM25Retriever
-    vector: SelfQueryRetriever
+    vector: BaseRetriever
 
 
 class HybridRetriever(BaseRetriever):
@@ -236,7 +229,7 @@ class HybridRetriever(BaseRetriever):
     include_original: bool = False
     collection_retrievers: dict[str, RetrieverDict]
 
-    # BM25Retriever and SelfQueryRetriever are not pydantic models.
+    # BM25Retriever and the Chroma retriever are not pydantic models.
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @classmethod
@@ -246,8 +239,6 @@ class HybridRetriever(BaseRetriever):
         embedding: Embeddings,
         embeddings_directory: Path,
         *,
-        descriptions_info: dict[str, str],
-        field_info: dict[str, list[AttributeInfo]],
         include_original: bool = False,
     ) -> "HybridRetriever":
         _retrievers: dict[str, RetrieverDict] = {}
@@ -265,24 +256,22 @@ class HybridRetriever(BaseRetriever):
             )
             bm25_retriever.k = RESULTS_PER_RETRIEVER
 
-            # set up vectorstore SelfQuery retriever
+            # Plain semantic search: similarity against the stored vectors, with
+            # no LLM in the loop. This replaced SelfQueryRetriever, which spent
+            # one LLM call per collection per query variant -- 20 per message --
+            # translating the question into a Chroma metadata filter.
             vectordb = Chroma(
                 persist_directory=str(embeddings_directory / subdirectory),
                 embedding_function=embedding,
                 client_settings=chroma_settings,
             )
-
-            selfq_retriever = SelfQueryRetriever.from_llm(
-                llm=llm,
-                vectorstore=vectordb,
-                document_contents=descriptions_info[subdirectory],
-                metadata_field_info=field_info[subdirectory],
-                search_kwargs={"k": RESULTS_PER_RETRIEVER * VECTOR_OVERFETCH},
+            vector_retriever = vectordb.as_retriever(
+                search_kwargs={"k": RESULTS_PER_RETRIEVER * VECTOR_OVERFETCH}
             )
 
             _retrievers[subdirectory] = {
                 "bm25": bm25_retriever,
-                "vector": selfq_retriever,
+                "vector": vector_retriever,
             }
         # The expansion chain, built directly. This used to be extracted from a
         # throwaway MultiQueryRetriever constructed only to reach its .llm_chain.

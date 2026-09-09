@@ -6,10 +6,6 @@ from langchain_core.runnables import Runnable
 
 from retrievers.csv_chroma import create_bm25_chroma_ensemble_retriever
 from retrievers.rag_chain import create_rag_chain
-from retrievers.uniprot.metadata_info import (
-    uniprot_descriptions_info,
-    uniprot_field_info,
-)
 from retrievers.uniprot.prompt import uniprot_qa_prompt
 from util.embedding_environment import EmbeddingEnvironment
 
@@ -27,8 +23,6 @@ def create_uniprot_rag(
         llm,
         embedding,
         embeddings_directory,
-        descriptions_info=uniprot_descriptions_info,
-        field_info=uniprot_field_info,
     )
 
     if streaming:
