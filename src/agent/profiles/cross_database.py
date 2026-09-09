@@ -22,6 +22,7 @@ from agent.tasks.cross_database.summarize_reactome_uniprot import (
 )
 from retrievers.reactome.rag import create_reactome_rag
 from retrievers.uniprot.rag import create_uniprot_rag
+from util.embedding_environment import EmbeddingEnvironment
 
 
 class CrossDatabaseState(BaseState):
@@ -43,8 +44,12 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
         super().__init__(llm, embedding)
 
         # Create runnables (tasks & tools)
-        self.reactome_rag: Runnable = create_reactome_rag(llm, embedding)
-        self.uniprot_rag: Runnable = create_uniprot_rag(llm, embedding)
+        self.reactome_rag: Runnable = create_reactome_rag(
+            llm, embedding, EmbeddingEnvironment.require_dir("reactome")
+        )
+        self.uniprot_rag: Runnable = create_uniprot_rag(
+            llm, embedding, EmbeddingEnvironment.require_dir("uniprot")
+        )
 
         self.completeness_checker = create_completeness_grader(llm)
         self.write_reactome_query = create_reactome_rewriter_w_uniprot(llm)
