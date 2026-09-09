@@ -53,7 +53,12 @@ jobs:
               run: poetry run pytest
 
     poetry-check:
-        if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+        # No event filter. It used to run only on pull_request and
+        # workflow_dispatch, so every push to main skipped it -- and GitHub counts
+        # a skipped required check as not-passing, leaving main permanently
+        # showing 6/8. A main branch that always looks amber is a main branch
+        # nobody reads. The expensive steps stay gated on poetry.lock actually
+        # having changed, which on a push means comparing against HEAD^.
         runs-on: ${{ matrix.os }}
         strategy:
             matrix:
@@ -71,8 +76,16 @@ jobs:
               shell: bash
               run: |
                 base="${{ github.base_ref }}"
-                if [ -z "$base" ]; then
-                  # manual run: no base to compare against, so always verify
+                if [ -z "$base" ] && [ "${{ github.event_name }}" = "push" ]; then
+                  # A push has no base branch; compare against what main was
+                  # before it, so this stays as cheap here as it is on a PR.
+                  if git diff --name-only HEAD^ HEAD -- poetry.lock | grep -q .; then
+                    echo "changed=true" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "changed=false" >> "$GITHUB_OUTPUT"
+                  fi
+                elif [ -z "$base" ]; then
+                  # workflow_dispatch: nothing to compare against, so verify.
                   echo "changed=true" >> "$GITHUB_OUTPUT"
                 elif git diff --name-only "origin/$base...HEAD" -- poetry.lock | grep -q .; then
                   echo "changed=true" >> "$GITHUB_OUTPUT"
