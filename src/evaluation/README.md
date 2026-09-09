@@ -36,17 +36,20 @@ as JSON rather than from spreadsheets:
 - An installed reactome bundle (`./bin/embeddings_manager install ...`)
 - `OPENAI_API_KEY`
 
+`poetry run` is needed for the interpreter, not for the import path: the script
+puts `src/` on `sys.path` itself, so it works from any directory.
+
 ## Usage
 
 ```bash
 # one model over the golden questions
-./bin/evaluate --model gpt-4o-mini
+poetry run ./bin/evaluate --model gpt-4o-mini
 
 # two models, same questions, same judge, side by side
-./bin/evaluate --model gpt-4o-mini --model gpt-5.6-luna
+poetry run ./bin/evaluate --model gpt-4o-mini --model gpt-5.6-luna
 
 # three runs each, so the report can show the noise floor
-./bin/evaluate --model gpt-4o-mini --repeat 3 --out report.json
+poetry run ./bin/evaluate --model gpt-4o-mini --repeat 3 --out report.json
 ```
 
 `--out` writes the full report: aggregate scores per run, seconds per question,

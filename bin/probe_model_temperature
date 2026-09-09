@@ -11,8 +11,8 @@ This is the tool that produced it. Run it when a model is added, or when a 400
 says a temperature is unsupported, and paste the printed set into graph.py. It
 sends one one-token request per model.
 
-  ./bin/probe_model_temperature            # every chat model the key can see
-  ./bin/probe_model_temperature gpt-6-nova # just these
+  poetry run ./bin/probe_model_temperature            # every chat model the key can see
+  poetry run ./bin/probe_model_temperature gpt-6-nova # just these
 
 Requires OPENAI_API_KEY.
 """
@@ -20,6 +20,10 @@ Requires OPENAI_API_KEY.
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+# Run from anywhere without setting PYTHONPATH; see bin/evaluate.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 import openai
 from dotenv import load_dotenv
@@ -28,9 +32,25 @@ from langchain_openai import ChatOpenAI
 # Not chat models, or not reachable through /v1/chat/completions. Probing them
 # yields 404s that say nothing about temperature.
 NOT_CHAT = (
-    "audio", "image", "realtime", "transcribe", "tts", "whisper", "sora",
-    "moderation", "embedding", "search", "deep-research", "computer-use",
-    "instruct", "davinci", "babbage", "curie", "codex", "live", "-pro",
+    "audio",
+    "image",
+    "realtime",
+    "transcribe",
+    "tts",
+    "whisper",
+    "sora",
+    "moderation",
+    "embedding",
+    "search",
+    "deep-research",
+    "computer-use",
+    "instruct",
+    "davinci",
+    "babbage",
+    "curie",
+    "codex",
+    "live",
+    "-pro",
 )
 
 
@@ -56,6 +76,10 @@ def main() -> None:
     load_dotenv()
     if not os.getenv("OPENAI_API_KEY"):
         raise SystemExit("OPENAI_API_KEY is not set.")
+
+    if any(arg in ("-h", "--help") for arg in sys.argv[1:]):
+        print(__doc__)
+        return
 
     client = openai.OpenAI()
     models = sys.argv[1:] or sorted(
