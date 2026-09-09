@@ -56,6 +56,18 @@ poetry run ./bin/evaluate --model gpt-4o-mini --repeat 3 --out report.json
 and every answer with its per-question scores — so a low score can be looked at
 rather than guessed about.
 
+## What it measures, exactly
+
+The chain `create_reactome_rag` builds, asked the **rephrased** question — which
+is what `generate_answer` passes to the RAG in production, never the raw one.
+That step is not cosmetic: over the 20 golden questions, 15 come back changed,
+including `signalling` → `signaling`, which moves BM25's lexical matching.
+
+Not measured, because they do not change the answer text: the safety check,
+intent classification (this always evaluates the reactome source), and
+postprocessing, which appends web-search results as separate content rather than
+rewriting the answer.
+
 ## The judge
 
 Scoring is done by a separate model, `gpt-4o` by default, pinned with
