@@ -156,6 +156,10 @@ side.
 
 ### User Story 3 — Different surfaces may choose differently (Priority: P3)
 
+*Superseded: this is now [spec 003](../003-model-configuration/spec.md), which
+covers how a model is chosen. This specification keeps only the question of which
+model wins.*
+
 Chat, chat-alongside-search-results, and analysis summarisation each pick a model
 suited to their tolerance for latency.
 
