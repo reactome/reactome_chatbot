@@ -11,7 +11,7 @@ upgrade and diff the output.
 """
 
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, cast, get_type_hints
 
 import pytest
 
@@ -19,10 +19,13 @@ pytest.importorskip("langchain", reason="retrieval stack not installed")
 pytest.importorskip("chromadb", reason="retrieval stack not installed")
 
 from langchain_core.documents import Document  # noqa: E402
+from langchain_core.retrievers import BaseRetriever  # noqa: E402
 
+from retrievers import csv_chroma  # noqa: E402
 from retrievers.csv_chroma import (  # noqa: E402
     MAX_DOCUMENTS_PER_COLLECTION,
     HybridRetriever,
+    RetrieverDict,
     dedupe_by_entity,
     list_chroma_subdirectories,
 )
@@ -200,3 +203,32 @@ def test_fused_results_are_capped_per_collection() -> None:
     assert (
         MAX_DOCUMENTS_PER_COLLECTION < 50
     ), "the cap, applied by the caller, is what bounds the prompt"
+
+
+def test_the_vector_side_makes_no_llm_call() -> None:
+    """D1: SelfQueryRetriever is gone, so retrieval costs one LLM call, not 21.
+
+    SelfQueryRetriever translated each question into a Chroma metadata filter with
+    an LLM call, once per collection per query variant -- 4 x 5 = 20 per message,
+    plus the expansion. The vector side is now plain similarity search.
+
+    Asserted structurally rather than by counting calls, because a call counter
+    would pass just as well against a cached or mocked LLM.
+    """
+    source = Path(csv_chroma.__file__).read_text()
+    # Checks the import, not the word: the name still appears in a comment
+    # explaining what was replaced, and that comment is worth keeping.
+    assert (
+        "from langchain.retrievers.self_query" not in source
+    ), "the vector side must not reintroduce an LLM-backed retriever"
+    assert "as_retriever(" in source, "plain similarity search is expected"
+
+
+def test_retriever_dict_accepts_any_base_retriever() -> None:
+    """The vector slot is typed to the contract, not to one implementation.
+
+    It was `SelfQueryRetriever`, which meant swapping the implementation was a
+    type change as well as a behaviour change.
+    """
+    hints = get_type_hints(RetrieverDict)
+    assert hints["vector"] is BaseRetriever
