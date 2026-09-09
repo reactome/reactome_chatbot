@@ -1,46 +1,76 @@
 # RAGAS Evaluation Toolkit
 
-This folder contains utility scripts used to benchmark Reactome RAG pipelines with Ragas.
+Scores the answers the chatbot actually gives.
 
-- `test_generator.py` synthesizes question/answer test sets from the example corpora. It uses the Ragas `TestsetGenerator` to create LangChain-based evaluation datasets.
-- `evaluator.py` runs either the basic or advanced Reactome RAG chain over a test set and scores the outputs with Ragas metrics (answer relevancy, context utilization, faithfulness, context recall), saving both responses and evaluation reports.
+- `evaluator.py` (run it as `./bin/evaluate`) asks the **shipping RAG chain** a set
+  of questions and scores the answers with ragas: faithfulness, answer relevancy,
+  context utilization, and context recall when reference answers are supplied.
+- `test_generator.py` synthesizes question/answer sets from the example corpora.
+  **It targets the ragas 0.1 API and does not run against the pinned 0.2** — see
+  the TODO in the file. `tests/golden/questions.txt` is what the evaluator uses by
+  default and needs no generation.
+
+## What changed, and why the old flags are gone
+
+`--rag_type basic|advanced` and `--testset_dir` no longer exist.
+
+The evaluator used to build its own retriever — `SelfQueryRetriever` +
+`EnsembleRetriever` + `MergerRetriever`, over the `summations` collection alone,
+with `k=7` and weights `[0.2, 0.8]` that appear nowhere in the product. The
+retriever rewrite then removed `SelfQueryRetriever` from the pipeline, so the
+evaluator was measuring a configuration that existed nowhere. `basic` and
+`advanced` were two shapes of that private stack, not two shapes of the product.
+
+It now calls `create_reactome_rag`, the same factory `bin/chat-chainlit.py` uses.
+There is only one pipeline to measure, so there is no `--rag_type`.
+
+Reference answers, needed only for `context_recall`, come from `--references`
+as JSON rather than from spreadsheets:
+
+```json
+{ "What role does TP53 play in apoptosis?": "TP53 induces apoptosis by ..." }
+```
 
 ## Requirements
 
-- Python 3.12 (project default) with Poetry environment
-- `ragas` (see poetry.lock for the pinned version)
-- OpenAI access: `OPENAI_API_KEY` (and optional Azure configuration if required)
-- An installed embeddings bundle (`./bin/embeddings_manager install ...`).
-  `evaluator.py` defaults to whichever bundle is active; override with
-  `--embeddings-dir`.
-
-Run `poetry install` to set up dependencies, then activate the virtual environment via `poetry shell` or use `poetry run` for individual commands.
+- An installed reactome bundle (`./bin/embeddings_manager install ...`)
+- `OPENAI_API_KEY`
 
 ## Usage
 
-1. **Generate test sets**
+```bash
+# one model over the golden questions
+./bin/evaluate --model gpt-4o-mini
 
-   ```bash
-   poetry run python src/evaluation/test_generator.py \
-     --path src/evaluation/example \
-     --model gpt-4o-mini \
-     --temperature 0.3 \
-     --test_size 10 \
-     --distributions simple=0.25 reasoning=0.25 multi_context=0.25 conditional=0.25
-   ```
+# two models, same questions, same judge, side by side
+./bin/evaluate --model gpt-4o-mini --model gpt-5.6-luna
 
-   Outputs are stored in a `testsets/` directory of your choosing.
+# three runs each, so the report can show the noise floor
+./bin/evaluate --model gpt-4o-mini --repeat 3 --out report.json
+```
 
-2. **Evaluate a RAG configuration**
+`--out` writes the full report: aggregate scores per run, seconds per question,
+and every answer with its per-question scores — so a low score can be looked at
+rather than guessed about.
 
-   ```bash
-   poetry run python src/evaluation/evaluator.py \
-     --testset_dir <your testset dir> \
-     --rag_type advanced \
-     --model gpt-4o-mini
-   ```
+## The judge
 
-   Responses and metric reports are written to `response/<rag_type>/` and `evals/<rag_type>/` inside the testset directory.
+Scoring is done by a separate model, `gpt-4o` by default, pinned with
+`--judge-model`. Two rules the tool enforces or documents:
 
-Adjust the paths, model names, and distribution weights as needed for local experimentation.
+- **The judge may not be a model under test.** The tool refuses. A model grading
+  its own answers is not a measurement.
+- **The judge must not change between runs being compared.** A moving judge makes
+  two runs incomparable, which is the failure this tool exists to avoid.
 
+The judge's embedding model is only used to compare a question against an answer;
+it is unrelated to the vectors in the bundle, and it is pointed at
+`api.openai.com` explicitly rather than following `OPENAI_BASE_URL`, which on the
+Plant Reactome host points at a self-hosted endpoint that does not serve it.
+`JUDGE_BASE_URL` overrides.
+
+## Reading the output
+
+A single run has no noise floor: retrieval is not deterministic (Chroma's ANN
+search varies run to run), so a difference between two single runs cannot be told
+apart from variance. Use `--repeat 3` and compare against the reported spread.
