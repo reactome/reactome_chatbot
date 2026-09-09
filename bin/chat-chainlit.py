@@ -58,19 +58,25 @@ if os.getenv("OAUTH_ORCID_CLIENT_ID") and not any(p.id == "orcid" for p in provi
     providers.append(ORCIDOAuthProvider())
 
 if os.getenv("CHAINLIT_AUTH_SECRET"):
-
+    # chainlit 2.1 made this async and added the OIDC id_token as a fifth
+    # argument. Neither is optional: chainlit awaits the result and calls it with
+    # five arguments, so the old sync four-argument version would have failed at
+    # login rather than at import.
     @cl.oauth_callback
-    def oauth_callback(
+    async def oauth_callback(
         provider_id: str,
         token: str,
         raw_user_data: dict[str, str],
         default_user: cl.User,
+        id_token: str | None = None,
     ) -> cl.User | None:
         return default_user
 
 
+# chainlit 2.1 passes the current user, so a deployment can vary the profile
+# list per user. This one does not, but the parameter is required.
 @cl.set_chat_profiles
-async def chat_profiles() -> list[cl.ChatProfile]:
+async def chat_profiles(user: cl.User | None = None) -> list[cl.ChatProfile]:
     return [
         cl.ChatProfile(
             name=profile.name,
