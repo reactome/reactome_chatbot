@@ -23,7 +23,7 @@ from langchain_core.retrievers import BaseRetriever  # noqa: E402
 
 from retrievers import csv_chroma  # noqa: E402
 from retrievers.csv_chroma import (  # noqa: E402
-    MAX_DOCUMENTS_PER_COLLECTION,
+    DEFAULT_MAX_DOCUMENTS_PER_COLLECTION,
     HybridRetriever,
     RetrieverDict,
     dedupe_by_entity,
@@ -201,7 +201,7 @@ def test_fused_results_are_capped_per_collection() -> None:
     many = [[_doc(f"doc {i}") for i in range(50)]]
     assert len(_fuse(many)) == 50, "the fusion itself still returns everything"
     assert (
-        MAX_DOCUMENTS_PER_COLLECTION < 50
+        DEFAULT_MAX_DOCUMENTS_PER_COLLECTION < 50
     ), "the cap, applied by the caller, is what bounds the prompt"
 
 
@@ -232,3 +232,92 @@ def test_retriever_dict_accepts_any_base_retriever() -> None:
     """
     hints = get_type_hints(RetrieverDict)
     assert hints["vector"] is BaseRetriever
+
+
+class _StubVectorRetriever(BaseRetriever):
+    """Returns a fixed list, so a budget test needs no Chroma store and no LLM."""
+
+    docs: list[Document]
+
+    def _get_relevant_documents(self, query: str, **kwargs: Any) -> list[Document]:
+        return self.docs
+
+
+def _retriever_with_budget(budget: int | None) -> HybridRetriever:
+    from langchain_community.retrievers import BM25Retriever
+    from langchain_core.runnables import RunnableLambda
+
+    corpus = [_doc(f"doc {i}") for i in range(30)]
+    bm25 = BM25Retriever.from_documents(corpus)  # default whitespace tokenizer, no nltk
+    bm25.k = 30
+    collection: RetrieverDict = {
+        "bm25": bm25,
+        "vector": _StubVectorRetriever(docs=corpus),
+    }
+    kwargs: dict[str, Any] = (
+        {} if budget is None else {"max_documents_per_collection": budget}
+    )
+    return HybridRetriever(
+        # No expansion: one query in, one query out, so the only thing varying
+        # between the two instances below is the budget.
+        query_expander=RunnableLambda(lambda inputs: [inputs["question"]]),
+        include_original=False,
+        collection_retrievers={"reactions": collection},
+        **kwargs,
+    )
+
+
+def test_two_budgets_can_coexist_in_one_process() -> None:
+    """The point of Stage 3: the budget is an argument, not a module constant.
+
+    While it was a module constant, comparing two budgets meant editing
+    csv_chroma.py and restarting -- so the answer-quality evaluation that is
+    supposed to settle the number could not be run. Asserting both instances in
+    the same test is the whole claim: not that the value can be changed, but that
+    two values can be live at once.
+    """
+    small = _retriever_with_budget(3)
+    large = _retriever_with_budget(7)
+
+    assert len(small.invoke("anything")) == 3
+    assert len(large.invoke("anything")) == 7
+    # and the smaller is a prefix of the larger: same ranking, less of it
+    assert [d.page_content for d in small.invoke("anything")] == [
+        d.page_content for d in large.invoke("anything")
+    ][:3]
+
+
+def test_omitting_the_budget_behaves_as_the_old_constant_did() -> None:
+    """Making it an argument must not quietly change production's context size.
+
+    Production passes no budget, so the default is what actually ships.
+    """
+    assert (
+        len(_retriever_with_budget(None).invoke("x"))
+        == DEFAULT_MAX_DOCUMENTS_PER_COLLECTION
+    )
+
+
+@pytest.mark.parametrize(
+    "module",
+    ["reactome", "uniprot", "plantreactome", "userguide"],
+)
+def test_rag_factories_take_the_bundle_rather_than_resolving_it(module: str) -> None:
+    """FR-006: no default argument may call EmbeddingEnvironment at import time.
+
+    The default used to be `EmbeddingEnvironment.get_dir(...)`, evaluated once
+    when the module was imported. That made importing a rag module require an
+    installed bundle, and it fed `Path | None` into a parameter typed `Path` --
+    suppressed by four mypy baseline entries, now deleted.
+    """
+    import importlib
+    import inspect
+
+    mod = importlib.import_module(f"retrievers.{module}.rag")
+    fn = getattr(mod, f"create_{module}_rag")
+    parameter = inspect.signature(fn).parameters["embeddings_directory"]
+
+    assert (
+        parameter.default is inspect.Parameter.empty
+    ), "a default here is evaluated at import time; the caller must pass the bundle"
+    assert parameter.annotation is Path, "and it is a Path, never Path | None"

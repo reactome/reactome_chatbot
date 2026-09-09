@@ -9,6 +9,7 @@ from langgraph.graph.state import StateGraph
 from agent.profiles.base import BaseGraphBuilder, BaseState
 from agent.tasks.unsafe_question import create_unsafe_answer_generator
 from retrievers.plantreactome.rag import create_plantreactome_rag
+from util.embedding_environment import EmbeddingEnvironment
 
 
 class PlantReactomeState(BaseState):
@@ -28,7 +29,10 @@ class PlantReactomeGraphBuilder(BaseGraphBuilder):
             llm, streaming=True
         )
         self.plantreactome_rag: Runnable = create_plantreactome_rag(
-            llm, embedding, streaming=True
+            llm,
+            embedding,
+            EmbeddingEnvironment.require_dir("plantreactome"),
+            streaming=True,
         )
 
         # Create graph
