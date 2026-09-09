@@ -17,8 +17,21 @@ python = ">=3.12, <4"
 langchain = "^0.3.4"
 openai = "^1.12.0"
 chromadb = "<1.0"
+# Capped, and coupled to the chromadb pin above. chromadb 0.6 calls
+# posthog.capture(user_id, name, properties) positionally; posthog 6 changed the
+# signature to capture(event, **kwargs), so every telemetry call raises and
+# chromadb logs it at ERROR:
+#
+#   Failed to send telemetry event ClientCreateCollectionEvent:
+#   capture() takes 1 positional argument but 3 were given
+#
+# Nothing breaks -- telemetry is off anyway (anonymized_telemetry=False in
+# csv_chroma.chroma_settings) -- but it puts several meaningless ERROR lines in
+# the log on every startup and every collection open, and an error log nobody
+# can act on is one people learn to skip. Lift this with the chromadb 1.x move.
+posthog = "<6"
 pandas = "^2.2.1"
-pyasn1 = "^0.5.1"
+pyasn1 = "^0.6.4"
 langchain-openai = "^0.2.3"
 neo4j = "4.3.6"
 python-dotenv = "^1.0.1"
@@ -29,6 +42,17 @@ sqlalchemy = "^2.0.30"
 langchain-community = "^0.3.3"
 langchain-core = "^0.3.13"
 langchain-huggingface = "^0.1.0"
+# Capped, and coupled to the torch pin below. transformers 5 requires torch>=2.5
+# and, finding 2.4.1, disables PyTorch entirely rather than failing:
+#
+#   [transformers] Disabling PyTorch because PyTorch >= 2.5 is required but
+#   found 2.4.1+cpu
+#
+# get_embedding("huggingfacelocal", ...) then raises `NameError: name 'nn' is
+# not defined` deep inside sentence-transformers. Lifting this cap means moving
+# the torch pin first -- which is a separate change, because torch carries
+# platform markers and a custom CPU wheel source.
+transformers = "<5"
 einops = "^0.8.0"
 boto3 = "^1.34.148"
 torch = [
@@ -48,15 +72,23 @@ tavily-python = "^0.5.0"
 openpyxl = "^3.1.5"
 nltk = "^3.9.1"
 beautifulsoup4 = "^4.12.0"
-lxml = "^5.0.0"
+lxml = "^6.1.0"
 requests = "^2.32.0"
+# Not imported here; it arrives via chromadb, and is constrained only so the
+# Intel-macOS leg of CI can resolve. onnxruntime stopped publishing
+# macosx x86_64 wheels after 1.23.2 -- 1.24 onwards are arm64 and Linux only --
+# so poetry fails there with "Unable to find installation candidates for
+# onnxruntime". Split by marker rather than capped outright, as torch is below,
+# so the platform that actually ships keeps getting new versions.
+onnxruntime = [
+    { version = "<1.24", markers = "sys_platform == 'darwin' and platform_machine == 'x86_64'" },
+    { version = "*", markers = "sys_platform != 'darwin' or platform_machine != 'x86_64'" },
+]
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.7.1"
 pytest = "^8.3.3"
 mypy = "^1.13.0"
-black = "^24.10.0"
-isort = "^5.13.2"
 pandas-stubs = "^2.2.3.241009"
 types-requests = "^2.32.0.20241016"
 types-pyyaml = "^6.0.12.20241230"

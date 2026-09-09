@@ -27,9 +27,15 @@ class PrefixedS3StorageClient(S3StorageClient):
         data: bytes | str,
         mime: str = "application/octet-stream",
         overwrite: bool = True,
+        content_disposition: str | None = None,
     ) -> dict[str, Any]:
+        # content_disposition arrived in chainlit 2.1 and is forwarded, not
+        # dropped: it is what makes an attachment download under its original
+        # filename instead of the object key.
         object_key = str(self._prefix / object_key)
-        return await super().upload_file(object_key, data, mime, overwrite)
+        return await super().upload_file(
+            object_key, data, mime, overwrite, content_disposition
+        )
 
     async def delete_file(self, object_key: str) -> bool:
         object_key = str(self._prefix / object_key)

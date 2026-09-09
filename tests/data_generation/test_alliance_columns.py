@@ -27,7 +27,14 @@ def _column_lists() -> dict[str, list[str]]:
             continue
         for key, value in zip(node.keys, node.values, strict=False):
             if isinstance(key, ast.Constant) and isinstance(value, ast.List):
-                items = [e.value for e in value.elts if isinstance(e, ast.Constant)]
+                # `.value` on an ast.Constant is str | bytes | int | ... , not
+                # str. A newer typeshed says so, and " ".join below would have
+                # raised on a list holding anything else.
+                items = [
+                    e.value
+                    for e in value.elts
+                    if isinstance(e, ast.Constant) and isinstance(e.value, str)
+                ]
                 if items and "interactor" in " ".join(items):
                     found.setdefault(str(key.value), items)
     return found
