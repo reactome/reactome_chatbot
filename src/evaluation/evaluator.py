@@ -49,6 +49,7 @@ from ragas.metrics import (
 
 from agent.graph import resolve_embedding_model, resolve_temperature
 from agent.models import get_embedding, get_llm
+from agent.tasks.rephrase import create_rephrase_chain
 from retrievers.reactome.rag import create_reactome_rag
 from util.embedding_environment import EmbeddingEnvironment
 
@@ -80,23 +81,58 @@ def read_references(path: Path) -> dict[str, str]:
     return data
 
 
+def resolve_references(
+    questions: list[str], references: dict[str, str]
+) -> list[str | None]:
+    """Line up reference answers with questions, by the ORIGINAL wording.
+
+    A reference file is written against the questions a person typed. The
+    evaluator retrieves and scores on the rephrased question, because that is
+    what production does -- so the lookup has to happen before the rephrase, and
+    the result travels positionally. Keying by the rephrased text instead matches
+    nothing, and drops context_recall from every run while looking exactly like
+    "no references were supplied".
+    """
+    return [references.get(question) for question in questions]
+
+
 def answer_questions(
-    chain: Any, questions: list[str]
-) -> tuple[list[str], list[list[str]], float]:
-    """Ask the chain each question, keeping the answer and the retrieved context."""
+    chain: Any, rephrase: Any, questions: list[str]
+) -> tuple[list[str], list[str], list[list[str]], float]:
+    """Rephrase each question as production does, then ask the chain.
+
+    The rephrase is not optional and not cosmetic. `generate_answer` passes
+    `rephrased_input` to the RAG chain, never the raw question, so retrieval in
+    production always happens on rewritten text. Measured over the 20 golden
+    questions, **15 come back changed** -- including `signalling` -> `signaling`,
+    which moves BM25's lexical matching outright.
+
+    Skipping it would have left this file measuring a different retrieval from
+    the one it claims to measure: the same defect as building a private
+    retriever, one step further up.
+    """
+    rephrased: list[str] = []
     answers: list[str] = []
     contexts: list[list[str]] = []
     started = time.monotonic()
     for i, question in enumerate(questions, start=1):
         print(f"    [{i}/{len(questions)}] {question[:70]}", file=sys.stderr)
-        response = chain.invoke({"input": question, "chat_history": []})
+        standalone = rephrase.invoke({"user_input": question, "chat_history": []})
+        if standalone.strip() != question.strip():
+            print(f"          rephrased: {standalone.strip()[:70]}", file=sys.stderr)
+        rephrased.append(standalone)
+        response = chain.invoke({"input": standalone, "chat_history": []})
         answers.append(response["answer"])
         contexts.append([doc.page_content for doc in response["context"]])
-    return answers, contexts, time.monotonic() - started
+    return rephrased, answers, contexts, time.monotonic() - started
 
 
-def build_chain(model: str, embeddings_dir: Path) -> Any:
-    """The chain under test, built exactly as the application builds it."""
+def build_chain(model: str, embeddings_dir: Path) -> tuple[Any, Any]:
+    """The chain under test and the rephrase step, built as the application does.
+
+    Production uses one LLM for both, so the model under test rephrases its own
+    questions -- which is part of what is being compared.
+    """
     llm: BaseChatModel = get_llm(
         "openai",
         model,
@@ -104,16 +140,22 @@ def build_chain(model: str, embeddings_dir: Path) -> Any:
         temperature=resolve_temperature(model),
     )
     embedding = get_embedding("openai", resolve_embedding_model())
-    return create_reactome_rag(llm, embedding, embeddings_dir)
+    return create_reactome_rag(llm, embedding, embeddings_dir), create_rephrase_chain(
+        llm
+    )
 
 
 def score(
     questions: list[str],
     answers: list[str],
     contexts: list[list[str]],
-    references: dict[str, str],
+    references: list[str | None],
     judge: str,
 ) -> tuple[dict[str, float], list[dict[str, float]]]:
+    """Score answers. `questions` is what was retrieved on; `references` is
+    positional, resolved by the caller from the ORIGINAL wording -- a reference
+    file is written against the questions a person typed, not against whatever
+    the rephrase step produced on the day."""
     judge_llm = LangchainLLMWrapper(
         get_llm("openai", judge, temperature=resolve_temperature(judge))
     )
@@ -137,9 +179,9 @@ def score(
             user_input=q,
             response=a,
             retrieved_contexts=c,
-            reference=references.get(q),
+            reference=r,
         )
-        for q, a, c in zip(questions, answers, contexts, strict=True)
+        for q, a, c, r in zip(questions, answers, contexts, references, strict=True)
     ]
 
     metrics: list[Any] = [Faithfulness(), ResponseRelevancy(), ContextUtilization()]
@@ -266,13 +308,23 @@ def main() -> None:
         runs: list[dict[str, float]] = []
         seconds: list[float] = []
         transcripts: list[list[dict[str, Any]]] = []
-        chain = build_chain(model, embeddings_dir)
+        chain, rephrase = build_chain(model, embeddings_dir)
         for run in range(1, args.repeat + 1):
             print(f"  {model}  run {run}/{args.repeat}", file=sys.stderr)
-            answers, contexts, elapsed = answer_questions(chain, questions)
+            rephrased, answers, contexts, elapsed = answer_questions(
+                chain, rephrase, questions
+            )
             seconds.append(elapsed / len(questions))
+            # Scored against the rephrased question, because that is what was
+            # retrieved on and answered. Judging the answer against the original
+            # wording would penalise a faithful answer for a rewrite the product
+            # performs deliberately.
             aggregate, per_question = score(
-                questions, answers, contexts, references, args.judge_model
+                rephrased,
+                answers,
+                contexts,
+                resolve_references(questions, references),
+                args.judge_model,
             )
             runs.append(aggregate)
             # The answers themselves, not only the scores. The version this
@@ -283,12 +335,18 @@ def main() -> None:
                 [
                     {
                         "question": q,
+                        "rephrased": r,
                         "answer": a,
                         "documents_retrieved": len(c),
                         "scores": s,
                     }
-                    for q, a, c, s in zip(
-                        questions, answers, contexts, per_question, strict=True
+                    for q, r, a, c, s in zip(
+                        questions,
+                        rephrased,
+                        answers,
+                        contexts,
+                        per_question,
+                        strict=True,
                     )
                 ]
             )
