@@ -5,10 +5,18 @@ Scores the answers the chatbot actually gives.
 - `evaluator.py` (run it as `./bin/evaluate`) asks the **shipping RAG chain** a set
   of questions and scores the answers with ragas: faithfulness, answer relevancy,
   context utilization, and context recall when reference answers are supplied.
-- `test_generator.py` synthesizes question/answer sets from the example corpora.
-  **It targets the ragas 0.1 API and does not run against the pinned 0.2** — see
-  the TODO in the file. `tests/golden/questions.txt` is what the evaluator uses by
-  default and needs no generation.
+`test_generator.py` used to sit beside it and was **deleted** in the LangChain 1.x
+upgrade. It targeted the ragas 0.1 API — `from_langchain(generator_llm=,
+critic_llm=)`, `generate_with_langchain_docs(test_size=, distributions=)` — none
+of which exists in the pinned 0.4, and its own TODO had said so since 0.2. It was
+not a port away from working; it had not run for three major versions, and
+nothing imported it. `git log -- src/evaluation/test_generator.py` has it.
+
+Generating reference answers is still worth having — it is what would let
+`context_recall` run. Rebuilding it against the current ragas synthesizer API is
+a real piece of work, not a rename, and belongs with whoever wants that metric.
+`tests/golden/questions.txt` is what the evaluator uses by default and needs no
+generation.
 
 ## What changed, and why the old flags are gone
 

@@ -38,6 +38,7 @@ import nltk
 from dotenv import load_dotenv
 from langchain_core.language_models.chat_models import BaseChatModel
 from ragas import EvaluationDataset, SingleTurnSample, evaluate
+from ragas.dataset_schema import EvaluationResult, MultiTurnSample
 from ragas.embeddings import LangchainEmbeddingsWrapper
 from ragas.llms import LangchainLLMWrapper
 from ragas.metrics import (
@@ -174,7 +175,7 @@ def score(
         )
     )
 
-    samples = [
+    samples: list[SingleTurnSample | MultiTurnSample] = [
         SingleTurnSample(
             user_input=q,
             response=a,
@@ -200,6 +201,15 @@ def score(
         llm=judge_llm,
         embeddings=judge_embeddings,
     )
+    # ragas 0.4 types evaluate() as EvaluationResult | Executor; it returns an
+    # Executor only when asked to run asynchronously, which this does not do.
+    # Checked rather than cast, so a future ragas that changes the default says
+    # so here instead of failing on the next line with an AttributeError.
+    if not isinstance(result, EvaluationResult):
+        raise TypeError(
+            f"ragas returned {type(result).__name__}, not EvaluationResult. "
+            "evaluate() now defers by default; this tool expects a completed run."
+        )
     # result.scores is a public field holding one dict of metric -> score per
     # sample. The aggregate used to come from result._repr_dict, which is private
     # and would break on a ragas upgrade without warning -- in a file whose whole

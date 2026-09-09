@@ -14,34 +14,50 @@ packages = [
 #lark is needed for langchain -> SelfQueryRetriever
 [tool.poetry.dependencies]
 python = ">=3.12, <4"
-langchain = "^0.3.4"
-openai = "^1.12.0"
+langchain = "^1.4.0"
+# 2.x, required by langchain-openai 1.x (openai>=2.45). Used directly only by
+# bin/probe_model_temperature, for models.list().
+openai = "^2.45.0"
+# Held below 1.0, and langchain-chroma below 1.0 with it. chromadb 1.x opens a
+# 0.5/0.6 bundle by migrating its sqlite sysdb in place (9 -> 10), which needs
+# write access to the bundle directory. Installed bundles here are root-owned
+# 755, so every developer running as themselves gets
+#
+#   InternalError: error returned from database: (code: 8)
+#   attempt to write a readonly database
+#
+# at startup, before a single question. Migrating is a deliberate operational
+# step -- chown every bundle on every host -- not something to slip into a
+# dependency upgrade. (The migration itself is sound: verified that chromadb
+# 1.5.9 reads a 0.6-written bundle and that 0.6.3 still reads it afterwards, so
+# a rollback does not strand the data.)
 chromadb = "<1.0"
-# Capped, and coupled to the chromadb pin above. chromadb 0.6 calls
-# posthog.capture(user_id, name, properties) positionally; posthog 6 changed the
-# signature to capture(event, **kwargs), so every telemetry call raises and
-# chromadb logs it at ERROR:
-#
-#   Failed to send telemetry event ClientCreateCollectionEvent:
-#   capture() takes 1 positional argument but 3 were given
-#
-# Nothing breaks -- telemetry is off anyway (anonymized_telemetry=False in
-# csv_chroma.chroma_settings) -- but it puts several meaningless ERROR lines in
-# the log on every startup and every collection open, and an error log nobody
-# can act on is one people learn to skip. Lift this with the chromadb 1.x move.
+# chromadb 0.6 calls posthog.capture() positionally; posthog 6 changed the
+# signature, so every telemetry call fails and chromadb logs it at ERROR.
+# Telemetry is off anyway; this is purely to keep the log readable.
 posthog = "<6"
 pandas = "^2.2.1"
 pyasn1 = "^0.6.4"
-langchain-openai = "^0.2.3"
+langchain-openai = "^1.6.1"
 neo4j = "4.3.6"
 python-dotenv = "^1.0.1"
 pyfiglet = "^1.0.2"
 chainlit = "^2.0.3"
 asyncpg = "^0.30.0"
 sqlalchemy = "^2.0.30"
-langchain-community = "^0.3.3"
-langchain-core = "^0.3.13"
-langchain-huggingface = "^0.1.0"
+# Held at 0.3 deliberately. 0.4 requires langchain-classic and drops
+# langchain_community.chat_models.vertexai -- which ragas 0.4.3 still imports
+# unconditionally at ragas/llms/base.py:12, so langchain-community 0.4 makes
+# `import ragas` a ModuleNotFoundError and takes ./bin/evaluate with it. ragas
+# declares langchain-community with no version bound, so the resolver cannot
+# see the conflict; only importing it does.
+#
+# 0.3.31 accepts langchain-core <2.0.0,>=0.3.78, so it runs against core 1.x.
+# The app uses it for BM25Retriever, the CSV/directory loaders and
+# OpenAICallbackHandler. Lift when ragas stops importing the vertexai module.
+langchain-community = "^0.3.31"
+langchain-core = "^1.6.2"
+langchain-huggingface = "^1.2.2"
 # Capped, and coupled to the torch pin below. transformers 5 requires torch>=2.5
 # and, finding 2.4.1, disables PyTorch entirely rather than failing:
 #
@@ -59,11 +75,14 @@ torch = [
     { version = "2.4.1+cpu", markers = "sys_platform == 'linux' and platform_machine == 'x86_64'", source = "pytorch_cpu" },
     { version = "2.2.*", markers = "sys_platform != 'linux' or platform_machine != 'x86_64'", source = "PyPI" },
 ]
-langchain-chroma = "0.2.3"
-langchain-ollama = "^0.2.0"
+# 0.2.x, because 1.x requires chromadb>=1.3.5 -- see the chromadb note above.
+# 0.2.3 declares langchain-core>=0.3.52 with no upper bound, so it runs against
+# core 1.x.
+langchain-chroma = "^0.2.3"
+langchain-ollama = "^1.1.0"
 lark = "^1.2.2"
-langgraph = "^0.2.39"
-langgraph-checkpoint-postgres = "^2.0.2"
+langgraph = "^1.2.11"
+langgraph-checkpoint-postgres = "^3.1.2"
 rank-bm25 = "^0.2.2"
 psycopg = {extras = ["binary"], version = "^3.2.3"}
 pydantic = "^2.10.5"
@@ -92,8 +111,8 @@ mypy = "^1.13.0"
 pandas-stubs = "^2.2.3.241009"
 types-requests = "^2.32.0.20241016"
 types-pyyaml = "^6.0.12.20241230"
-datasets = "^3.2.0"
-ragas = "^0.2.11"
+datasets = "^4.0.0"
+ragas = "^0.4.3"
 
 [[tool.poetry.source]]
 name = "PyPI"

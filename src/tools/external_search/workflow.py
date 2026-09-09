@@ -1,10 +1,9 @@
-from typing import Literal
+from typing import Any, Literal, Protocol
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import Runnable, RunnableConfig
 from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.utils.runnable import RunnableLike
 
 from agent.tasks.completeness_grader import (
     CompletenessGrade,
@@ -20,11 +19,26 @@ def decide_next_steps(state: SearchState) -> Literal["perform_web_search", "no_s
     return "no_search"
 
 
-def no_search(_: SearchState) -> SearchState:
+def no_search(state: SearchState) -> SearchState:
     return SearchState(search_results=[])
 
 
-def run_completeness_grader(grader: Runnable) -> RunnableLike:
+class SearchNode(Protocol):
+    """The shape langgraph 1.0 requires of a graph node taking a config.
+
+    Spelled out rather than imported. This was
+    `langgraph.utils.runnable.RunnableLike` -- a private module, and a union too
+    wide for langgraph 1.0's stricter `add_node`.
+
+    It has to be a Protocol and not a Callable alias: langgraph matches nodes
+    structurally on the *parameter name* `state`, which a Callable alias cannot
+    express. That is also why `no_search` below takes `state` rather than `_`.
+    """
+
+    def __call__(self, state: SearchState, config: RunnableConfig) -> Any: ...
+
+
+def run_completeness_grader(grader: Runnable) -> SearchNode:
     async def _run_completeness_grader(
         state: SearchState, config: RunnableConfig
     ) -> SearchState:

@@ -1,4 +1,4 @@
-from langchain.chains.query_constructor.base import AttributeInfo
+from langchain_classic.chains.query_constructor.schema import AttributeInfo
 
 pathway_id_description = "A Plant Reactome Identifier unique to each pathway. A pathway name may appear multiple times in the dataset\
                 This ID allows for the specific identification and exploration of each pathway's details within the Plant Reactome Database."

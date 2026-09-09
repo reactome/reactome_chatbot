@@ -186,7 +186,12 @@ class AgentGraph:
         there is. The real fix is an explicit lifecycle -- close the pool from the
         application's shutdown hook -- which belongs with the agent-API work.
         """
-        if self.pool is None:
+        # getattr, not self.pool: __del__ runs even when __init__ raised part
+        # way through, and then the attribute does not exist yet. That turned a
+        # readable startup error into "AttributeError: 'AgentGraph' object has no
+        # attribute 'pool'" printed from __del__, which is where the real cause
+        # went missing.
+        if getattr(self, "pool", None) is None:
             return
         try:
             asyncio.get_running_loop()
