@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 """Entry point for the ragas evaluation; see src/evaluation/evaluator.py."""
 
+import sys
+from pathlib import Path
+
+# Run from anywhere without setting PYTHONPATH. The Dockerfile and CI both set it
+# (`/app/src`, `./bin:./src`), so importing worked there and nowhere else -- this
+# script's own usage line, `./bin/evaluate`, raised ModuleNotFoundError.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
 from evaluation.evaluator import main
 
 if __name__ == "__main__":
