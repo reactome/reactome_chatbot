@@ -74,6 +74,16 @@ nltk = "^3.9.1"
 beautifulsoup4 = "^4.12.0"
 lxml = "^6.1.0"
 requests = "^2.32.0"
+# Not imported here; it arrives via chromadb, and is constrained only so the
+# Intel-macOS leg of CI can resolve. onnxruntime stopped publishing
+# macosx x86_64 wheels after 1.23.2 -- 1.24 onwards are arm64 and Linux only --
+# so poetry fails there with "Unable to find installation candidates for
+# onnxruntime". Split by marker rather than capped outright, as torch is below,
+# so the platform that actually ships keeps getting new versions.
+onnxruntime = [
+    { version = "<1.24", markers = "sys_platform == 'darwin' and platform_machine == 'x86_64'" },
+    { version = "*", markers = "sys_platform != 'darwin' or platform_machine != 'x86_64'" },
+]
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.7.1"
