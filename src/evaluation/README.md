@@ -92,6 +92,26 @@ it is unrelated to the vectors in the bundle, and it is pointed at
 Plant Reactome host points at a self-hosted endpoint that does not serve it.
 `JUDGE_BASE_URL` overrides.
 
+## A deprecation this file carries knowingly
+
+The four metrics are imported from `ragas.metrics`, which warns on every run:
+
+> Importing Faithfulness from 'ragas.metrics' is deprecated and will be removed
+> in v1.0. Please use 'ragas.metrics.collections' instead.
+
+Not a rename. The replacements exist but two are renamed — `ResponseRelevancy`
+is `AnswerRelevancy`, `LLMContextRecall` is `ContextRecall` — and they take the
+judge model as a **constructor** argument rather than through `evaluate()`:
+
+```
+TypeError: Faithfulness.__init__() missing 1 required positional argument: 'llm'
+```
+
+So moving is a rework of how metrics are built, and it may change the scores,
+which for a measurement tool is the part that needs care rather than the import.
+Worth doing before this tool has produced numbers anyone is comparing against —
+which is now.
+
 ## Reading the output
 
 A single run has no noise floor: retrieval is not deterministic (Chroma's ANN
