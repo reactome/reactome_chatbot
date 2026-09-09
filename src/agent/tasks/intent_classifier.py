@@ -57,5 +57,13 @@ def resolve_active_sources(
     return [next(iter(available_sources))]
 
 
+# json_schema, not the default function_calling: the gpt-5.6 family refuses
+# function tools on /v1/chat/completions ("Function tools with reasoning_effort
+# are not supported ... use /v1/responses or set reasoning_effort to 'none'"),
+# and langchain-openai 0.2.14 has no Responses API support. json_schema uses
+# response_format instead, which every model here accepts -- verified against
+# gpt-4o-mini and gpt-5.6-luna for all three graders.
 def create_intent_classifier(llm: BaseChatModel) -> Runnable:
-    return intent_classifier_prompt | llm.with_structured_output(QueryIntent)
+    return intent_classifier_prompt | llm.with_structured_output(
+        QueryIntent, method="json_schema"
+    )

@@ -78,6 +78,42 @@ def resolve_embedding_model() -> str:
     return configured or bundle_model
 
 
+# Models that accept only one temperature: their own default of 1. Any other
+# value, 0.0 included, is a 400 on the first request rather than an error at
+# construction:
+#
+#   Unsupported value: 'temperature' does not support 0.0 with this model.
+#   Only the default (1) value is supported.
+#
+# Sending nothing is not an option -- ChatOpenAI supplies its own default of 0.7
+# when the argument is omitted, and these models reject that too -- so the value
+# has to be 1.0 explicitly.
+#
+# Unlike the embedding model, which is read from the bundle that built it, this
+# cannot be derived: no endpoint reports which values a model accepts. Matched on
+# prefix so dated snapshots (gpt-5.5-2026-04-23) and new members of a family
+# need no edit. LLM_TEMPERATURE overrides, for a model this list has not met.
+FIXED_TEMPERATURE_MODEL_PREFIXES = ("gpt-5.5", "gpt-5.6", "gpt-6")
+FIXED_TEMPERATURE = 1.0
+
+
+def resolve_temperature(model: str) -> float:
+    """The temperature to send for `model`.
+
+    Returning 1.0 for the models above trades determinism for being able to use
+    them at all. That trade is made here, once, rather than at each call site.
+    """
+    override = os.getenv("LLM_TEMPERATURE")
+    if override is not None and override.strip() != "":
+        try:
+            return float(override)
+        except ValueError:
+            raise SystemExit(f"LLM_TEMPERATURE={override!r} is not a number.") from None
+    if model.startswith(FIXED_TEMPERATURE_MODEL_PREFIXES):
+        return FIXED_TEMPERATURE
+    return 0.0
+
+
 class AgentGraph:
     def __init__(
         self,
@@ -88,7 +124,11 @@ class AgentGraph:
         llm_model = os.getenv("LLM_MODEL", "gpt-4o-mini")
         llm_base_url = os.getenv("LLM_BASE_URL", None)
         llm: BaseChatModel = get_llm(
-            "openai", llm_model, base_url=llm_base_url, request_timeout=360.0
+            "openai",
+            llm_model,
+            base_url=llm_base_url,
+            request_timeout=360.0,
+            temperature=resolve_temperature(llm_model),
         )
         embedding_base_url = os.getenv("OPENAI_BASE_URL", None)
         embedding: Embeddings = get_embedding(
