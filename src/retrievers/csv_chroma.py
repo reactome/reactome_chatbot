@@ -83,7 +83,12 @@ VECTOR_OVERFETCH = 4
 # retriever returns. Changing it trades recall against the model's difficulty
 # attending to the middle of a long context; the right number should come from an
 # answer-quality evaluation rather than from taste.
-MAX_DOCUMENTS_PER_COLLECTION = RESULTS_PER_RETRIEVER
+#
+# It is the DEFAULT, not the budget: a caller passes its own to
+# HybridRetriever.from_subdirectory. That is what makes the evaluation above
+# possible -- sweeping this value used to mean editing the module and restarting,
+# so two budgets could not be compared within one process.
+DEFAULT_MAX_DOCUMENTS_PER_COLLECTION = RESULTS_PER_RETRIEVER
 
 
 def dedupe_by_entity(docs: list[Document], limit: int) -> list[Document]:
@@ -194,12 +199,15 @@ def create_bm25_chroma_ensemble_retriever(
     llm: BaseChatModel,
     embedding: Embeddings,
     embeddings_directory: Path,
+    *,
+    max_documents_per_collection: int = DEFAULT_MAX_DOCUMENTS_PER_COLLECTION,
 ) -> "HybridRetriever":
     return HybridRetriever.from_subdirectory(
         llm,
         embedding,
         embeddings_directory,
         include_original=True,
+        max_documents_per_collection=max_documents_per_collection,
     )
 
 
@@ -228,6 +236,8 @@ class HybridRetriever(BaseRetriever):
     query_expander: Runnable[dict[str, str], list[str]]
     include_original: bool = False
     collection_retrievers: dict[str, RetrieverDict]
+    # How many fused documents this instance contributes per collection.
+    max_documents_per_collection: int = DEFAULT_MAX_DOCUMENTS_PER_COLLECTION
 
     # BM25Retriever and the Chroma retriever are not pydantic models.
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -240,6 +250,7 @@ class HybridRetriever(BaseRetriever):
         embeddings_directory: Path,
         *,
         include_original: bool = False,
+        max_documents_per_collection: int = DEFAULT_MAX_DOCUMENTS_PER_COLLECTION,
     ) -> "HybridRetriever":
         _retrievers: dict[str, RetrieverDict] = {}
         for subdirectory in list_chroma_subdirectories(embeddings_directory):
@@ -279,6 +290,7 @@ class HybridRetriever(BaseRetriever):
             query_expander=multi_query_prompt | llm | LineListOutputParser(),
             include_original=include_original,
             collection_retrievers=_retrievers,
+            max_documents_per_collection=max_documents_per_collection,
         )
 
     def _get_relevant_documents(
@@ -348,7 +360,9 @@ class HybridRetriever(BaseRetriever):
                 doc_lists.append(dedupe_by_entity(bm25_docs, RESULTS_PER_RETRIEVER))
                 doc_lists.append(dedupe_by_entity(vector_docs, RESULTS_PER_RETRIEVER))
             subdirectory_docs.extend(
-                self.weighted_reciprocal_rank(doc_lists)[:MAX_DOCUMENTS_PER_COLLECTION]
+                self.weighted_reciprocal_rank(doc_lists)[
+                    : self.max_documents_per_collection
+                ]
             )
         return subdirectory_docs
 
@@ -393,6 +407,8 @@ class HybridRetriever(BaseRetriever):
                 for docs in await asyncio.gather(*subdir_results)
             ]
             subdirectory_docs.extend(
-                self.weighted_reciprocal_rank(doc_lists)[:MAX_DOCUMENTS_PER_COLLECTION]
+                self.weighted_reciprocal_rank(doc_lists)[
+                    : self.max_documents_per_collection
+                ]
             )
         return subdirectory_docs

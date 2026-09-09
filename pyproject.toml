@@ -176,15 +176,3 @@ disable_error_code = ["typeddict-item", "no-any-return"]
 module = ["agent.profiles.react_to_me"]
 disable_error_code = ["typeddict-item", "override"]
 
-[[tool.mypy.overrides]]
-# TODO(phase-2): `EmbeddingEnvironment.get_dir()` returns `Path | None` but the
-# parameter is typed `Path`, so an uninstalled bundle passes None straight through.
-# Fixed properly by moving the lookup out of the default argument (see ruff B008).
-module = [
-    "retrievers.reactome.rag",
-    "retrievers.uniprot.rag",
-    "retrievers.plantreactome.rag",
-    "retrievers.userguide.rag",
-]
-disable_error_code = ["assignment"]
-

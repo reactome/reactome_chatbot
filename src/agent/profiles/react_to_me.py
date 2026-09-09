@@ -41,7 +41,12 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         )
 
         self.rags: dict[SourceName, Runnable] = {
-            "reactome": create_reactome_rag(llm, embedding, streaming=True),
+            "reactome": create_reactome_rag(
+                llm,
+                embedding,
+                EmbeddingEnvironment.require_dir("reactome"),
+                streaming=True,
+            ),
         }
         self._available_sources: frozenset[SourceName] = frozenset({"reactome"})
         self._register_userguide_rag(llm, embedding)
