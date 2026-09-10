@@ -10,16 +10,24 @@ from util.secrets import get_db_uri
 
 load_dotenv()
 
-_db_name = os.getenv("POSTGRES_CHAINLIT_DB")
-_uri = get_db_uri(f"{_db_name}" if _db_name else None)
-if _uri is None:
-    raise SystemExit(
-        "POSTGRES_CHAINLIT_DB is not set, or no Postgres password is available. "
-        "This script exports from the database; it cannot run without one."
-    )
-# Rebound as str: the check above does not narrow a module global for
-# code inside a function.
-CHAINLIT_DB_URI: str = _uri
+
+def chainlit_db_uri() -> str:
+    """Resolve the database URI, or stop with a message saying why.
+
+    A function, not a module constant: this used to resolve at import
+    time and raise SystemExit when no database was configured, which
+    broke CI's "can every entry point be imported" check -- the runner
+    has no Postgres. Importing a script should do nothing; running it
+    should fail loudly.
+    """
+    db_name = os.getenv("POSTGRES_CHAINLIT_DB")
+    uri = get_db_uri(f"{db_name}" if db_name else None)
+    if uri is None:
+        raise SystemExit(
+            "POSTGRES_CHAINLIT_DB is not set, or no Postgres password is available. "
+            "This script exports from the database; it cannot run without one."
+        )
+    return uri
 
 
 def build_query() -> str:
@@ -71,7 +79,7 @@ def main(records_dir: Path) -> None:
     since_timestamp: str | None = last_record_timestamp(records_dir)
     query: str = build_query()
 
-    with psycopg.connect(CHAINLIT_DB_URI) as conn, conn.cursor() as cur:
+    with psycopg.connect(chainlit_db_uri()) as conn, conn.cursor() as cur:
         cur.execute(query, {"since_timestamp": since_timestamp or ""})
         header = [col.name for col in cur.description] if cur.description else None
         records = cur.fetchall()
