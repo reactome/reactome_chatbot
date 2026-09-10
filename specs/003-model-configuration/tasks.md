@@ -63,8 +63,8 @@ Quickstart steps 4–5.
 
 **Independent test**: none — this phase ships no behaviour.
 
-- [ ] T020 [US3] Confirm `LLMConfig` is nestable per surface without a schema break, and record in `specs/003-model-configuration/plan.md` what a second surface would add
-- [ ] T021 [US3] Cross-reference spec 002's latency table (22.5s vs 41.2s per question) in the spec as the reason surfaces will want to differ
+- [x] T020 [US3] Confirm `LLMConfig` is nestable per surface without a schema break, and record in `specs/003-model-configuration/plan.md` what a second surface would add
+- [x] T021 [US3] Cross-reference spec 002's latency table (22.5s vs 41.2s per question) in the spec as the reason surfaces will want to differ
 
 ## Phase 6: Polish & Cross-Cutting
 
