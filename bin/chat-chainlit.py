@@ -30,8 +30,14 @@ load_dotenv()
 _mounted = mounted_secrets(SECRET_NAMES)
 load_secrets_to_environ(SECRET_NAMES)
 if _mounted:
-    # Names only, and from a function that never reads the files.
-    logging.info(f"Supplied as Docker secrets: {', '.join(_mounted)}")
+    # A count, not the names. mounted_secrets never opens a file, so the names
+    # are not secret values -- but they are strings like OPENAI_API_KEY, and
+    # CodeQL's clear-text-logging rule matches on that shape whatever their
+    # provenance. Rather than dismiss a security alert to keep a nicety, this
+    # logs the number; `ls /run/secrets` answers which, for anyone who needs it.
+    logging.info(
+        f"{len(_mounted)} of {len(SECRET_NAMES)} secrets supplied as Docker secrets"
+    )
 
 config: Config | None = Config.from_yaml()
 
