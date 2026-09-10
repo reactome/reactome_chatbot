@@ -154,4 +154,23 @@ embedding model (SC-004).
   gated on an answer-quality run. This plan makes the choice expressible, not made.
 - Per-surface model selection (spec 003 User Story 3). Only chat exists today; the
   nesting introduced in Stage 1 is what makes it cheap later.
+
+  Confirmed nestable without a schema break (T020): a second surface adds a key
+  beside `llm:` holding the same `LLMConfig` shape --
+
+  ```yaml
+  llm:                 # the deployment default
+    model: gpt-4o-mini
+  surfaces:
+    analysis_summary:  # slower is fine; nobody is watching a cursor
+      model: gpt-5.6-luna
+  ```
+
+  `LLMConfig` needs no change for that, and `resolve_llm_model` takes the config
+  object rather than reading globals, so a caller can pass a different one.
+
+  Why surfaces will want to differ (T021): spec 002 measured 22.5s per question
+  for gpt-4o-mini against 41.2s for gpt-5.6-luna. A search-results panel and a
+  background summarisation have opposite tolerances for that, so forcing them to
+  agree is a choice with a real cost.
 - The embedding model, permanently.

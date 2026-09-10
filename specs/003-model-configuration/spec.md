@@ -4,7 +4,9 @@
 
 **Created**: 2026-09-09
 
-**Status**: Draft. Two contributed PRs to harvest; one decision (D1) for the team.
+**Status**: **Implemented** 2026-09-10 (#200 plan, #201 implementation). D1 taken as
+recommended — validation against the table, no API call at startup. #112 and #151
+closed with credit. Outcome recorded at the end of this file.
 
 **Input**: Make it possible to switch between models — `gpt-4o-mini` and `gpt-5.6-luna` in particular — when per-model settings such as temperature differ. Does this need something to configure it with?
 
@@ -243,3 +245,41 @@ on the first request, and no one is confused about the cause.
   specification makes the choice expressible; it does not make it.
 - Per-request model selection by an end user.
 - The embedding model, permanently. FR-004.
+
+
+---
+
+## Outcome (2026-09-10)
+
+Implemented in #201, planned in #200. The answering model is an optional `llm:`
+section in `config.yml`; how it must be *called* stays derived in code.
+
+D1 was taken as recommended: startup validates a configured temperature against
+the measured table, with no API call. Instant, works offline, and startup cannot
+come to depend on OpenAI being reachable.
+
+### What writing it found
+
+**Pydantic ignores unknown keys by default.** `embedding_model:` inside an `llm:`
+section would have been accepted, silently discarded, and left an operator
+believing they had set it — the exact failure FR-004 exists to prevent, arriving
+through the door FR-004 was meant to lock. `LLMConfig` now forbids extras.
+
+**And the guard was one level too low.** An adversarial review found that a typo in
+the *section name* — `llmm:` for `llm:` — still loaded cleanly and did nothing.
+`Config` forbids extras too now. Both were checked against the real `config.yml`
+and `config_default.yml` first: neither carries an unknown key, so nothing that
+works today is refused.
+
+The pattern in both: the guard was placed on the thing being built rather than on
+the seam beside it.
+
+### Still open
+
+**User Story 3, per-surface model selection**, ships nothing. Only chat exists. The
+nesting chosen in Stage 1 is what makes it cheap when a second surface appears —
+which is the mistake spec 001 made with the context budget, made deliberately this
+time rather than discovered.
+
+Spec 002's decision — *whether* luna becomes the default — remains open. This
+specification made the choice expressible, not made.

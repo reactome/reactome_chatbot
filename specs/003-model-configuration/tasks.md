@@ -63,17 +63,17 @@ Quickstart steps 4–5.
 
 **Independent test**: none — this phase ships no behaviour.
 
-- [ ] T020 [US3] Confirm `LLMConfig` is nestable per surface without a schema break, and record in `specs/003-model-configuration/plan.md` what a second surface would add
-- [ ] T021 [US3] Cross-reference spec 002's latency table (22.5s vs 41.2s per question) in the spec as the reason surfaces will want to differ
+- [x] T020 [US3] Confirm `LLMConfig` is nestable per surface without a schema break, and record in `specs/003-model-configuration/plan.md` what a second surface would add
+- [x] T021 [US3] Cross-reference spec 002's latency table (22.5s vs 41.2s per question) in the spec as the reason surfaces will want to differ
 
 ## Phase 6: Polish & Cross-Cutting
 
 - [x] T022 [P] Verify `grep -rn embedding .config.schema.yaml config_default.yml` finds no embedding model field (SC-004), and add a test asserting it
 - [x] T023 [P] Confirm `tests/util/test_config.py` passes **untouched** — adding a section must not change what an invalid config does (Article III)
 - [x] T024 Run `ruff check`, `ruff format --check`, `mypy`, `pytest`
-- [ ] T025 Close #112 with credit to @AaryanCode69, stating plainly that the LLM half is harvested and the embedding half rejected because it bypasses `resolve_embedding_model()` and would silently break Plant Reactome
-- [ ] T026 Close #151 with credit to @bhavyakeerthi3, noting the flat-string shape was reasonable but `base_url` has nowhere to live in it
-- [ ] T027 Update `specs/003-model-configuration/spec.md` with the outcome, and record D1 as taken-as-recommended
+- [x] T025 Close #112 with credit to @AaryanCode69, stating plainly that the LLM half is harvested and the embedding half rejected because it bypasses `resolve_embedding_model()` and would silently break Plant Reactome
+- [x] T026 Close #151 with credit to @bhavyakeerthi3, noting the flat-string shape was reasonable but `base_url` has nowhere to live in it
+- [x] T027 Update `specs/003-model-configuration/spec.md` with the outcome, and record D1 as taken-as-recommended
 
 ## Dependencies
 
