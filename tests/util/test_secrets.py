@@ -124,16 +124,51 @@ def test_missing_secrets_directory_is_not_an_error(
     assert get_secret("OPENAI_API_KEY") == "sk-from-env"
 
 
+def test_every_secret_compose_declares_is_one_the_app_loads() -> None:
+    """The drift that had already happened, now a tripwire.
+
+    compose.yaml declared OAUTH_AUTH0_CLIENT_SECRET and
+    OAUTH_GOOGLE_CLIENT_SECRET; SECRET_NAMES did not list them. A secret in that
+    gap is mounted into the container and never read, so its value silently
+    falls back to the environment -- and a deployment that moved it out of .env
+    and into a Docker secret would lose it. The first symptom is a login that
+    stops working, a long way from the cause.
+    """
+    import yaml
+
+    compose = yaml.safe_load(
+        (Path(__file__).parent.parent.parent / "compose.yaml").read_text()
+    )
+    declared = set(compose.get("secrets") or {})
+    missing = sorted(declared - set(SECRET_NAMES))
+    assert not missing, (
+        f"compose.yaml mounts these but nothing loads them: {missing}. "
+        "Add them to SECRET_NAMES in src/util/secrets.py."
+    )
+
+
+def test_only_one_list_of_secret_names_exists() -> None:
+    """chat-fastapi.py kept its own hand-maintained copy, which had drifted from
+    SECRET_NAMES in both directions -- it was missing four and had one extra."""
+    source = (
+        Path(__file__).parent.parent.parent / "bin" / "chat-fastapi.py"
+    ).read_text()
+    assert "load_secrets_to_environ(SECRET_NAMES)" in source
+    assert '"OPENAI_API_KEY",' not in source, "no second literal list"
+
+
 def test_the_secret_names_are_ones_the_deployment_actually_uses() -> None:
     """A name here that no template mentions would never be mounted."""
     template = Path(__file__).parent.parent.parent / "env_template"
     declared = template.read_text()
-    unknown = [
-        n
-        for n in SECRET_NAMES
-        if n not in declared and n not in {"CHAINLIT_AUTH_SECRET", "LITERAL_API_KEY"}
-    ]
-    assert not unknown, f"not in env_template: {unknown}"
+    # LITERAL_API_KEY is the one exception: it configures the Literal AI
+    # integration, which no deployment here uses yet, so it is loadable but
+    # undocumented on purpose.
+    unknown = [n for n in SECRET_NAMES if n not in declared and n != "LITERAL_API_KEY"]
+    assert not unknown, (
+        f"in SECRET_NAMES but absent from env_template: {unknown}. "
+        "An operator cannot supply a setting nobody told them about."
+    )
 
 
 def test_db_uri_uses_the_socket_and_never_tcp(
