@@ -37,7 +37,7 @@ rather than reasoned about, and **one of them was wrong**.
 | claim as first written | verdict |
 |---|---|
 | "BM25, which is lexical, retrieves close to nothing for a French query" | **wrong.** It returns a full ten documents; named entities survive translation. The real cost is that 7 of 10 differ. Corrected, with the measurement. |
-| "#140's appended instruction pollutes retrieval" | **right, and understated.** Measured: 0/10, 1/10 and 0/10 documents survive. It replaces lexical retrieval rather than degrading it. |
+| "#140's appended instruction pollutes retrieval" | **right, but first measured wrongly.** BM25 alone gives 0/10 — dramatic and irrelevant, because the query expander sits in front of it and four of five queries reach BM25 clean. Through the real retriever: **20/40 and 21/40 survive**, so about half the context changes. Corrected after Adam pushed back on the number looking too low. |
 | "#140 targets React-to-Me" | right, but it edits `call_model`, which main renamed to `generate_answer`. Added. |
 | "Plant Reactome's answer does not receive the language" | verified in `plantreactome.py`. |
 | "Cross-Database's summary does" | verified in `cross_database.py`. |
@@ -46,6 +46,12 @@ rather than reasoned about, and **one of them was wrong**.
 The wrong claim mattered: it would have justified FR-004 with a reason a reader could
 disprove in five minutes, which is worse than justifying it with the smaller, true
 one.
+
+And the review itself needed a second pass. It checked whether each claim was true
+but not whether the *test* measured the product — so it confirmed a component
+measurement and reported it as a pipeline one. That is the same failure
+`evaluator.py` had, four days apart. **An adversarial review has to attack the
+measurement as well as the claim.**
 
 ## Notes
 

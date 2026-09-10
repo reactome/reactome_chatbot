@@ -76,17 +76,30 @@ will be used to pass into the retriever."* So that 61-word block of English pros
 about response languages becomes part of the BM25 query and the embedded vector, for
 every non-English question.
 
-Measured on `summations`, appending it to an English question:
+Measured through the **whole retriever**, appending it to an English question:
 
-| query | documents surviving the appended instruction |
+| query | fused documents surviving the appended instruction |
 |---|---|
-| *What role does TP53 play in apoptosis?* | **0 of 10** |
-| *How is glycolysis regulated?* | **1 of 10** |
-| *Which complexes contain EGFR?* | **0 of 10** |
+| *What role does TP53 play in apoptosis?* | 20 of 40 |
+| *Which complexes contain EGFR?* | 21 of 40 |
 
-It does not degrade lexical retrieval; it replaces it. Sixty-one words of instruction
-outweigh a six-word question, so BM25 ranks on the instruction. The one place the
-instruction must not go is the one place it goes.
+**About half the context changes.** That is the number to argue from.
+
+It is worth saying what the first version of this section got wrong, because the
+mistake is instructive. Measuring BM25 *directly* on the polluted string gives 0 of
+10, 1 of 10, 0 of 10 — sixty-one words of instruction outweigh a six-word question,
+so lexical ranking collapses entirely. But BM25 never sees that string in production:
+`HybridRetriever` expands the query into four LLM-generated alternates first and
+appends the original last, so four of the five queries are clean rewrites and the
+fusion recovers most of the damage.
+
+The component number was dramatic and irrelevant; the pipeline number is half, and
+real. Constitution Article I, arrived at the hard way — twice in one week, after
+`evaluator.py` measured a retriever the product no longer used.
+
+Half the retrieved context silently differing for non-English users is still reason
+enough to reject the mechanism. The instruction belongs in the answer prompt, where
+it changes nothing about what is retrieved.
 
 A second, smaller problem: #140 edits a method called `call_model`, which `main`
 renamed to `generate_answer`. The patch does not apply as written.
