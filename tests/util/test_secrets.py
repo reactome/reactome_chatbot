@@ -134,3 +134,63 @@ def test_the_secret_names_are_ones_the_deployment_actually_uses() -> None:
         if n not in declared and n not in {"CHAINLIT_AUTH_SECRET", "LITERAL_API_KEY"}
     ]
     assert not unknown, f"not in env_template: {unknown}"
+
+
+def test_db_uri_uses_the_socket_and_never_tcp(
+    mounted: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Postgres is started with no TCP listener at all, so a host:port URI
+    cannot connect. Verified against a real container: `psql -h 127.0.0.1`
+    gives "Connection refused" while the socket URI below returns a row."""
+    monkeypatch.setattr(secrets, "VAULT_TOKEN_FILE", Path("/nonexistent"))
+    monkeypatch.setenv("POSTGRES_USER", "postgres")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "pw")
+
+    uri = secrets.get_db_uri("chainlit")
+
+    assert uri == "postgresql://postgres:pw@/chainlit?host=/sockets/postgres/"
+    assert "5432" not in uri
+    assert "@postgres:" not in uri, "no host:port form anywhere"
+
+
+def test_db_uri_names_the_dialect_when_asked(
+    mounted: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SQLAlchemy needs postgresql+psycopg; psycopg and langgraph need it absent."""
+    monkeypatch.setattr(secrets, "VAULT_TOKEN_FILE", Path("/nonexistent"))
+    monkeypatch.setenv("POSTGRES_USER", "postgres")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "pw")
+    uri = secrets.get_db_uri("chainlit", driver="psycopg")
+    assert uri is not None
+    assert uri.startswith("postgresql+psycopg://")
+
+
+def test_db_uri_escapes_credentials(
+    mounted: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Vault-issued passwords contain punctuation; an unescaped one silently
+    truncates the URI at the first '@' or '/'."""
+    monkeypatch.setattr(secrets, "VAULT_TOKEN_FILE", Path("/nonexistent"))
+    monkeypatch.setenv("POSTGRES_USER", "user@host")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "p@ss/word")
+
+    uri = secrets.get_db_uri("chainlit")
+    assert uri is not None
+    assert "user%40host" in uri
+    assert "p%40ss%2Fword" in uri
+
+
+@pytest.mark.parametrize("db_name", [None, ""])
+def test_no_database_configured_returns_none(
+    db_name: str | None, mounted: Path
+) -> None:
+    """How every caller decides whether database-backed features exist."""
+    assert secrets.get_db_uri(db_name) is None
+
+
+def test_no_password_anywhere_returns_none(
+    mounted: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(secrets, "VAULT_TOKEN_FILE", Path("/nonexistent"))
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    assert secrets.get_db_uri("chainlit") is None

@@ -6,9 +6,20 @@ from pathlib import Path
 import psycopg
 from dotenv import load_dotenv
 
+from util.secrets import get_db_uri
+
 load_dotenv()
 
-LANGGRAPH_NOLOGIN_DB_URI = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_LANGGRAPH_DB')}_no_login?sslmode=disable"
+_db_name = os.getenv("POSTGRES_LANGGRAPH_DB")
+_uri = get_db_uri(f"{_db_name}_no_login" if _db_name else None)
+if _uri is None:
+    raise SystemExit(
+        "POSTGRES_LANGGRAPH_DB is not set, or no Postgres password is available. "
+        "This script exports from the database; it cannot run without one."
+    )
+# Rebound as str: the check above does not narrow a module global for
+# code inside a function.
+LANGGRAPH_NOLOGIN_DB_URI: str = _uri
 
 
 def build_query() -> str:

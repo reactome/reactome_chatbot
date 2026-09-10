@@ -19,8 +19,11 @@ from agent.profiles import ProfileName, create_profile_graphs
 from agent.profiles.base import InputState, OutputState
 from util.embedding_environment import EmbeddingEnvironment
 from util.logging import logging
+from util.secrets import get_db_uri
 
-LANGGRAPH_DB_URI = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_LANGGRAPH_DB')}?sslmode=disable"
+# Built at call time, not import time: with Vault the password is a short-lived
+# credential issued on demand, and a module-level f-string would pin whatever
+# was valid when the module was first imported.
 
 if not os.getenv("POSTGRES_LANGGRAPH_DB"):
     logging.warning("POSTGRES_LANGGRAPH_DB undefined; falling back to MemorySaver.")
@@ -218,8 +221,11 @@ class AgentGraph:
     async def create_checkpointer(self) -> BaseCheckpointSaver[str]:
         if not os.getenv("POSTGRES_LANGGRAPH_DB"):
             return MemorySaver()
+        conninfo = get_db_uri(os.getenv("POSTGRES_LANGGRAPH_DB"))
+        if conninfo is None:
+            return MemorySaver()
         self.pool = AsyncConnectionPool(
-            conninfo=LANGGRAPH_DB_URI,
+            conninfo=conninfo,
             max_size=20,
             open=False,
             timeout=30,

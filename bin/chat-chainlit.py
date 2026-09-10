@@ -22,7 +22,12 @@ from util.chainlit_helpers import (
 from util.config_yml import Config, TriggerEvent
 from util.logging import logging
 from util.orcid_provider import ORCIDOAuthProvider
-from util.secrets import SECRET_NAMES, load_secrets_to_environ, mounted_secrets
+from util.secrets import (
+    SECRET_NAMES,
+    get_db_uri,
+    load_secrets_to_environ,
+    mounted_secrets,
+)
 
 load_dotenv()
 # Before anything reads os.environ. Docker secrets, where mounted, take
@@ -45,13 +50,19 @@ profiles: list[ProfileName] = config.profiles if config else [ProfileName.React_
 llm_graph = AgentGraph(profiles)
 
 POSTGRES_CHAINLIT_DB = os.getenv("POSTGRES_CHAINLIT_DB")
-POSTGRES_USER = os.getenv("POSTGRES_USER")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 S3_BUCKET = os.getenv("S3_BUCKET")
 S3_CHAINLIT_PREFIX = os.getenv("S3_CHAINLIT_PREFIX")
 
-if POSTGRES_CHAINLIT_DB and POSTGRES_USER and POSTGRES_PASSWORD:
-    CHAINLIT_DB_URI = f"postgresql+psycopg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@postgres:5432/{POSTGRES_CHAINLIT_DB}?sslmode=disable"
+# Once, not per call. Under Vault every call to get_db_uri mints a fresh
+# short-lived credential, so calling it inside get_data_layer -- which chainlit
+# invokes per session -- would issue a new lease for every visitor and leave
+# them all outstanding until they expire. SQLAlchemy needs its dialect named.
+CHAINLIT_DB_URI = get_db_uri(POSTGRES_CHAINLIT_DB, driver="psycopg")
+
+if CHAINLIT_DB_URI:
+    # A local so the narrowing survives into get_data_layer below: mypy does not
+    # carry a module global's narrowed type into a nested function.
+    _chainlit_db_uri: str = CHAINLIT_DB_URI
 
     storage_client: PrefixedS3StorageClient | None
     if S3_BUCKET and S3_CHAINLIT_PREFIX:
@@ -62,7 +73,7 @@ if POSTGRES_CHAINLIT_DB and POSTGRES_USER and POSTGRES_PASSWORD:
     @cl.data_layer
     def get_data_layer() -> BaseDataLayer:
         return SQLAlchemyDataLayer(
-            conninfo=CHAINLIT_DB_URI,
+            conninfo=_chainlit_db_uri,
             storage_provider=storage_client,
         )
 

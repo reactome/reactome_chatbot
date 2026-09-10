@@ -53,7 +53,7 @@ edit_message = true
 
 [UI]
 # Name of the assistant.
-name = "React-to-me"
+name = "React-to-Me"
 
 # default_theme = "dark"
 
