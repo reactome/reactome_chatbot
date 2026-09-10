@@ -30,6 +30,23 @@ in the wrong language; the one that gets it right is the prototype.
 That asymmetry is the whole feature. Nothing needs detecting, routing or storing that
 is not already detected, routed and stored.
 
+Reproduced against the Release95 bundle, running exactly what `generate_answer` does:
+
+| step | result |
+|---|---|
+| question | *Quel role joue TP53 dans l'apoptose ?* |
+| detected language | **French** |
+| rephrased for retrieval | *What role does TP53 play in apoptosis?* |
+| retrieval | good — the English rephrasing does its job |
+| **answer** | **English** |
+
+Four steps of five work. The detector is right, the translation is right, retrieval
+is right, and then the answer comes back in the wrong language.
+
+One detail makes it unambiguous: `chat_history` still holds the original French
+question, and the model answered in English anyway. It is not that the model cannot
+tell what language was used — nothing asks it to reply in that language.
+
 ## The constraint that shapes the design
 
 **Retrieval must stay in English.** The Reactome corpus is English: the CSV rows BM25
