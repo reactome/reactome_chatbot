@@ -1,3 +1,8 @@
+# Any of the secret values below can instead be supplied as a Docker secret,
+# mounted at /run/secrets/<NAME>. A mounted secret takes precedence over the
+# value here; where nothing is mounted, this file is used unchanged. See
+# src/util/secrets.py for the list of names.
+#
 LOG_INFO=info
 OPENAI_API_KEY=
 POSTGRES_USER=postgres

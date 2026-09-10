@@ -22,8 +22,23 @@ from util.chainlit_helpers import (
 from util.config_yml import Config, TriggerEvent
 from util.logging import logging
 from util.orcid_provider import ORCIDOAuthProvider
+from util.secrets import SECRET_NAMES, load_secrets_to_environ, mounted_secrets
 
 load_dotenv()
+# Before anything reads os.environ. Docker secrets, where mounted, take
+# precedence over .env; where not mounted, nothing changes.
+_mounted = mounted_secrets(SECRET_NAMES)
+load_secrets_to_environ(SECRET_NAMES)
+if _mounted:
+    # A count, not the names. mounted_secrets never opens a file, so the names
+    # are not secret values -- but they are strings like OPENAI_API_KEY, and
+    # CodeQL's clear-text-logging rule matches on that shape whatever their
+    # provenance. Rather than dismiss a security alert to keep a nicety, this
+    # logs the number; `ls /run/secrets` answers which, for anyone who needs it.
+    logging.info(
+        f"{len(_mounted)} of {len(SECRET_NAMES)} secrets supplied as Docker secrets"
+    )
+
 config: Config | None = Config.from_yaml()
 
 profiles: list[ProfileName] = config.profiles if config else [ProfileName.React_to_Me]
