@@ -16,17 +16,17 @@ test asserts the failure. They are written with the code they cover, not after.
 
 ## Phase 1: Setup
 
-- [ ] T001 Create branch `feat/model-configuration` from `origin/main`
-- [ ] T002 Re-read #112 and #151 with `gh pr diff`, to credit them accurately in the commits that land their idea
+- [x] T001 Create branch `feat/model-configuration` from `origin/main`
+- [x] T002 Re-read #112 and #151 with `gh pr diff`, to credit them accurately in the commits that land their idea
 
 ## Phase 2: Foundational
 
 **Blocking: every user story below depends on the config field existing.**
 
-- [ ] T003 Create `LLMConfig` (`provider: str = "openai"`, `model: str | None = None`, `base_url: str | None = None`, `temperature: float | None = None`) in `src/util/config_yml/models.py`, after the shape in #112 and crediting @AaryanCode69
-- [ ] T004 Add `llm: LLMConfig | None = None` to `Config` in `src/util/config_yml/__init__.py` — optional, so a config without it is unchanged (FR-002)
-- [ ] T005 [P] Add the matching `llm` object to `.config.schema.yaml`, with **no** embedding field (FR-004)
-- [ ] T006 [P] Document the section, commented out, in `config_default.yml`
+- [x] T003 Create `LLMConfig` (`provider: str = "openai"`, `model: str | None = None`, `base_url: str | None = None`, `temperature: float | None = None`) in `src/util/config_yml/models.py`, after the shape in #112 and crediting @AaryanCode69
+- [x] T004 Add `llm: LLMConfig | None = None` to `Config` in `src/util/config_yml/__init__.py` — optional, so a config without it is unchanged (FR-002)
+- [x] T005 [P] Add the matching `llm` object to `.config.schema.yaml`, with **no** embedding field (FR-004)
+- [x] T006 [P] Document the section, commented out, in `config_default.yml`
 
 ## Phase 3: User Story 1 — A deployment names its model beside its other settings (P1)
 
@@ -35,13 +35,13 @@ test asserts the failure. They are written with the code they cover, not after.
 **Independent test**: set a model in `config.yml`, start the server, ask a question,
 confirm from the log which model answered. Quickstart steps 1–3.
 
-- [ ] T007 [US1] Add `resolve_llm_model(config)` to `src/agent/graph.py`: `LLM_MODEL` beats `config.llm.model` beats the current default, and document why the precedence is the reverse of `util/secrets.py` (both are "the more specific wins")
-- [ ] T008 [US1] Wire `AgentGraph.__init__` to it, passing `base_url` and `provider` from the config when present, in `src/agent/graph.py`
-- [ ] T009 [US1] Log the effective model at startup in `src/agent/graph.py` (FR-008) — the name only, never a key
-- [ ] T010 [P] [US1] Test in `tests/agent/test_model_configuration.py`: no `llm` section behaves exactly as today (FR-002)
-- [ ] T011 [P] [US1] Test in `tests/agent/test_model_configuration.py`: a configured model is the one selected
-- [ ] T012 [P] [US1] Test in `tests/agent/test_model_configuration.py`: `LLM_MODEL` overrides `config.yml` (FR-003)
-- [ ] T013 [US1] Run quickstart steps 1–3 against a real bundle and confirm the log names the expected model each time (constitution Article I)
+- [x] T007 [US1] Add `resolve_llm_model(config)` to `src/agent/graph.py`: `LLM_MODEL` beats `config.llm.model` beats the current default, and document why the precedence is the reverse of `util/secrets.py` (both are "the more specific wins")
+- [x] T008 [US1] Wire `AgentGraph.__init__` to it, passing `base_url` and `provider` from the config when present, in `src/agent/graph.py`
+- [x] T009 [US1] Log the effective model at startup in `src/agent/graph.py` (FR-008) — the name only, never a key
+- [x] T010 [P] [US1] Test in `tests/agent/test_model_configuration.py`: no `llm` section behaves exactly as today (FR-002)
+- [x] T011 [P] [US1] Test in `tests/agent/test_model_configuration.py`: a configured model is the one selected
+- [x] T012 [P] [US1] Test in `tests/agent/test_model_configuration.py`: `LLM_MODEL` overrides `config.yml` (FR-003)
+- [x] T013 [US1] Run quickstart steps 1–3 against a real bundle and confirm the log names the expected model each time (constitution Article I)
 
 ## Phase 4: User Story 2 — An unusable model stops the server, not the conversation (P1)
 
@@ -50,12 +50,12 @@ confirm from the log which model answered. Quickstart steps 1–3.
 **Independent test**: `gpt-5.6-luna` with `temperature: 0` must refuse to start.
 Quickstart steps 4–5.
 
-- [ ] T014 [US2] Extend `resolve_temperature` in `src/agent/graph.py` to accept a configured temperature and raise `SystemExit` naming model, value and fix when the model refuses it (FR-006)
-- [ ] T015 [P] [US2] Test in `tests/agent/test_model_temperature.py`: luna + `temperature: 0` exits, and the message contains all three of model, value and remedy
-- [ ] T016 [P] [US2] Test in `tests/agent/test_model_temperature.py`: a model absent from the table starts normally (FR-007)
-- [ ] T017 [P] [US2] Test in `tests/agent/test_model_temperature.py`: `LLM_TEMPERATURE` still wins over the configured value
-- [ ] T018 [US2] Perturbation check: delete the guard and confirm T015 fails — a test that cannot fail is not a tripwire (Article III)
-- [ ] T019 [US2] Run quickstart steps 4–5 and confirm the server refuses to start rather than failing on the first question
+- [x] T014 [US2] Extend `resolve_temperature` in `src/agent/graph.py` to accept a configured temperature and raise `SystemExit` naming model, value and fix when the model refuses it (FR-006)
+- [x] T015 [P] [US2] Test in `tests/agent/test_model_temperature.py`: luna + `temperature: 0` exits, and the message contains all three of model, value and remedy
+- [x] T016 [P] [US2] Test in `tests/agent/test_model_temperature.py`: a model absent from the table starts normally (FR-007)
+- [x] T017 [P] [US2] Test in `tests/agent/test_model_temperature.py`: `LLM_TEMPERATURE` still wins over the configured value
+- [x] T018 [US2] Perturbation check: delete the guard and confirm T015 fails — a test that cannot fail is not a tripwire (Article III)
+- [x] T019 [US2] Run quickstart steps 4–5 and confirm the server refuses to start rather than failing on the first question
 
 ## Phase 5: User Story 3 — Surfaces choose their own model (P2)
 
@@ -68,9 +68,9 @@ Quickstart steps 4–5.
 
 ## Phase 6: Polish & Cross-Cutting
 
-- [ ] T022 [P] Verify `grep -rn embedding .config.schema.yaml config_default.yml` finds no embedding model field (SC-004), and add a test asserting it
-- [ ] T023 [P] Confirm `tests/util/test_config.py` passes **untouched** — adding a section must not change what an invalid config does (Article III)
-- [ ] T024 Run `ruff check`, `ruff format --check`, `mypy`, `pytest`
+- [x] T022 [P] Verify `grep -rn embedding .config.schema.yaml config_default.yml` finds no embedding model field (SC-004), and add a test asserting it
+- [x] T023 [P] Confirm `tests/util/test_config.py` passes **untouched** — adding a section must not change what an invalid config does (Article III)
+- [x] T024 Run `ruff check`, `ruff format --check`, `mypy`, `pytest`
 - [ ] T025 Close #112 with credit to @AaryanCode69, stating plainly that the LLM half is harvested and the embedding half rejected because it bypasses `resolve_embedding_model()` and would silently break Plant Reactome
 - [ ] T026 Close #151 with credit to @bhavyakeerthi3, noting the flat-string shape was reasonable but `base_url` has nowhere to live in it
 - [ ] T027 Update `specs/003-model-configuration/spec.md` with the outcome, and record D1 as taken-as-recommended
