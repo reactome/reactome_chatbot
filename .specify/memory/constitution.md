@@ -1,3 +1,20 @@
+<!--
+Sync Impact Report
+==================
+Version: 1.0.0 -> 1.1.0  (MINOR: one principle added; none removed or redefined)
+
+Added:    Principle VII, "Parked is not dead"
+Modified: none
+Removed:  none
+
+Rationale: capability that is built, works and is deliberately undeployed had no
+stated policy, so it was read as dead code and proposed for deletion. Both failure
+modes are now named -- deleting it to cheapen a refactor, and investing in it while
+parked.
+
+Follow-up TODOs: none.
+-->
+
 # Reactome ChatBot Constitution
 
 The team is three developers covering a large surface — website, pathway browser,
@@ -60,6 +77,26 @@ it records a decision, a measurement, or a defect someone else must judge — no
 as a substitute for a fix that takes ten minutes. Three fixes are worth more than
 five issues describing them.
 
+### VII. Parked is not dead
+
+Some capability here is built, works, and is deliberately not deployed: UniProt
+integration, Alliance results, and the Cross-Database profile. It runs only when a
+`config.yml` names it; every default is React-to-Me.
+
+Do not delete parked work to make a refactor cheaper. That trade looks like a saving
+and is not: the code cost someone real effort, "we are not working on it now" is not
+"it is dead", and rebuilding is far more expensive than carrying. This principle
+exists because the proposal was made -- to remove about 500 lines of UniProt and
+Cross-Database serving code, on the grounds that it had been dragged through three
+refactors in a week -- and it was wrong.
+
+Equally, do not invest in parked work. It needs no new features and no new tests.
+Keeping it importable and type-checking through a refactor is the whole obligation.
+
+Parked code is unexercised, so its behaviour is unverified even where it still type
+checks. Whoever un-parks it inherits that, and should be told at the point they find
+it rather than after.
+
 ## Quality Gates
 
 `main` is protected: pull request required, `enforce_admins` on, branch must be
@@ -100,4 +137,4 @@ used for bug triage or dependency bumps, where the ceremony costs more than the
 fix. Retrofitting specifications onto existing code is archaeology and is not
 done.
 
-**Version**: 1.0.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-09-08
+**Version**: 1.1.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-09-10
