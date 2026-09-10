@@ -17,6 +17,7 @@ from psycopg_pool import AsyncConnectionPool
 from agent.models import get_embedding, get_llm
 from agent.profiles import ProfileName, create_profile_graphs
 from agent.profiles.base import InputState, OutputState
+from util.config_yml.models import LLMConfig
 from util.embedding_environment import EmbeddingEnvironment
 from util.logging import logging
 from util.secrets import get_db_uri
@@ -126,11 +127,22 @@ FIXED_TEMPERATURE = 1.0
 _SNAPSHOT_SUFFIX = re.compile(r"-\d{4}-\d{2}-\d{2}$")
 
 
-def resolve_temperature(model: str) -> float:
+def refuses_zero(model: str) -> bool:
+    """Whether `model` accepts only its own default temperature."""
+    return _SNAPSHOT_SUFFIX.sub("", model) in FIXED_TEMPERATURE_MODELS
+
+
+def resolve_temperature(model: str, *, configured: float | None = None) -> float:
     """The temperature to send for `model`.
 
     Returning 1.0 for the models above trades determinism for being able to use
     them at all. That trade is made here, once, rather than at each call site.
+
+    A `configured` value that the model is known to refuse stops the process.
+    Without that check the mistake surfaces as a 400 on a user's first question
+    -- visible to a user, attributed to the chatbot, and diagnosable only from
+    logs. A model the table has not met is not validated at all: the table is
+    empirical and always behind, so an unknown model must not block startup.
     """
     override = os.getenv("LLM_TEMPERATURE")
     if override is not None and override.strip() != "":
@@ -138,26 +150,70 @@ def resolve_temperature(model: str) -> float:
             return float(override)
         except ValueError:
             raise SystemExit(f"LLM_TEMPERATURE={override!r} is not a number.") from None
-    if _SNAPSHOT_SUFFIX.sub("", model) in FIXED_TEMPERATURE_MODELS:
-        return FIXED_TEMPERATURE
-    return 0.0
+
+    if configured is not None:
+        if refuses_zero(model) and configured != FIXED_TEMPERATURE:
+            raise SystemExit(
+                f"config.yml sets llm.temperature={configured} for {model!r}, "
+                f"which accepts only {FIXED_TEMPERATURE}. Remove the temperature "
+                "and it will be derived, or set LLM_TEMPERATURE to override."
+            )
+        return configured
+
+    return FIXED_TEMPERATURE if refuses_zero(model) else 0.0
+
+
+DEFAULT_LLM_MODEL = "gpt-4o-mini"
+
+
+def resolve_llm_model(llm_config: "LLMConfig | None") -> tuple[str, str, str | None]:
+    """Pick the answering model: environment, then config.yml, then the default.
+
+    Returns (provider, model, base_url).
+
+    Environment beats file here, which is the reverse of util/secrets.py, where a
+    mounted Docker secret beats the environment. The two are the same rule seen
+    from different sides -- the more specific source wins. A secret is mounted BY
+    a deployment and should beat a file committed to the repository; LLM_MODEL is
+    how an operator overrides a committed config.yml for one container without
+    editing it. Stating this because the inconsistency looks like a bug until you
+    see which way each one points.
+    """
+    provider = "openai"
+    model = DEFAULT_LLM_MODEL
+    base_url = os.getenv("LLM_BASE_URL")
+
+    if llm_config is not None:
+        provider = llm_config.provider
+        model = llm_config.model or model
+        base_url = base_url or llm_config.base_url
+
+    return provider, os.getenv("LLM_MODEL", model), base_url
 
 
 class AgentGraph:
     def __init__(
         self,
         profiles: list[ProfileName],
+        llm_config: "LLMConfig | None" = None,
     ) -> None:
         # Get base models
         embedding_model = resolve_embedding_model()
-        llm_model = os.getenv("LLM_MODEL", "gpt-4o-mini")
-        llm_base_url = os.getenv("LLM_BASE_URL", None)
+        llm_provider, llm_model, llm_base_url = resolve_llm_model(llm_config)
+        temperature = resolve_temperature(
+            llm_model, configured=llm_config.temperature if llm_config else None
+        )
+        # The name only. A model id is not a secret, but this is the line a key
+        # would end up on if anyone ever widened it.
+        logging.info(
+            f"Answering with {llm_provider}/{llm_model} at temperature {temperature}"
+        )
         llm: BaseChatModel = get_llm(
-            "openai",
+            llm_provider,
             llm_model,
             base_url=llm_base_url,
             request_timeout=360.0,
-            temperature=resolve_temperature(llm_model),
+            temperature=temperature,
         )
         embedding_base_url = os.getenv("OPENAI_BASE_URL", None)
         embedding: Embeddings = get_embedding(

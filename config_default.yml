@@ -3,6 +3,17 @@
 profiles:
   - React-to-Me
 
+# The answering model. Commented out on purpose: with no `llm:` section the
+# built-in default is used, which is what every existing deployment expects.
+# LLM_MODEL in the environment overrides whatever is set here.
+#
+#llm:
+#  provider: openai
+#  model: gpt-4o-mini
+#
+# Do not add an embedding model here. It comes from the bundle that built the
+# vectors; setting it to anything else makes retrieval silently meaningless.
+
 features:
   postprocessing:  # external web search feature
     enabled: true

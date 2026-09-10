@@ -154,3 +154,46 @@ def test_get_llm_still_defaults_to_zero(monkeypatch: pytest.MonkeyPatch) -> None
     """Callers that never heard of this change keep the old behaviour."""
     monkeypatch.setenv("OPENAI_API_KEY", "sk-not-a-real-key")
     assert _built("gpt-4o-mini").temperature == 0.0
+
+
+# --- configured temperature, from config.yml (spec 003, US2) -------------------
+
+
+def test_a_configured_temperature_a_model_refuses_stops_startup() -> None:
+    """FR-006, and the reason spec 003 is a specification and not a bump.
+
+    Without this the mistake surfaces as a 400 on a user's first question --
+    visible to a user, attributed to the chatbot, diagnosable only from logs.
+    """
+    with pytest.raises(SystemExit) as exc:
+        resolve_temperature("gpt-5.6-luna", configured=0.0)
+
+    message = str(exc.value)
+    assert "gpt-5.6-luna" in message, "name the model"
+    assert "0.0" in message, "name the value"
+    assert "LLM_TEMPERATURE" in message, "name the fix"
+
+
+def test_a_configured_temperature_a_model_accepts_is_used() -> None:
+    assert resolve_temperature("gpt-4o-mini", configured=0.7) == 0.7
+
+
+def test_the_only_supported_value_is_accepted_when_configured() -> None:
+    """Setting 1.0 explicitly for luna is redundant but not wrong."""
+    assert resolve_temperature("gpt-5.6-luna", configured=1.0) == FIXED_TEMPERATURE
+
+
+def test_an_unknown_model_is_not_validated(monkeypatch: pytest.MonkeyPatch) -> None:
+    """FR-007. The table is empirical and always behind; an unknown model must
+    not block startup. It fails on the first request with OpenAI's own 404,
+    which is unambiguous."""
+    assert resolve_temperature("gpt-7-unreleased", configured=0.0) == 0.0
+
+
+def test_the_environment_still_wins_over_a_configured_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LLM_TEMPERATURE is the escape hatch, so it must outrank config.yml --
+    including the guard above, which is what makes it an escape hatch."""
+    monkeypatch.setenv("LLM_TEMPERATURE", "1")
+    assert resolve_temperature("gpt-5.6-luna", configured=0.0) == 1.0
