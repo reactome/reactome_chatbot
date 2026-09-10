@@ -71,8 +71,8 @@ Quickstart steps 4–5.
 - [x] T022 [P] Verify `grep -rn embedding .config.schema.yaml config_default.yml` finds no embedding model field (SC-004), and add a test asserting it
 - [x] T023 [P] Confirm `tests/util/test_config.py` passes **untouched** — adding a section must not change what an invalid config does (Article III)
 - [x] T024 Run `ruff check`, `ruff format --check`, `mypy`, `pytest`
-- [ ] T025 Close #112 with credit to @AaryanCode69, stating plainly that the LLM half is harvested and the embedding half rejected because it bypasses `resolve_embedding_model()` and would silently break Plant Reactome
-- [ ] T026 Close #151 with credit to @bhavyakeerthi3, noting the flat-string shape was reasonable but `base_url` has nowhere to live in it
+- [x] T025 Close #112 with credit to @AaryanCode69, stating plainly that the LLM half is harvested and the embedding half rejected because it bypasses `resolve_embedding_model()` and would silently break Plant Reactome
+- [x] T026 Close #151 with credit to @bhavyakeerthi3, noting the flat-string shape was reasonable but `base_url` has nowhere to live in it
 - [ ] T027 Update `specs/003-model-configuration/spec.md` with the outcome, and record D1 as taken-as-recommended
 
 ## Dependencies
