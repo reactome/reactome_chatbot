@@ -73,7 +73,7 @@ Quickstart steps 4–5.
 - [x] T024 Run `ruff check`, `ruff format --check`, `mypy`, `pytest`
 - [x] T025 Close #112 with credit to @AaryanCode69, stating plainly that the LLM half is harvested and the embedding half rejected because it bypasses `resolve_embedding_model()` and would silently break Plant Reactome
 - [x] T026 Close #151 with credit to @bhavyakeerthi3, noting the flat-string shape was reasonable but `base_url` has nowhere to live in it
-- [ ] T027 Update `specs/003-model-configuration/spec.md` with the outcome, and record D1 as taken-as-recommended
+- [x] T027 Update `specs/003-model-configuration/spec.md` with the outcome, and record D1 as taken-as-recommended
 
 ## Dependencies
 
