@@ -14,6 +14,30 @@ properties:
             enum: ["all", "logged_in"]
         required: ["enabled"]
     required: ["postprocessing"]
+  llm:
+    # The answering model. Every field is optional; an absent `llm:` section
+    # leaves behaviour exactly as it was. There is deliberately no embedding
+    # model here -- it is derived from the installed bundle, because a query
+    # embedded with a different model than built the vectors returns nonsense
+    # rather than an error.
+    type: object
+    properties:
+      provider:
+        type: string
+        enum: ["openai", "ollama"]
+      model:
+        type: string
+        description: "e.g. gpt-4o-mini, gpt-5.6-luna. LLM_MODEL overrides this."
+      base_url:
+        type: string
+        description: "OpenAI-compatible endpoint, for self-hosted models."
+      temperature:
+        type: number
+        description: >-
+          Almost always leave unset: the value a model requires is derived. Set
+          it only for a model the derived table has not met. A value the model
+          refuses stops the server at startup.
+    additionalProperties: false
   messages:
     type: object
     additionalProperties:
