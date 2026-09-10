@@ -22,8 +22,15 @@ from util.chainlit_helpers import (
 from util.config_yml import Config, TriggerEvent
 from util.logging import logging
 from util.orcid_provider import ORCIDOAuthProvider
+from util.secrets import SECRET_NAMES, load_secrets_to_environ
 
 load_dotenv()
+# Before anything reads os.environ. Docker secrets, where mounted, take
+# precedence over .env; where not mounted, nothing changes.
+_loaded_secrets = load_secrets_to_environ(SECRET_NAMES)
+if _loaded_secrets:
+    logging.info(f"Loaded from Docker secrets: {', '.join(_loaded_secrets)}")
+
 config: Config | None = Config.from_yaml()
 
 profiles: list[ProfileName] = config.profiles if config else [ProfileName.React_to_Me]
