@@ -118,14 +118,26 @@ def load_secrets_to_environ(names: Iterable[str]) -> None:
 
 # The values worth mounting rather than passing as environment variables. Names
 # match env_template, so a deployment can move one across without renaming it.
+# This is the ONE list. compose.yaml's `secrets:` block must be a subset of it --
+# tests/util/test_secrets.py asserts that, because the failure is silent: a
+# secret declared in compose and missing here is mounted into the container and
+# never read, so the value falls back to the environment. A deployment that
+# moved a secret OUT of its .env and into a Docker secret would then lose it,
+# and the first symptom is a login that stops working.
+#
+# That had already happened: compose.yaml declared the two OAuth secrets and
+# this tuple did not list them.
 SECRET_NAMES = (
-    "OPENAI_API_KEY",
-    "POSTGRES_PASSWORD",
-    "PGADMIN_DEFAULT_PASSWORD",
-    "CLOUDFLARE_SECRET_KEY",
-    "TAVILY_API_KEY",
     "CHAINLIT_AUTH_SECRET",
+    "CLOUDFLARE_SECRET_KEY",
     "LITERAL_API_KEY",
+    "OAUTH_AUTH0_CLIENT_SECRET",
+    "OAUTH_GOOGLE_CLIENT_SECRET",
+    "OAUTH_ORCID_CLIENT_SECRET",
+    "OPENAI_API_KEY",
+    "PGADMIN_DEFAULT_PASSWORD",
+    "POSTGRES_PASSWORD",
+    "TAVILY_API_KEY",
 )
 
 

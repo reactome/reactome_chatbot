@@ -11,18 +11,12 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from util.secrets import get_secret, load_secrets_to_environ
+from util.secrets import SECRET_NAMES, get_secret, load_secrets_to_environ
 
 load_dotenv()
-load_secrets_to_environ(
-    [
-        "CHAINLIT_AUTH_SECRET",
-        "OAUTH_AUTH0_CLIENT_SECRET",
-        "OAUTH_GOOGLE_CLIENT_SECRET",
-        "OPENAI_API_KEY",
-        "TAVILY_API_KEY",
-    ]
-)
+# The same list chat-chainlit uses. This was a second, hand-maintained copy
+# that had already drifted from it in both directions.
+load_secrets_to_environ(SECRET_NAMES)
 
 app = FastAPI()
 
