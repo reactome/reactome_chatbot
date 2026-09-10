@@ -5,7 +5,12 @@ from pathlib import Path
 import pytest
 
 import util.secrets as secrets
-from util.secrets import SECRET_NAMES, get_secret, load_secrets_to_environ
+from util.secrets import (
+    SECRET_NAMES,
+    get_secret,
+    load_secrets_to_environ,
+    mounted_secrets,
+)
 
 
 @pytest.fixture
@@ -59,23 +64,42 @@ def test_a_missing_secret_falls_back_to_the_default(
     assert get_secret("NOT_SET_ANYWHERE") is None
 
 
-def test_loading_reports_only_what_came_from_a_file(
+def test_loading_writes_only_file_backed_values(
     mounted: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The return value is what gets logged, so it must not overstate."""
+    import os
+
     (mounted / "TAVILY_API_KEY").write_text("tvly-secret")
     (mounted / "CLOUDFLARE_SECRET_KEY").write_text("  ")  # placeholder
     monkeypatch.setenv("OPENAI_API_KEY", "sk-from-env")
 
-    loaded = load_secrets_to_environ(
+    load_secrets_to_environ(
         ["TAVILY_API_KEY", "CLOUDFLARE_SECRET_KEY", "OPENAI_API_KEY"]
     )
 
-    assert loaded == ["TAVILY_API_KEY"]
-    import os
-
     assert os.environ["TAVILY_API_KEY"] == "tvly-secret"
     assert os.environ["OPENAI_API_KEY"] == "sk-from-env", "left exactly as it was"
+    assert "CLOUDFLARE_SECRET_KEY" not in os.environ, "a blank file writes nothing"
+
+
+def test_mounted_secrets_lists_names_without_reading_them(mounted: Path) -> None:
+    """What the startup log is built from.
+
+    Separate from loading because a function that has read secret bodies cannot
+    return anything provably safe to log -- CodeQL flagged the first version of
+    this as "Clear-text logging of sensitive information" on a line that logged
+    only names, and it was right to: those names were derived from a value the
+    contents had flowed into.
+    """
+    (mounted / "TAVILY_API_KEY").write_text("tvly-secret")
+    assert mounted_secrets(["TAVILY_API_KEY", "OPENAI_API_KEY"]) == ["TAVILY_API_KEY"]
+
+
+def test_mounted_secrets_is_empty_outside_a_container(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(secrets, "DOCKER_SECRETS", tmp_path / "nope")
+    assert mounted_secrets(SECRET_NAMES) == []
 
 
 def test_loading_does_not_blank_an_environment_variable(
@@ -87,7 +111,6 @@ def test_loading_does_not_blank_an_environment_variable(
     value = "real-password"
     monkeypatch.setenv("POSTGRES_PASSWORD", value)
     load_secrets_to_environ(["POSTGRES_PASSWORD"])
-
     assert os.environ["POSTGRES_PASSWORD"] == value
 
 
@@ -97,7 +120,7 @@ def test_missing_secrets_directory_is_not_an_error(
     """Outside a container /run/secrets does not exist at all."""
     monkeypatch.setattr(secrets, "DOCKER_SECRETS", tmp_path / "nope")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-from-env")
-    assert load_secrets_to_environ(SECRET_NAMES) == []
+    load_secrets_to_environ(SECRET_NAMES)
     assert get_secret("OPENAI_API_KEY") == "sk-from-env"
 
 

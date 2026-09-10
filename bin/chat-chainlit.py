@@ -22,14 +22,16 @@ from util.chainlit_helpers import (
 from util.config_yml import Config, TriggerEvent
 from util.logging import logging
 from util.orcid_provider import ORCIDOAuthProvider
-from util.secrets import SECRET_NAMES, load_secrets_to_environ
+from util.secrets import SECRET_NAMES, load_secrets_to_environ, mounted_secrets
 
 load_dotenv()
 # Before anything reads os.environ. Docker secrets, where mounted, take
 # precedence over .env; where not mounted, nothing changes.
-_loaded_secrets = load_secrets_to_environ(SECRET_NAMES)
-if _loaded_secrets:
-    logging.info(f"Loaded from Docker secrets: {', '.join(_loaded_secrets)}")
+_mounted = mounted_secrets(SECRET_NAMES)
+load_secrets_to_environ(SECRET_NAMES)
+if _mounted:
+    # Names only, and from a function that never reads the files.
+    logging.info(f"Supplied as Docker secrets: {', '.join(_mounted)}")
 
 config: Config | None = Config.from_yaml()
 

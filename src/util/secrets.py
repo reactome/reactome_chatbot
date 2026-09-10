@@ -45,17 +45,44 @@ def get_secret(name: str, default: str | None = None) -> str | None:
     return contents or os.getenv(name, default)
 
 
-def load_secrets_to_environ(names: Iterable[str]) -> list[str]:
-    """Copy mounted secrets into os.environ; return the names that came from a file.
+def mounted_secrets(names: Iterable[str]) -> list[str]:
+    """Which of `names` have a non-empty file mounted. Reads no contents.
+
+    Deliberately separate from `load_secrets_to_environ`, and deliberately
+    stat-only. The caller wants to log which secrets a deployment supplied, and
+    a function that has read the secret bodies cannot return anything a reader
+    -- human or static analyser -- can be sure is safe to log. CodeQL flagged
+    exactly that on the first version of this: "Clear-text logging of sensitive
+    information", on a line that logged only names. It was right to; the names
+    were derived from a value the file contents had flowed into.
+
+    Size rather than contents, so a placeholder of one space still counts as
+    absent for `get_secret` while showing here as present-but-blank would not:
+    a whitespace-only file has non-zero size, so it is compared after stripping
+    is impossible -- and that is the point. This answers "was a file mounted",
+    not "is it usable".
+    """
+    present: list[str] = []
+    for name in names:
+        try:
+            if (DOCKER_SECRETS / name).stat().st_size > 0:
+                present.append(name)
+        except OSError:
+            continue
+    return present
+
+
+def load_secrets_to_environ(names: Iterable[str]) -> None:
+    """Copy mounted secrets into os.environ.
 
     Everything downstream -- chainlit, psycopg, the OpenAI client -- reads
     os.environ, so the mounted files are placed there once at startup rather
     than teaching each consumer about /run/secrets.
 
-    Only file-backed values are written. A name already in the environment and
-    not mounted is left exactly as it is.
+    Returns nothing on purpose: see `mounted_secrets`. Only file-backed values
+    are written, so a name already in the environment and not mounted is left
+    exactly as it is.
     """
-    loaded: list[str] = []
     for name in names:
         secret_path = DOCKER_SECRETS / name
         try:
@@ -64,8 +91,6 @@ def load_secrets_to_environ(names: Iterable[str]) -> list[str]:
             continue
         if contents:
             os.environ[name] = contents
-            loaded.append(name)
-    return loaded
 
 
 # The values worth mounting rather than passing as environment variables. Names
