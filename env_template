@@ -34,3 +34,9 @@ TAVILY_API_KEY=
 # 400 for anything else. Set this only for a model that rule does not yet know
 # about; see resolve_temperature in src/agent/graph.py.
 #LLM_TEMPERATURE=
+
+# Locale and timezone for the Postgres container's initdb (ICU collation).
+LOCALE=en_US
+TIMEZONE=America/Toronto
+# The guest instance's public URI, served alongside the authenticated one.
+CHAINLIT_URI_NO_LOGIN=

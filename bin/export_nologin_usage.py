@@ -6,9 +6,28 @@ from pathlib import Path
 import psycopg
 from dotenv import load_dotenv
 
+from util.secrets import get_db_uri
+
 load_dotenv()
 
-LANGGRAPH_NOLOGIN_DB_URI = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@postgres:5432/{os.getenv('POSTGRES_LANGGRAPH_DB')}_no_login?sslmode=disable"
+
+def langgraph_nologin_db_uri() -> str:
+    """Resolve the database URI, or stop with a message saying why.
+
+    A function, not a module constant: this used to resolve at import
+    time and raise SystemExit when no database was configured, which
+    broke CI's "can every entry point be imported" check -- the runner
+    has no Postgres. Importing a script should do nothing; running it
+    should fail loudly.
+    """
+    db_name = os.getenv("POSTGRES_LANGGRAPH_DB")
+    uri = get_db_uri(f"{db_name}_no_login" if db_name else None)
+    if uri is None:
+        raise SystemExit(
+            "POSTGRES_LANGGRAPH_DB is not set, or no Postgres password is available. "
+            "This script exports from the database; it cannot run without one."
+        )
+    return uri
 
 
 def build_query() -> str:
@@ -32,7 +51,7 @@ def main(records_dir: Path) -> None:
 
     query: str = build_query()
 
-    with psycopg.connect(LANGGRAPH_NOLOGIN_DB_URI) as conn, conn.cursor() as cur:
+    with psycopg.connect(langgraph_nologin_db_uri()) as conn, conn.cursor() as cur:
         cur.execute(query)
         header = [col.name for col in cur.description] if cur.description else None
         records = cur.fetchall()
