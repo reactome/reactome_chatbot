@@ -1,3 +1,17 @@
+"""Building embeddings from Alliance of Genome Resources data.
+
+PARKED, NOT ABANDONED. Deliberately not deployed: every profile default is
+React-to-Me, in `config_default.yml` and in `chat-chainlit.py`'s fallback, so this
+runs only if a `config.yml` names it explicitly.
+
+Do not delete it. Adam Wright did the work to make Alliance results possible, and it is kept so the capability can be resurrected
+rather than rebuilt. Equally, do not invest in it while it is parked -- it does not
+need new features, and a change that merely keeps it importable is enough.
+
+If it is ever un-parked, note that it has not been exercised since 2026-09-10, so
+its behaviour is unverified even where the code still type-checks.
+"""
+
 import os
 
 import requests
