@@ -39,6 +39,12 @@ services:
       - TAVILY_API_KEY
     volumes:
       - ./config.yml:/app/config.yml:ro
+      # Welcome screen. The image ships the Reactome one at /app/chainlit.md;
+      # the Plant Reactome deployment mounts its variant over it, the same way
+      # config.yml is overridden above. chainlit reads this file from
+      # CHAINLIT_APP_ROOT at startup, and /app is read-only, so selecting it by
+      # mount is the mechanism -- there is nothing for the application to do.
+      #  - ./chainlit.plantreactome.md:/app/chainlit.md:ro
       - ./embeddings:/app/embeddings
       - ./records:/app/records
       - postgres-socket:/sockets/postgres
@@ -72,6 +78,7 @@ services:
       - TAVILY_API_KEY
     volumes:
       - ./config.yml:/app/config.yml:ro
+      #  - ./chainlit.plantreactome.md:/app/chainlit.md:ro   # see above
       - ./embeddings:/app/embeddings
       - postgres-socket:/sockets/postgres
       - vault-postgres-app-token:/tokens/postgres-app:ro
