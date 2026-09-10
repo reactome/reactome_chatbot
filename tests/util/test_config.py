@@ -135,3 +135,22 @@ def test_config_paths_do_not_depend_on_the_working_directory(
     assert CONFIG_DEFAULT_YML.is_absolute()
     monkeypatch.chdir(tmp_path)
     assert Config.from_yaml(CONFIG_DEFAULT_YML) is not None
+
+
+def test_an_unknown_top_level_key_is_fatal(tmp_path: Path) -> None:
+    """A typo in a section name must not load cleanly and do nothing.
+
+    `llmm:` for `llm:`, or a key at the wrong indentation, used to be accepted
+    and silently dropped -- so the operator saw a server that started fine and a
+    setting that had no effect. That is the failure spec 003 exists to prevent,
+    one level above where it was being prevented.
+    """
+    path = tmp_path / "config.yml"
+    path.write_text(VALID + "\nllmm:\n  model: gpt-4o-mini\n")
+    with pytest.raises(SystemExit, match="Invalid config"):
+        Config.from_yaml(path)
+
+
+def test_the_shipped_configs_carry_no_unknown_keys() -> None:
+    """Turning on extra="forbid" must not refuse a config that works today."""
+    assert Config.from_yaml(CONFIG_DEFAULT_YML) is not None

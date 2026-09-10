@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Self
 
 import yaml
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from agent.profile_names import ProfileName
 from util.config_yml.features import Feature, Features
@@ -21,6 +21,14 @@ CONFIG_DEFAULT_YML = REPO_ROOT / "config_default.yml"
 
 
 class Config(BaseModel):
+    # extra="forbid" for the same reason LLMConfig does it, one level up. Without
+    # it a typo in a section name -- `llmm:` for `llm:`, or a key at the wrong
+    # indentation -- loads cleanly, does nothing, and leaves the operator
+    # believing they configured something. Checked against config.yml and
+    # config_default.yml before turning on: neither carries an unknown key, so
+    # this refuses nothing that works today.
+    model_config = ConfigDict(extra="forbid")
+
     features: Features
     # Optional, and None rather than a default instance: a config.yml with no
     # `llm:` section must behave exactly as it did before this field existed
