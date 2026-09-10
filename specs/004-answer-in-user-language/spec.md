@@ -236,8 +236,14 @@ the Reactome deployment is the larger audience.
 - **FR-005**: Scientific nomenclature — gene symbols, protein names, pathway names,
   `R-HSA-*` identifiers — MUST NOT be translated.
 - **FR-006**: URLs and citation links MUST NOT be translated or altered.
-- **FR-007**: An English question MUST follow exactly the current path, with no
-  additional model call and no additional prompt content.
+- **FR-007**: An English question MUST cost no additional model call, and MUST reach
+  the retriever with a byte-identical query.
+
+  It does gain a short instruction in the *answer* prompt, saying to answer in
+  English. That is a real change for every current user and is stated rather than
+  hidden. The alternative — branching on "is this English" — creates two paths where
+  the common one is untested by anyone who only ever asks in English, and the
+  instruction is a sentence against roughly 3,200 tokens of retrieved context.
 - **FR-008**: The language MUST reach the answer prompt as its own input, not
   concatenated into another field.
 
@@ -259,7 +265,8 @@ the Reactome deployment is the larger audience.
   what the same question produces today.
 - **SC-004**: In a non-English answer, every gene symbol, pathway name and `R-HSA-*`
   identifier appears in English, and every Reactome URL resolves.
-- **SC-005**: An English question costs the same number of model calls as today.
+- **SC-005**: An English question costs the same number of model calls as today, and
+  its answer remains in English and well-formed.
 
 ## Decisions for the team
 

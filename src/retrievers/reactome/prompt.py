@@ -1,5 +1,7 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
+from agent.tasks.language_instruction import LANGUAGE_INSTRUCTION
+
 reactome_system_prompt = """
 You are an expert in molecular biology with access to the **Reactome Knowledgebase**.
 Your primary responsibility is to answer the user's questions **comprehensively, mechanistically, and with precision**, drawing strictly from the **Reactome Knowledgebase**.
@@ -35,6 +37,7 @@ reactome_qa_prompt = ChatPromptTemplate.from_messages(
     [
         ("system", reactome_system_prompt),
         MessagesPlaceholder(variable_name="chat_history"),
+        ("system", LANGUAGE_INSTRUCTION),
         ("user", "Context:\n{context}\n\nQuestion: {input}"),
     ]
 )

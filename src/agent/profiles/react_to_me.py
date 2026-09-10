@@ -158,6 +158,10 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         result: dict[str, Any] = await rag.ainvoke(
             {
                 "input": state["rephrased_input"],
+                # A separate variable, never concatenated into `input`:
+                # create_retrieval_chain passes `input` alone to the retriever, so
+                # anything folded into it reaches BM25 and the query expander.
+                "detected_language": state["detected_language"],
                 "chat_history": (
                     state["chat_history"]
                     if state["chat_history"]
