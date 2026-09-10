@@ -4,7 +4,9 @@
 
 **Created**: 2026-09-10
 
-**Status**: Draft. Two contributed PRs to harvest; one decision (D1) for the team.
+**Status**: **Implemented** 2026-09-10 (#204 spec, #205 implementation). D1 taken as
+recommended — instruct the answer prompt, no translation pass. #140 and #125 closed
+with credit. Outcome at the end of this file.
 
 **Input**: Issue #104, "RAG only responds in English". Two competing pull requests, #125 and #140.
 
@@ -297,3 +299,57 @@ which is what both contributors did, independently.
 - The web-search and hallucination-grading work bundled into #125 — that is #123's
   decision to make.
 - The user interface: language is detected per message, not chosen in a setting.
+
+
+---
+
+## Outcome (2026-09-10)
+
+Implemented in #205. `detected_language` reaches the answer prompt in React-to-Me and
+Plant Reactome as its own variable; `input` is untouched, so the retrieval query and
+the query expansion in front of it are byte-identical across languages. A test
+asserts that directly, which is exact where a retrieval baseline would only show
+noise.
+
+Verified against the Release95 bundle: a French question is answered in French with
+`R-HSA` identifiers intact, an English question is unchanged, both retrieve 40
+documents.
+
+### What the reviews changed
+
+The specification's own claims were wrong twice, both caught before implementation.
+
+**"BM25 retrieves close to nothing for a French query"** — false. It returns a full
+ten documents; named entities survive translation. The real cost is that seven of ten
+differ.
+
+**"#140's appended instruction leaves 0 of 10 documents"** — measured on BM25
+directly, which the pipeline never does: the query expander rewrites the question
+first, so four of five queries reach BM25 clean. Through the whole retriever it is
+**20 of 40**. Half the context, not all of it. Adam pushed back that the number
+looked too low and was right.
+
+The second is the more useful lesson. The first review checked whether each claim was
+*true* without checking whether the *test measured the product* — the same failure
+`evaluator.py` had four days earlier. An adversarial review has to attack the
+measurement as well as the claim.
+
+**And the plan contradicted the spec.** FR-007 promised English questions "no
+additional prompt content" while the plan always passes the language, which adds a
+sentence to every English prompt. FR-007 was the wrong half and was corrected to
+promise what is actually true: no extra model call, byte-identical retrieval query,
+and one added sentence stated rather than hidden.
+
+### Worth watching
+
+The French answer carried 2 `R-HSA` citations against the English answer's 9. One
+sample, so not a finding — but if non-English answers systematically cite less, this
+feature would be creating a quality gap while closing a language one. It is the kind
+of thing the ragas run in [spec 002](../002-default-llm-choice/spec.md) should look
+at once that harness is worth running.
+
+### Not resolved
+
+#125 also carried a hallucination grader and web-search wiring for Cross-Database.
+Neither is touched here, and closing that PR is not a decision about them; they
+belong to #123.

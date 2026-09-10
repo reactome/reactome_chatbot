@@ -34,9 +34,9 @@ unasserted claim of that kind is worth nothing.
 
 - [x] T010 Perturbation check: revert the call site and confirm the French test fails
 - [x] T011 Run `ruff check`, `ruff format --check`, `mypy`, `pytest`
-- [ ] T012 Close #140 with credit to @bleedblack1 — the target and the nomenclature rule are kept; the mechanism is not, with the measured number
-- [ ] T013 Close #125 with credit to @bhavyakeerthi3 for the mechanism, noting its hallucination-grading work belongs to #123 and is untouched
-- [ ] T014 Record the outcome in `specs/004-answer-in-user-language/spec.md`
+- [x] T012 Close #140 with credit to @bleedblack1 — the target and the nomenclature rule are kept; the mechanism is not, with the measured number
+- [x] T013 Close #125 with credit to @bhavyakeerthi3 for the mechanism, noting its hallucination-grading work belongs to #123 and is untouched
+- [x] T014 Record the outcome in `specs/004-answer-in-user-language/spec.md`
 
 ## Dependencies
 
