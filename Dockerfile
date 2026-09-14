@@ -32,10 +32,25 @@ RUN \
 # appuser's home because the download runs as appuser.
 RUN /app/.venv/bin/python -m nltk.downloader punkt_tab
 
-# Copy essential application files
+# Copy essential application files.
+#
+# `--chmod` applies to the directories it creates as well as the files in them,
+# and a directory without the execute bit cannot be traversed -- not even by
+# its owner. `--chmod=400` on bin/ and public/ therefore produced an image
+# whose own entrypoint could not be read:
+#
+#     ERROR: Error loading ASGI app. Could not import module "bin.chat-fastapi".
+#
+# with /app/bin at `dr--------`. It built and pushed cleanly, because nothing
+# ran it.
+#
+# 500 rather than 400 for these two, so their directories can be entered. That
+# also marks the files inside executable, which is what bin/ wants anyway and
+# is harmless for the static assets in public/. Everything else keeps the mode
+# it had.
 COPY --chown=appuser --chmod=700 .chainlit/ /app/.chainlit/
-COPY --chown=appuser --chmod=400 bin/ /app/bin/
-COPY --chown=appuser --chmod=400 public/ /app/public/
+COPY --chown=appuser --chmod=500 bin/ /app/bin/
+COPY --chown=appuser --chmod=500 public/ /app/public/
 COPY --chown=appuser --chmod=700 src/ /app/src/
 COPY --chown=appuser --chmod=400 chainlit.md /app/
 COPY --chown=appuser --chmod=400 config_default.yml /app/
@@ -43,5 +58,13 @@ COPY --chown=appuser --chmod=400 LICENSE /app/
 
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app/src"
+
+# Fail the build rather than publish an image whose own entrypoint is
+# unreadable. This runs as appuser, which is who has to read these at runtime.
+RUN test -r /app/bin/chat-fastapi.py \
+ && test -r /app/bin/chat-chainlit.py \
+ && test -r /app/config_default.yml \
+ && test -r /app/chainlit.md \
+ && python -c "import sys; sys.path.insert(0, '/app/src'); import agent.graph"
 
 CMD ["uvicorn", "bin.chat-fastapi:app", "--host", "0.0.0.0", "--port", "8000"]
