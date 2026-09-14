@@ -222,6 +222,39 @@ this downstream and Tavily answers it, so the outcome is acceptable by accident.
 Adding destinations makes the guess worse, not better: the more sources, the
 more confident the misrouting. FR-010.
 
+### The strongest case is not the cascade at all
+
+Measured 2026-09-14. "What species are included in the Reactome database?"
+routes to `reactome` on all five runs, retrieves 40 documents, and is answered:
+
+> The Reactome Knowledgebase primarily focuses on **Homo sapiens** (humans).
+> There are no indications of other species being included.
+
+Reactome covers **96 species**. `reactome_species` on the MCP returns all of
+them with taxonomy IDs, in 1,988 characters.
+
+Nothing malfunctioned. The routing was right, and those 40 documents really are
+human pathways. **The corpus is a sample of the database's content, and the
+question is about the database's scope.** No reranking, no better embedding and
+no prompt change closes that gap, because the answer is not in the corpus at
+any depth.
+
+There is a class of these:
+
+| question | retrieval | MCP |
+|---|---|---|
+| What species does Reactome cover? | infers from whatever was sampled | `reactome_species` — 96 |
+| Which release is this? | cannot know; the bundle is a snapshot | `reactome_database_info` |
+| Is pathway X in Reactome? | only if X was sampled | `reactome_search` |
+
+All three tools are already wrapped in `src/reactome_mcp/tools.py`, chosen for
+exactly this reason. They are not wired to anything.
+
+**This lowers the cost of the first useful MCP work.** It needs no answer to D1,
+no cascade, and no new capability — only that these questions reach a tool
+instead of the vector store. The analysis branch is the larger prize; this is
+the one available now.
+
 ### Where these questions live now
 
 `tests/golden/cascade-questions.txt`, alongside the cases for every other branch
@@ -322,6 +355,13 @@ marked as external.
   the current price of a Nature subscription?" routes to `userguide`. The
   downstream grader rescues that today; adding destinations without adding a way
   to decline makes misrouting more confident, not less.
+- **FR-012**: A question about the database itself — its species coverage, its
+  release, whether it contains something — MUST be answered from the live
+  services, not from the vector store. Measured 2026-09-14: asked which species
+  Reactome includes, retrieval answered "primarily Homo sapiens ... no
+  indications of other species". Reactome has 96. This is not a retrieval
+  defect; a sample of the content cannot describe the scope of the database, so
+  no improvement to retrieval can fix it.
 - **FR-011**: The signal the analysis branch routes on MUST survive the
   rephrase, or be taken before it. Measured 2026-09-14: the rephrase rewrites
   "I want to run a gsea with my list of genes" as "How can I perform a Gene Set

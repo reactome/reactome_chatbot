@@ -48,3 +48,42 @@ What is R-HSA-9613829?
 # --- should reach Tavily, and say so -------------------------------------
 # Genuinely outside Reactome.
 What is the current price of a Nature subscription?
+
+# --- facts ABOUT the database, which retrieval structurally cannot answer ----
+# Measured 2026-09-14 on beta. "What species are included in the Reactome
+# database?" routes to `reactome` correctly (5/5), retrieves 40 documents, and
+# is answered:
+#
+#   "The Reactome Knowledgebase primarily focuses on Homo sapiens (humans).
+#    There are no indications of other species being included."
+#
+# Reactome covers 96 species. The MCP's reactome_species returns all of them
+# with taxonomy IDs.
+#
+# Nothing is broken here: the corpus is a sample of pathway content, and those
+# 40 documents really are human. A question about the database's SCOPE cannot
+# be answered from a sample of its CONTENT, however good the retrieval gets.
+# These need the API, not a better index.
+what species are in reactome
+Which release of Reactome is this?
+How many pathways does Reactome have?
+
+# --- a follow-up that depends on conversation history ------------------------
+# Asked after a GSEA exchange, "can you tell me?" was answered with GSEA
+# content. The rephrase itself is fine -- with a short history it resolves to
+# "What species are included in the Reactome database?" and routes to
+# `reactome` -- but a longer real history pulled it back to the previous topic.
+# Follow-ups are their own failure mode and want their own test.
+can you tell me?
+
+# --- the user guide, phrased in the user's words not Reactome's --------------
+# "tell me about gsea hosted by reactome" was answered:
+#
+#   "The user guide does not currently provide specific information about GSEA
+#    hosted by Reactome. However, it does mention ReactomeGSA..."
+#
+# A denial followed by the answer. ReactomeGSA IS Reactome's GSEA. "GSEA"
+# appears 19 times in the user guide bundle, so this was never a retrieval
+# miss -- the prompt told the model to say "not covered" whenever the exact
+# phrasing was absent.
+tell me about gsea hosted by reactome
