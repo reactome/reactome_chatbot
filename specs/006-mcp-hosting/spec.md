@@ -207,6 +207,43 @@ SDK already provides the transport. This needs an owner and is the critical path
 Reactome is a product in its own right, and the chatbot is then simply its first
 client.
 
+### D3 — Does it stay in its own repository? *(settled 2026-09-14: yes)*
+
+Hosting does not change this, because **HTTP is an additional transport rather than
+a replacement**. `main()` picks a transport; branching on an environment variable
+gives stdio when a client spawns it and HTTP when it runs as a server. Same codebase,
+same tools, both modes — which is why the SDK ships both transports side by side.
+
+That matters because people already clone it and point Claude at it. Nothing about
+hosting takes that away.
+
+The two modes serve different users and neither obsoletes the other:
+
+| mode | who | why that mode |
+|---|---|---|
+| stdio, cloned | researchers with Claude; curators | works offline, and is the only way to reach the Cypher tools, which need a local Neo4j |
+| HTTP, hosted | the chatbot; any remote client | no clone, no install, no Node, no build |
+
+And a separate repository is right independently of hosting: a different toolchain
+(TypeScript, against a Python chatbot and an Angular site), a different audience —
+its consumers are individual researchers, this chatbot, and whoever else adopts it —
+and a different cadence, tracking Reactome's API surface rather than any one client's
+features.
+
+**Deployment configuration is not a reason to merge.** The manifest that runs it
+belongs to whoever operates it and points at a built image; one does not vendor
+nginx's source to deploy nginx.
+
+### D4 — npm publishing *(deferred 2026-09-14)*
+
+`reactome-mcp` is not on npm — `registry.npmjs.org/reactome-mcp` returns 404. Publishing
+it would replace clone-plus-build with `npx reactome-mcp` for the people already using
+it locally, which is a real ergonomic gain and independent of hosting.
+
+**Deferred deliberately**, to be done once across `reactome-mcp`, the website and the
+other repositories together. Publishing one in isolation sets a precedent the others
+then have to match, so the batching is the point rather than the delay.
+
 ## Assumptions
 
 - The Analysis Service can absorb the traffic. If not, that is a rate-limiting
