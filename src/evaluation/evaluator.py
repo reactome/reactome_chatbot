@@ -30,9 +30,12 @@ import math
 import os
 import statistics
 import sys
+import threading
 import time
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple, cast
 
 import nltk
 from dotenv import load_dotenv
@@ -97,10 +100,17 @@ def resolve_references(
     return [references.get(question) for question in questions]
 
 
-def answer_questions(
-    chain: Any, rephrase: Any, questions: list[str]
-) -> tuple[list[str], list[str], list[list[str]], float]:
-    """Rephrase each question as production does, then ask the chain.
+class QuestionFailed(NamedTuple):
+    """A question that could not be answered, kept rather than thrown away."""
+
+    # Not `index`: on a NamedTuple that shadows tuple.index.
+    position: int
+    question: str
+    error: str
+
+
+def answer_one(chain: Any, rephrase: Any, question: str) -> tuple[str, str, list[str]]:
+    """Rephrase as production does, then ask the chain.
 
     The rephrase is not optional and not cosmetic. `generate_answer` passes
     `rephrased_input` to the RAG chain, never the raw question, so retrieval in
@@ -112,20 +122,139 @@ def answer_questions(
     the one it claims to measure: the same defect as building a private
     retriever, one step further up.
     """
-    rephrased: list[str] = []
-    answers: list[str] = []
-    contexts: list[list[str]] = []
+    standalone = rephrase.invoke({"user_input": question, "chat_history": []})
+    response = chain.invoke({"input": standalone, "chat_history": []})
+    return (
+        standalone,
+        response["answer"],
+        [doc.page_content for doc in response["context"]],
+    )
+
+
+def answer_questions(
+    chain: Any,
+    rephrase: Any,
+    questions: list[str],
+    *,
+    concurrency: int = 1,
+    on_answered: Callable[[int, str, str, list[str]], None] | None = None,
+) -> tuple[list[str], list[str], list[list[str]], float, list[QuestionFailed]]:
+    """Answer every question, keeping what succeeded when something fails.
+
+    Two properties this needs that the serial version did not have.
+
+    **A failure must not cost the whole run.** Every answer here is paid for --
+    a rephrase call, a retrieval, a generation -- and the previous version held
+    all of it in memory until the last question returned, so a rate limit on
+    question 18 of 20 discarded the seventeen already bought. Failures are now
+    recorded and reported; the run continues.
+
+    **Order must not depend on timing.** Results are placed by index, not
+    appended as they arrive, so a concurrent run scores the same questions
+    against the same references as a serial one. Getting this wrong would not
+    crash; it would silently score answers against the wrong references, which
+    is the kind of wrong that reads as a result.
+    """
+    total = len(questions)
+    rephrased: list[str | None] = [None] * total
+    answers: list[str | None] = [None] * total
+    contexts: list[list[str] | None] = [None] * total
+    failures: list[QuestionFailed] = []
+    done = 0
+    lock = threading.Lock()
     started = time.monotonic()
-    for i, question in enumerate(questions, start=1):
-        print(f"    [{i}/{len(questions)}] {question[:70]}", file=sys.stderr)
-        standalone = rephrase.invoke({"user_input": question, "chat_history": []})
-        if standalone.strip() != question.strip():
-            print(f"          rephrased: {standalone.strip()[:70]}", file=sys.stderr)
-        rephrased.append(standalone)
-        response = chain.invoke({"input": standalone, "chat_history": []})
-        answers.append(response["answer"])
-        contexts.append([doc.page_content for doc in response["context"]])
-    return rephrased, answers, contexts, time.monotonic() - started
+
+    def run(index: int) -> None:
+        nonlocal done
+        question = questions[index]
+        try:
+            standalone, answer, context = answer_one(chain, rephrase, question)
+        # Deliberately broad: one bad question must not end the run.
+        except Exception as exc:
+            with lock:
+                done += 1
+                failures.append(QuestionFailed(index, question, repr(exc)))
+                print(
+                    f"    [{done}/{total}] FAILED {question[:60]}: {exc!r}",
+                    file=sys.stderr,
+                )
+            return
+
+        rephrased[index] = standalone
+        answers[index] = answer
+        contexts[index] = context
+        with lock:
+            done += 1
+            print(f"    [{done}/{total}] {question[:70]}", file=sys.stderr)
+            if standalone.strip() != question.strip():
+                print(
+                    f"          rephrased: {standalone.strip()[:70]}", file=sys.stderr
+                )
+            if on_answered is not None:
+                on_answered(index, standalone, answer, context)
+
+    if concurrency > 1:
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            list(pool.map(run, range(total)))
+    else:
+        for index in range(total):
+            run(index)
+
+    elapsed = time.monotonic() - started
+
+    # Drop the failures, keeping the three lists aligned with each other.
+    kept = [i for i in range(total) if answers[i] is not None]
+    return (
+        [cast(str, rephrased[i]) for i in kept],
+        [cast(str, answers[i]) for i in kept],
+        [cast(list[str], contexts[i]) for i in kept],
+        elapsed,
+        failures,
+    )
+
+
+def _kept(index: int, failures: list[QuestionFailed]) -> bool:
+    """Whether the question at this index produced an answer."""
+    return all(failure.position != index for failure in failures)
+
+
+def make_transcript_writer(
+    path: Path | None, model: str, run: int, questions: list[str]
+) -> Callable[[int, str, str, list[str]], None] | None:
+    """Append each answer to a JSONL file as it is produced.
+
+    The report is written once, at the end, after every model and every repeat.
+    That is fine when nothing goes wrong and expensive when something does: a
+    run that dies on the last question used to leave nothing at all, having paid
+    for every answer before it.
+
+    One line per answer, flushed immediately, so whatever was bought survives
+    the process that bought it.
+    """
+    if path is None:
+        return None
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock = threading.Lock()
+
+    def write(index: int, rephrased: str, answer: str, context: list[str]) -> None:
+        record = {
+            "model": model,
+            "run": run,
+            "index": index,
+            "question": questions[index],
+            "rephrased": rephrased,
+            "answer": answer,
+            "documents_retrieved": len(context),
+        }
+        line = json.dumps(record, sort_keys=True) + "\n"
+        # Serialised and flushed: concurrent workers share this file, and a
+        # partial line is worse than a missing one.
+        with lock, path.open("a", encoding="utf-8") as handle:
+            handle.write(line)
+            handle.flush()
+
+    return write
 
 
 def build_chain(model: str, embeddings_dir: Path) -> tuple[Any, Any]:
@@ -279,8 +408,27 @@ def main() -> None:
         "--embeddings-dir", type=Path, default=EmbeddingEnvironment.get_dir("reactome")
     )
     parser.add_argument("--out", type=Path, help="Write the full report as JSON.")
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=1,
+        help="Answer this many questions at once (default 1). Questions are "
+        "independent, so this does not change what is measured -- but it does "
+        "raise the rate of calls to the provider, and a rate limit now costs "
+        "one question rather than the run.",
+    )
+    parser.add_argument(
+        "--transcript-log",
+        type=Path,
+        help="Append every answer here as it is produced, one JSON object per "
+        "line. A run that dies partway keeps everything already paid for.",
+    )
     args = parser.parse_args()
 
+    if args.concurrency < 1:
+        raise SystemExit("--concurrency must be at least 1.")
+
+    failed_questions: list[dict[str, Any]] = []
     models: list[str] = args.models or ["gpt-4o-mini"]
     if args.judge_model in models:
         raise SystemExit(
@@ -321,19 +469,62 @@ def main() -> None:
         chain, rephrase = build_chain(model, embeddings_dir)
         for run in range(1, args.repeat + 1):
             print(f"  {model}  run {run}/{args.repeat}", file=sys.stderr)
-            rephrased, answers, contexts, elapsed = answer_questions(
-                chain, rephrase, questions
+            rephrased, answers, contexts, elapsed, failures = answer_questions(
+                chain,
+                rephrase,
+                questions,
+                concurrency=args.concurrency,
+                on_answered=make_transcript_writer(
+                    args.transcript_log, model, run, questions
+                ),
             )
-            seconds.append(elapsed / len(questions))
+            if failures:
+                # Named, not counted. "3 failed" tells you nothing about
+                # whether the run is still worth reading.
+                print(
+                    f"    {len(failures)} of {len(questions)} questions failed:",
+                    file=sys.stderr,
+                )
+                for failure in failures:
+                    print(
+                        f"      [{failure.position + 1}] {failure.question[:60]} "
+                        f"-> {failure.error}",
+                        file=sys.stderr,
+                    )
+                failed_questions.extend(
+                    {
+                        "model": model,
+                        "run": run,
+                        "question": failure.question,
+                        "error": failure.error,
+                    }
+                    for failure in failures
+                )
+            if not answers:
+                print(
+                    f"    every question failed for {model}; skipping scoring",
+                    file=sys.stderr,
+                )
+                continue
+            # Per answered question, so a run that lost some is still
+            # comparable on rate rather than on total.
+            seconds.append(elapsed / len(answers))
             # Scored against the rephrased question, because that is what was
             # retrieved on and answered. Judging the answer against the original
             # wording would penalise a faithful answer for a rewrite the product
             # performs deliberately.
+            # The references have to follow the questions that survived. A
+            # failure removes a question from the middle of the list, so
+            # passing the full reference list would score every later answer
+            # against the wrong reference -- silently, and plausibly.
+            answered = [
+                questions[i] for i in range(len(questions)) if _kept(i, failures)
+            ]
             aggregate, per_question = score(
                 rephrased,
                 answers,
                 contexts,
-                resolve_references(questions, references),
+                resolve_references(answered, references),
                 args.judge_model,
             )
             runs.append(aggregate)
@@ -351,7 +542,7 @@ def main() -> None:
                         "scores": s,
                     }
                     for q, r, a, c, s in zip(
-                        questions,
+                        answered,
                         rephrased,
                         answers,
                         contexts,
@@ -366,7 +557,19 @@ def main() -> None:
             "transcripts": transcripts,
         }
 
+    # In the report, not only on stderr: a scored run with three questions
+    # missing is a different measurement from a complete one, and whoever reads
+    # the JSON later will not have the terminal output.
+    if failed_questions:
+        report["failed_questions"] = failed_questions
+
     print_report(report)
+    if failed_questions:
+        print(
+            f"\n  {len(failed_questions)} question-run(s) failed; scores above "
+            "cover only what succeeded.",
+            file=sys.stderr,
+        )
     if args.out:
         args.out.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
         print(f"\nWrote {args.out}", file=sys.stderr)

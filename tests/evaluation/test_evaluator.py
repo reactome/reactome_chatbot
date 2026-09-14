@@ -6,6 +6,7 @@ grading its own answers, which would silently produce numbers rather than fail.
 """
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -82,3 +83,127 @@ def test_a_missing_reference_is_none_and_not_empty_text() -> None:
     assert resolve_references(["q"], {"q": ""}) == [
         ""
     ], "an explicitly empty reference is preserved, not turned into None"
+
+
+class _FakeRephrase:
+    """Stands in for the rephrase chain; returns the question unchanged."""
+
+    def invoke(self, payload: dict[str, Any]) -> str:
+        return str(payload["user_input"])
+
+
+class _FakeChain:
+    """A chain that answers, unless the question is one it is told to fail on."""
+
+    def __init__(self, fail_on: set[str] | None = None) -> None:
+        self.fail_on = fail_on or set()
+
+    def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
+        question = payload["input"]
+        if question in self.fail_on:
+            raise RuntimeError(f"boom: {question}")
+
+        class _Doc:
+            def __init__(self, text: str) -> None:
+                self.page_content = text
+
+        return {"answer": f"answer to {question}", "context": [_Doc(f"ctx {question}")]}
+
+
+def test_answer_questions_keeps_what_succeeded() -> None:
+    """One bad question must not discard the answers already paid for."""
+    from evaluation.evaluator import answer_questions
+
+    questions = ["q1", "q2", "q3", "q4"]
+    rephrased, answers, contexts, _elapsed, failures = answer_questions(
+        _FakeChain(fail_on={"q3"}), _FakeRephrase(), questions
+    )
+
+    assert [f.question for f in failures] == ["q3"]
+    assert answers == ["answer to q1", "answer to q2", "answer to q4"]
+    assert rephrased == ["q1", "q2", "q4"]
+    assert len(contexts) == 3
+
+
+def test_answer_questions_preserves_order_under_concurrency() -> None:
+    """Results are placed by index, never appended as they arrive.
+
+    Appending would order answers by completion time, so a slow question would
+    push every later answer onto the wrong reference. That does not crash -- it
+    produces a plausible score for the wrong pairing.
+    """
+    from evaluation.evaluator import answer_questions
+
+    questions = [f"q{i}" for i in range(12)]
+    rephrased, answers, _contexts, _elapsed, failures = answer_questions(
+        _FakeChain(), _FakeRephrase(), questions, concurrency=6
+    )
+
+    assert not failures
+    assert rephrased == questions
+    assert answers == [f"answer to {q}" for q in questions]
+
+
+def test_answer_questions_order_holds_when_a_middle_question_fails() -> None:
+    """The alignment that matters: survivors keep their original order."""
+    from evaluation.evaluator import answer_questions
+
+    questions = [f"q{i}" for i in range(10)]
+    _rephrased, answers, _contexts, _elapsed, failures = answer_questions(
+        _FakeChain(fail_on={"q2", "q7"}), _FakeRephrase(), questions, concurrency=4
+    )
+
+    assert sorted(f.question for f in failures) == ["q2", "q7"]
+    expected = [f"answer to q{i}" for i in range(10) if i not in (2, 7)]
+    assert answers == expected
+
+
+def test_surviving_questions_line_up_with_their_references() -> None:
+    """A dropped question must not shift every later reference by one.
+
+    This is the failure that reads as a result: scores come out, they are just
+    computed against the wrong pairing.
+    """
+    from evaluation.evaluator import _kept, answer_questions
+
+    questions = ["q0", "q1", "q2", "q3"]
+    references = {q: f"ref {q}" for q in questions}
+
+    _rephrased, answers, _contexts, _elapsed, failures = answer_questions(
+        _FakeChain(fail_on={"q1"}), _FakeRephrase(), questions
+    )
+    answered = [q for i, q in enumerate(questions) if _kept(i, failures)]
+    resolved = resolve_references(answered, references)
+
+    assert answered == ["q0", "q2", "q3"]
+    assert resolved == ["ref q0", "ref q2", "ref q3"]
+    assert len(resolved) == len(answers)
+
+
+def test_transcript_log_survives_the_run_that_wrote_it(tmp_path: Path) -> None:
+    """Every answer is on disk as it is produced, not held until the end."""
+    import json
+
+    from evaluation.evaluator import answer_questions, make_transcript_writer
+
+    log = tmp_path / "nested" / "transcript.jsonl"
+    questions = ["q0", "q1", "q2"]
+    answer_questions(
+        _FakeChain(fail_on={"q1"}),
+        _FakeRephrase(),
+        questions,
+        concurrency=3,
+        on_answered=make_transcript_writer(log, "test-model", 1, questions),
+    )
+
+    records = [json.loads(line) for line in log.read_text().splitlines()]
+    assert {r["question"] for r in records} == {"q0", "q2"}
+    assert all(r["model"] == "test-model" for r in records)
+    # Written per answer, so a crash keeps what was already bought.
+    assert len(records) == 2
+
+
+def test_no_transcript_writer_when_no_path_given() -> None:
+    from evaluation.evaluator import make_transcript_writer
+
+    assert make_transcript_writer(None, "m", 1, []) is None
