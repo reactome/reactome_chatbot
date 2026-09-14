@@ -6,6 +6,7 @@ grading its own answers, which would silently produce numbers rather than fail.
 """
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -87,8 +88,8 @@ def test_a_missing_reference_is_none_and_not_empty_text() -> None:
 class _FakeRephrase:
     """Stands in for the rephrase chain; returns the question unchanged."""
 
-    def invoke(self, payload: dict) -> str:
-        return payload["user_input"]
+    def invoke(self, payload: dict[str, Any]) -> str:
+        return str(payload["user_input"])
 
 
 class _FakeChain:
@@ -97,7 +98,7 @@ class _FakeChain:
     def __init__(self, fail_on: set[str] | None = None) -> None:
         self.fail_on = fail_on or set()
 
-    def invoke(self, payload: dict) -> dict:
+    def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
         question = payload["input"]
         if question in self.fail_on:
             raise RuntimeError(f"boom: {question}")
