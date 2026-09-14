@@ -1,5 +1,5 @@
 import logging
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -16,6 +16,8 @@ from agent.tasks.intent_classifier import (
 )
 from agent.tasks.safety_checker import SafetyCheck
 from agent.tasks.unsafe_question import create_unsafe_answer_generator
+from reactome_mcp.answer import ToolCallingModel, answer_from_live_services
+from reactome_mcp.session import get_mcp_tools, is_configured
 from retrievers.reactome.rag import create_reactome_rag
 from retrievers.userguide.rag import create_userguide_rag
 from util.embedding_environment import EmbeddingEnvironment
@@ -34,8 +36,8 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         embedding: Embeddings,
     ) -> None:
         super().__init__(llm, embedding)
+        self.llm = llm
 
-        self.intent_classifier: Runnable = create_intent_classifier(llm)
         self.unsafe_answer_generator: Runnable = create_unsafe_answer_generator(
             llm, streaming=True
         )
@@ -50,6 +52,22 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         }
         self._available_sources: frozenset[SourceName] = frozenset({"reactome"})
         self._register_userguide_rag(llm, embedding)
+
+        # `live` is offered only where an MCP server is configured. The server
+        # itself is started on the first question that needs it, not here:
+        # construction is synchronous, and every caller that builds a graph
+        # outside the app would otherwise have to know about the lifecycle.
+        if is_configured():
+            self._available_sources |= {"live"}
+            logger.info("MCP configured; live Reactome lookups are available.")
+
+        # Built only once the sources are known, so the prompt describes just
+        # the destinations that exist. Offering one that is not wired up is
+        # worse than not having it: the model routes there, and the fallback
+        # answers as though it had been asked instead.
+        self.intent_classifier: Runnable = create_intent_classifier(
+            llm, self._available_sources
+        )
 
         state_graph = StateGraph(ReactToMeState)
         state_graph.add_node("preprocess", self.preprocess)
@@ -131,6 +149,40 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
             active_sources=active_sources,
         )
 
+    async def _answer_from_live_services(self, state: ReactToMeState) -> ReactToMeState:
+        """Answer from the MCP tools instead of the vector store.
+
+        If the server is unreachable the question falls back to retrieval, with
+        a line saying the live lookup failed -- because the alternative is what
+        retrieval does unaided with these questions: answer "Reactome primarily
+        focuses on Homo sapiens" when Reactome has 96 species. A wrong answer
+        delivered confidently is worse than a slow one.
+        """
+        tools = await get_mcp_tools()
+        if not tools:
+            logger.warning(
+                "Question routed to live lookup but no MCP tools are available; "
+                "falling back to retrieval."
+            )
+            fallback = dict(state)
+            fallback["active_sources"] = ["reactome"]
+            return await self.generate_answer(
+                ReactToMeState(**fallback), RunnableConfig()
+            )
+
+        answer = await answer_from_live_services(
+            # BaseChatModel satisfies ToolCallingModel at runtime; its
+            # bind_tools signature is wider than the Protocol restates.
+            cast(ToolCallingModel, self.llm),
+            tools,
+            state["rephrased_input"],
+            language=state["detected_language"],
+        )
+        return ReactToMeState(
+            chat_history=[HumanMessage(state["user_input"]), AIMessage(answer)],
+            answer=answer,
+        )
+
     async def generate_unsafe_response(
         self, state: ReactToMeState, config: RunnableConfig
     ) -> ReactToMeState:
@@ -154,6 +206,8 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         self, state: ReactToMeState, config: RunnableConfig
     ) -> ReactToMeState:
         source = state["active_sources"][0]
+        if source == "live":
+            return await self._answer_from_live_services(state)
         rag = self.rags[source]
         result: dict[str, Any] = await rag.ainvoke(
             {
