@@ -1,0 +1,89 @@
+# Questions that exercise the answer cascade (specs/007-answer-cascade), as
+# opposed to retrieval quality.
+#
+# Separate from questions.txt on purpose: that file is a fixed baseline for
+# comparing retrieval captures over time, and adding to it would invalidate
+# every earlier capture. These are here to answer a different question -- does
+# the chat send each kind of question to the right place?
+#
+# Marked lines record what was observed on beta (image e398a37) on 2026-09-14.
+# One per line; blank lines and `#` comments are ignored.
+
+# --- should reach gene set analysis, i.e. ReactomeGSA (FR-008) -----------
+# Reactome DOES do GSEA, at gsa.reactome.org (PADOG, Camera, ssGSEA,
+# terapadog). Nothing in this repo or in reactome-mcp talks to it, which is why
+# the beta answer offered fgsea and a YouTube tutorial instead.
+I want to run a gsea with my list of genes
+Can I run PADOG on my expression data in Reactome?
+
+# --- should reach over-representation analysis (FR-001) ------------------
+# Real question from a user on beta, 2026-09-14. Answered "not currently
+# available in the Reactome Knowledgebase", then offered fgsea, bigomics and a
+# YouTube tutorial. Both Reactome analysis services were ignored.
+# Stated the way the spec expects it.
+Which pathways are enriched in TP53, BRCA1, EGFR, MYC, CDKN1A?
+Analyse these genes for over-representation: TP53 BRCA1 EGFR
+# A list with no analysis intent: must NOT be routed to analysis.
+What do TP53, BRCA1 and EGFR have in common?
+
+# --- should reach the user guide ----------------------------------------
+# Real question from a user on beta. Answered "does not currently provide
+# specific information about tools available", which is confidently wrong --
+# analysis is a flagship Reactome feature. Worse than "I do not know".
+what tools are available for me to run on here
+How do I run a gene list analysis on the Reactome website?
+How do I use the pathway browser?
+
+# --- should be answered from the embeddings, unchanged -------------------
+# These must cost exactly what they cost today (FR-007). If adding the cascade
+# changes these, the cascade is in the wrong place.
+What does CDK5 phosphorylate in Alzheimer's disease?
+How does TP53 regulate PTEN transcription?
+
+# --- should reach the live Search API, not Tavily ------------------------
+# An exact identifier the bundle may not carry: the Search API has it, so the
+# cascade should stop there.
+What is R-HSA-9613829?
+
+# --- should reach Tavily, and say so -------------------------------------
+# Genuinely outside Reactome.
+What is the current price of a Nature subscription?
+
+# --- facts ABOUT the database, which retrieval structurally cannot answer ----
+# Measured 2026-09-14 on beta. "What species are included in the Reactome
+# database?" routes to `reactome` correctly (5/5), retrieves 40 documents, and
+# is answered:
+#
+#   "The Reactome Knowledgebase primarily focuses on Homo sapiens (humans).
+#    There are no indications of other species being included."
+#
+# Reactome covers 96 species. The MCP's reactome_species returns all of them
+# with taxonomy IDs.
+#
+# Nothing is broken here: the corpus is a sample of pathway content, and those
+# 40 documents really are human. A question about the database's SCOPE cannot
+# be answered from a sample of its CONTENT, however good the retrieval gets.
+# These need the API, not a better index.
+what species are in reactome
+Which release of Reactome is this?
+How many pathways does Reactome have?
+
+# --- a follow-up that depends on conversation history ------------------------
+# Asked after a GSEA exchange, "can you tell me?" was answered with GSEA
+# content. The rephrase itself is fine -- with a short history it resolves to
+# "What species are included in the Reactome database?" and routes to
+# `reactome` -- but a longer real history pulled it back to the previous topic.
+# Follow-ups are their own failure mode and want their own test.
+can you tell me?
+
+# --- the user guide, phrased in the user's words not Reactome's --------------
+# "tell me about gsea hosted by reactome" was answered:
+#
+#   "The user guide does not currently provide specific information about GSEA
+#    hosted by Reactome. However, it does mention ReactomeGSA..."
+#
+# A denial followed by the answer. ReactomeGSA IS Reactome's GSEA. "GSEA"
+# appears 19 times in the user guide bundle, so this was never a retrieval
+# miss -- the prompt told the model to say "not covered" whenever the exact
+# phrasing was absent.
+tell me about gsea hosted by reactome
