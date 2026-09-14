@@ -171,9 +171,19 @@ A question is classified once, into one of the destinations available.
 ### D1 — Rebuild the bundle now, independently of MCP?
 
 Recommended: **yes, and first.** Two releases behind is the larger share of the
-stated benefit, it needs no new dependency, no subprocess and no router, and it can
-ship this week. It also makes the MCP decision honest by removing staleness from its
-justification, leaving analysis — which is the real case.
+stated benefit, it needs no new dependency, no subprocess and no router. It also
+makes the MCP decision honest by removing staleness from its justification, leaving
+analysis — which is the real case.
+
+**Answered 2026-09-14: Release 98 is nearly done, and the plan is to generate new
+embeddings and move them to production then.** So D1 is settled and MCP is to be
+judged on analysis alone.
+
+A readiness check against this machine found three things that are not ready and
+would each fail partway through a long job: disk (3.4 G bundle, 5.2 G free), S3
+(no credentials here, so `push` cannot reach production), and Neo4j (needed by
+`make`, configured nowhere). Written up in
+[`deploy/rebuilding-embeddings.md`](../../deploy/rebuilding-embeddings.md).
 
 ### D2 — Adopt MCP for analysis?
 
