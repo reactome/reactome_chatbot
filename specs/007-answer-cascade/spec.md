@@ -133,26 +133,66 @@ would log `User guide embeddings not configured; routing will use reactome only`
 and fall back the same way. **Routing is necessary and not sufficient**; the
 source has to be present, and its absence currently degrades silently.
 
-### A nuance both answers expose
+### Reactome does do GSEA — through a service nothing here talks to
 
-Reactome does **over-representation analysis**, not GSEA proper —
-`reactome_analyze_identifiers` returns `Type: OVERREPRESENTATION`. So "run a
-GSEA" cannot simply be routed to analysis and treated as satisfied. The honest
-answer names what Reactome does do, over an identifier list, and offers that.
+An earlier draft of this spec asserted that Reactome performs
+over-representation analysis and not GSEA, and that the honest reply was to say
+so. **That was wrong**, and it is worth recording because the spec came within
+one merge of telling a future implementer to say something false to users.
 
-A router that silently maps "GSEA" onto ORA would be quietly wrong in a new way,
-which is the failure this spec exists to stop rather than relocate. **FR-008**
-below.
+There are two analysis services:
+
+| | | |
+|---|---|---|
+| `AnalysisService` | over-representation over an identifier list | what `reactome-mcp` wraps |
+| **ReactomeGSA** (`gsa.reactome.org`) | **PADOG, Camera, ssGSEA, terapadog** | **nothing here talks to it** |
+
+Camera is described by the service itself as *"a gene set analysis algorithm
+similar to the classical GSEA algorithm"*. Verified 2026-09-14 against
+`GET https://gsa.reactome.org/0.1/methods`, and `reactome.org/gsa/` is a live
+page.
+
+So the answer to "I want to run a GSEA" is not "Reactome does ORA instead". It
+is ReactomeGSA — a Reactome product — and the reason the beta chatbot sent a
+user to `fgsea` and a YouTube tutorial is that **no part of this system knows
+ReactomeGSA exists**.
+
+That is a gap in `reactome-mcp` before it is a gap in the cascade: routing the
+question correctly cannot help while there is no tool behind the route.
+
+### The rephrase turns "do this" into "how do I do this"
+
+Measured 2026-09-14, three runs per question. Production classifies the
+**rephrased** question, not the raw one — `preprocess` rephrases first and
+passes `rephrased_input` to the classifier — and the rephrase systematically
+converts an action request into a how-to question:
+
+| asked | rephrased to |
+|---|---|
+| I want to run a gsea with my list of genes | How **can I perform** a Gene Set Enrichment Analysis (GSEA) … |
+| Analyse these genes for over-representation: TP53 BRCA1 EGFR | How **can I analyze** the over-representation of the genes … |
+
+"How can I…" is a user-guide shape, and it routes accordingly. One question
+changes destination because of it: *Analyse these genes for over-representation*
+classifies as `reactome` when raw and `userguide` after rephrasing.
+
+This matters for FR-001. The analysis branch cannot be built on the classifier
+alone while the step in front of it is rewriting requests-to-act into
+questions-about-how — by the time the classifier sees the question, the
+signal it needs is gone. **FR-011.**
 
 ### What `main`'s classifier actually does with them
 
-Measured 2026-09-14, `gpt-4o-mini`, one call per question:
+Measured 2026-09-14, `gpt-4o-mini`, **three runs per question, classifying the
+rephrased form as production does**. Every question routed identically on all
+three runs, so the classifier is stable here and single samples below are not
+hiding variance:
 
 | question | routes to | wanted |
 |---|---|---|
 | I want to run a gsea with my list of genes | `userguide` | analysis |
 | Which pathways are enriched in TP53, BRCA1, EGFR, MYC, CDKN1A? | `reactome` | analysis |
-| Analyse these genes for over-representation: TP53 BRCA1 EGFR | `reactome` | analysis |
+| Analyse these genes for over-representation: TP53 BRCA1 EGFR | `userguide` (`reactome` if not rephrased) | analysis |
 | What do TP53, BRCA1 and EGFR have in common? | `reactome` | `reactome` ✓ |
 | **what tools are available for me to run on here** | **`userguide`** | **`userguide` ✓** |
 | How do I run a gene list analysis on the Reactome website? | `userguide` | `userguide` ✓ |
@@ -266,11 +306,13 @@ marked as external.
   it.
 - **FR-007**: With the new steps disabled, behaviour and call count MUST be exactly as
   today.
-- **FR-008**: An analysis request MUST be answered with what Reactome actually
-  performs. Reactome does over-representation analysis over an identifier list;
-  it does not do GSEA. A request naming GSEA MUST NOT be silently satisfied with
-  ORA — say which was run. Observed 2026-09-14: users ask for "a GSEA" meaning
-  "tell me what these genes are enriched for".
+- **FR-008**: An analysis request MUST be answered with the Reactome service
+  that performs it, and MUST name which was used. Over-representation
+  (`AnalysisService`) and gene set analysis (ReactomeGSA: PADOG, Camera, ssGSEA,
+  terapadog) are different analyses; satisfying a request for one with the other
+  without saying so is the failure this spec exists to prevent, not relocate.
+  A request naming GSEA MUST NOT be answered "Reactome does not do that" — it
+  does, at `gsa.reactome.org`.
 - **FR-009**: A source that is configured but unavailable MUST be
   distinguishable from a source that had no answer. The user guide falls back to
   `reactome` with only a log line when its bundle is missing, so a routing
@@ -280,6 +322,12 @@ marked as external.
   the current price of a Nature subscription?" routes to `userguide`. The
   downstream grader rescues that today; adding destinations without adding a way
   to decline makes misrouting more confident, not less.
+- **FR-011**: The signal the analysis branch routes on MUST survive the
+  rephrase, or be taken before it. Measured 2026-09-14: the rephrase rewrites
+  "I want to run a gsea with my list of genes" as "How can I perform a Gene Set
+  Enrichment Analysis…", which is a user-guide shape. An intent to *act* becomes
+  a question about *how to act*, and the classifier cannot recover what the
+  rephrase removed.
 
 ## Success Criteria *(mandatory)*
 

@@ -9,12 +9,18 @@
 # Marked lines record what was observed on beta (image e398a37) on 2026-09-14.
 # One per line; blank lines and `#` comments are ignored.
 
-# --- should reach the analysis branch (FR-001) ---------------------------
-# Real question from a user on beta. Answered "not currently available in the
-# Reactome Knowledgebase", then offered fgsea, bigomics and a YouTube tutorial.
-# Reactome's own analysis service was never consulted.
+# --- should reach gene set analysis, i.e. ReactomeGSA (FR-008) -----------
+# Reactome DOES do GSEA, at gsa.reactome.org (PADOG, Camera, ssGSEA,
+# terapadog). Nothing in this repo or in reactome-mcp talks to it, which is why
+# the beta answer offered fgsea and a YouTube tutorial instead.
 I want to run a gsea with my list of genes
-# The same intent, stated the way the spec expects it.
+Can I run PADOG on my expression data in Reactome?
+
+# --- should reach over-representation analysis (FR-001) ------------------
+# Real question from a user on beta, 2026-09-14. Answered "not currently
+# available in the Reactome Knowledgebase", then offered fgsea, bigomics and a
+# YouTube tutorial. Both Reactome analysis services were ignored.
+# Stated the way the spec expects it.
 Which pathways are enriched in TP53, BRCA1, EGFR, MYC, CDKN1A?
 Analyse these genes for over-representation: TP53 BRCA1 EGFR
 # A list with no analysis intent: must NOT be routed to analysis.
