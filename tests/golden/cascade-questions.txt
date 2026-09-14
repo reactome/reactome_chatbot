@@ -1,0 +1,44 @@
+# Questions that exercise the answer cascade (specs/007-answer-cascade), as
+# opposed to retrieval quality.
+#
+# Separate from questions.txt on purpose: that file is a fixed baseline for
+# comparing retrieval captures over time, and adding to it would invalidate
+# every earlier capture. These are here to answer a different question -- does
+# the chat send each kind of question to the right place?
+#
+# Marked lines record what was observed on beta (image e398a37) on 2026-09-14.
+# One per line; blank lines and `#` comments are ignored.
+
+# --- should reach the analysis branch (FR-001) ---------------------------
+# Real question from a user on beta. Answered "not currently available in the
+# Reactome Knowledgebase", then offered fgsea, bigomics and a YouTube tutorial.
+# Reactome's own analysis service was never consulted.
+I want to run a gsea with my list of genes
+# The same intent, stated the way the spec expects it.
+Which pathways are enriched in TP53, BRCA1, EGFR, MYC, CDKN1A?
+Analyse these genes for over-representation: TP53 BRCA1 EGFR
+# A list with no analysis intent: must NOT be routed to analysis.
+What do TP53, BRCA1 and EGFR have in common?
+
+# --- should reach the user guide ----------------------------------------
+# Real question from a user on beta. Answered "does not currently provide
+# specific information about tools available", which is confidently wrong --
+# analysis is a flagship Reactome feature. Worse than "I do not know".
+what tools are available for me to run on here
+How do I run a gene list analysis on the Reactome website?
+How do I use the pathway browser?
+
+# --- should be answered from the embeddings, unchanged -------------------
+# These must cost exactly what they cost today (FR-007). If adding the cascade
+# changes these, the cascade is in the wrong place.
+What does CDK5 phosphorylate in Alzheimer's disease?
+How does TP53 regulate PTEN transcription?
+
+# --- should reach the live Search API, not Tavily ------------------------
+# An exact identifier the bundle may not carry: the Search API has it, so the
+# cascade should stop there.
+What is R-HSA-9613829?
+
+# --- should reach Tavily, and say so -------------------------------------
+# Genuinely outside Reactome.
+What is the current price of a Nature subscription?

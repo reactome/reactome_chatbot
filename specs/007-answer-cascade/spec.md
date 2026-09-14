@@ -96,6 +96,103 @@ the deep path is rare. And the two new steps are the cheap ones — the Search A
 measured at well under a second, and analysis at **0.2s** measured through
 `reactome-mcp`.
 
+## Observed, 2026-09-14
+
+Two questions asked on beta by a Reactome developer. Beta was running `e398a37`
+— production's commit, which predates both the intent classifier and the user
+guide source — so this is not a report on current `main`. It is recorded because
+it is what the cascade is for, asked by a real user in their own words.
+
+### "I want to run a gsea with my list of genes"
+
+> I'm sorry, but the information regarding how to perform a Gene Set Enrichment
+> Analysis (GSEA) is not currently available in the Reactome Knowledgebase.
+
+Then three external links: `fgsea` in R, bigomics.ch, and a YouTube tutorial.
+
+Reactome's own analysis service was never consulted. The failure is not that the
+answer was empty — it is that a Reactome user asking to analyse a gene list was
+sent to somebody else's tools. **This is User Story 1**, in the user's phrasing
+rather than the spec's.
+
+### "what tools are available for me to run on here"
+
+> The Reactome Knowledgebase does not currently provide specific information
+> about tools available for running analyses on the Human Reactome (HRE).
+
+This one is worse, and in a way worth naming precisely: it is **confidently
+wrong**, not unhelpful. Analysis is a flagship Reactome feature. A retrieval
+miss was reported as a fact about Reactome, because nothing distinguishes "the
+vector store did not have this" from "Reactome does not have this". That is the
+"user cannot tell which source answered" edge case, showing up as an assertion
+rather than as a gap.
+
+It is also a user guide question. `main` has a user guide source and routes to
+it — but the user guide bundle is not installed on the beta host, so `main`
+would log `User guide embeddings not configured; routing will use reactome only`
+and fall back the same way. **Routing is necessary and not sufficient**; the
+source has to be present, and its absence currently degrades silently.
+
+### A nuance both answers expose
+
+Reactome does **over-representation analysis**, not GSEA proper —
+`reactome_analyze_identifiers` returns `Type: OVERREPRESENTATION`. So "run a
+GSEA" cannot simply be routed to analysis and treated as satisfied. The honest
+answer names what Reactome does do, over an identifier list, and offers that.
+
+A router that silently maps "GSEA" onto ORA would be quietly wrong in a new way,
+which is the failure this spec exists to stop rather than relocate. **FR-008**
+below.
+
+### What `main`'s classifier actually does with them
+
+Measured 2026-09-14, `gpt-4o-mini`, one call per question:
+
+| question | routes to | wanted |
+|---|---|---|
+| I want to run a gsea with my list of genes | `userguide` | analysis |
+| Which pathways are enriched in TP53, BRCA1, EGFR, MYC, CDKN1A? | `reactome` | analysis |
+| Analyse these genes for over-representation: TP53 BRCA1 EGFR | `reactome` | analysis |
+| What do TP53, BRCA1 and EGFR have in common? | `reactome` | `reactome` ✓ |
+| **what tools are available for me to run on here** | **`userguide`** | **`userguide` ✓** |
+| How do I run a gene list analysis on the Reactome website? | `userguide` | `userguide` ✓ |
+| How do I use the pathway browser? | `userguide` | `userguide` ✓ |
+| What does CDK5 phosphorylate in Alzheimer's disease? | `reactome` | `reactome` ✓ |
+| How does TP53 regulate PTEN transcription? | `reactome` | `reactome` ✓ |
+| What is R-HSA-9613829? | `reactome` | `reactome` ✓ |
+| What is the current price of a Nature subscription? | `userguide` | neither |
+
+Three things follow.
+
+**The second beta failure is already routed correctly.** "what tools are
+available for me to run on here" classifies as `userguide` on `main` today. The
+classifier is not the problem for that question; the missing bundle is. Install
+it on the beta host and that failure goes away without any cascade work — which
+is a cheaper fix than this spec, and should be done first.
+
+**The analysis questions land wherever the two existing destinations allow.**
+Two go to `reactome`, one to `userguide` — not wrong given the choices, simply
+unable to express the right answer. That is the case for FR-001, measured
+rather than argued.
+
+**A question that belongs nowhere is forced somewhere.** The Nature subscription
+question routes to `userguide`, because with two destinations and a required
+choice there is no way to say "neither". Today the completeness grader catches
+this downstream and Tavily answers it, so the outcome is acceptable by accident.
+Adding destinations makes the guess worse, not better: the more sources, the
+more confident the misrouting. FR-010.
+
+### Where these questions live now
+
+`tests/golden/cascade-questions.txt`, alongside the cases for every other branch
+of the cascade — including two that must be answered from the embeddings exactly
+as they are today, and one identifier that should stop at the Search API rather
+than reach Tavily.
+
+They are kept out of `tests/golden/questions.txt` deliberately: that file is a
+fixed baseline for comparing retrieval captures over time, and adding to it
+would invalidate every capture taken before.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 — A gene list gets an analysis (Priority: P1)
@@ -169,6 +266,20 @@ marked as external.
   it.
 - **FR-007**: With the new steps disabled, behaviour and call count MUST be exactly as
   today.
+- **FR-008**: An analysis request MUST be answered with what Reactome actually
+  performs. Reactome does over-representation analysis over an identifier list;
+  it does not do GSEA. A request naming GSEA MUST NOT be silently satisfied with
+  ORA — say which was run. Observed 2026-09-14: users ask for "a GSEA" meaning
+  "tell me what these genes are enriched for".
+- **FR-009**: A source that is configured but unavailable MUST be
+  distinguishable from a source that had no answer. The user guide falls back to
+  `reactome` with only a log line when its bundle is missing, so a routing
+  success and a missing bundle produce the same reply.
+- **FR-010**: The classifier MUST be able to decline. It currently returns one
+  of a closed set and cannot say "none of these" — measured 2026-09-14, "What is
+  the current price of a Nature subscription?" routes to `userguide`. The
+  downstream grader rescues that today; adding destinations without adding a way
+  to decline makes misrouting more confident, not less.
 
 ## Success Criteria *(mandatory)*
 
