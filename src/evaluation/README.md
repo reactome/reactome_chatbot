@@ -64,6 +64,35 @@ poetry run ./bin/evaluate --model gpt-4o-mini --repeat 3 --out report.json
 and every answer with its per-question scores — so a low score can be looked at
 rather than guessed about.
 
+### Surviving a run that goes wrong
+
+A run is bought, question by question, and `--out` is written only at the very
+end — after every model and every repeat. A rate limit on question 18 of 20 used
+to discard the seventeen already paid for.
+
+```bash
+# keep every answer as it is produced
+poetry run ./bin/evaluate --model gpt-4o-mini --transcript-log run.jsonl
+
+# answer four questions at once
+poetry run ./bin/evaluate --model gpt-4o-mini --concurrency 4
+```
+
+`--transcript-log` appends one JSON object per answer, flushed immediately, so
+whatever was bought survives the process that bought it.
+
+A question that fails no longer ends the run. It is named on stderr, listed
+under `failed_questions` in the report, and the remaining questions are scored
+without it — with the references re-aligned to the questions that survived. That
+alignment is the part worth knowing about: dropping a question from the middle
+and *not* re-aligning would score every later answer against the wrong
+reference, which produces numbers rather than an error.
+
+`--concurrency` raises the rate of calls to the provider, so it makes rate
+limits more likely — which is survivable now, and was not before. It does not
+change what is measured: questions are independent, and results are placed by
+index rather than appended as they arrive.
+
 ## What it measures, exactly
 
 The chain `create_reactome_rag` builds, asked the **rephrased** question — which
