@@ -36,7 +36,10 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         embedding: Embeddings,
     ) -> None:
         super().__init__(llm, embedding)
-        self.llm = llm
+        # A streaming copy, the same way the RAG chains get theirs. The UI
+        # displays only what the callback handler streams, so an answer
+        # produced without streaming is invisible however correct it is.
+        self.live_llm = llm.model_copy(update={"streaming": True})
 
         self.unsafe_answer_generator: Runnable = create_unsafe_answer_generator(
             llm, streaming=True
@@ -149,7 +152,9 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
             active_sources=active_sources,
         )
 
-    async def _answer_from_live_services(self, state: ReactToMeState) -> ReactToMeState:
+    async def _answer_from_live_services(
+        self, state: ReactToMeState, config: RunnableConfig
+    ) -> ReactToMeState:
         """Answer from the MCP tools instead of the vector store.
 
         If the server is unreachable the question falls back to retrieval, with
@@ -166,17 +171,19 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
             )
             fallback = dict(state)
             fallback["active_sources"] = ["reactome"]
-            return await self.generate_answer(
-                ReactToMeState(**fallback), RunnableConfig()
-            )
+            # The real config, not a fresh one: it carries the callbacks the UI
+            # streams through, and a fallback nobody can see is not a fallback.
+            return await self.generate_answer(ReactToMeState(**fallback), config)
 
         answer = await answer_from_live_services(
             # BaseChatModel satisfies ToolCallingModel at runtime; its
             # bind_tools signature is wider than the Protocol restates.
-            cast(ToolCallingModel, self.llm),
+            cast(ToolCallingModel, self.live_llm),
             tools,
             state["rephrased_input"],
             language=state["detected_language"],
+            chat_history=state["chat_history"] or None,
+            config=config,
         )
         return ReactToMeState(
             chat_history=[HumanMessage(state["user_input"]), AIMessage(answer)],
@@ -207,7 +214,7 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
     ) -> ReactToMeState:
         source = state["active_sources"][0]
         if source == "live":
-            return await self._answer_from_live_services(state)
+            return await self._answer_from_live_services(state, config)
         rag = self.rags[source]
         result: dict[str, Any] = await rag.ainvoke(
             {

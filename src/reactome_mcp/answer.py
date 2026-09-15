@@ -12,6 +12,7 @@ found", and a cap means a confused model cannot spend a user's afternoon.
 """
 
 import logging
+from collections.abc import Sequence
 from typing import Any, Protocol, runtime_checkable
 
 from langchain_core.messages import (
@@ -20,6 +21,7 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 
 logger = logging.getLogger(__name__)
@@ -60,9 +62,16 @@ async def answer_from_live_services(
     tools: list[BaseTool],
     question: str,
     language: str = "English",
-    chat_history: list[BaseMessage] | None = None,
+    chat_history: Sequence[BaseMessage] | None = None,
+    config: RunnableConfig | None = None,
 ) -> str:
-    """Run the tool-calling loop and return the answer text."""
+    """Run the tool-calling loop and return the answer text.
+
+    `config` is not optional in practice. It carries the callback handlers, and
+    the Chainlit UI displays only what those handlers stream -- `chat-chainlit.py`
+    reads `chainlit_cb.final_stream` and has no path that posts the returned
+    string. Without it this function answers correctly into the void.
+    """
     by_name = {tool.name: tool for tool in tools}
     bound = llm.bind_tools(tools)
 
@@ -73,7 +82,7 @@ async def answer_from_live_services(
     ]
 
     for _round in range(MAX_TOOL_ROUNDS):
-        reply = await bound.ainvoke(messages)
+        reply = await bound.ainvoke(messages, config)
         messages.append(reply)
 
         calls = getattr(reply, "tool_calls", None) or []
@@ -111,7 +120,7 @@ async def answer_from_live_services(
                 "Answer now, from the tool results above. Do not call more tools."
             )
         )
-        reply = await llm.ainvoke(messages)
+        reply = await llm.ainvoke(messages, config)
 
     content: Any = reply.content
     if isinstance(content, list):
