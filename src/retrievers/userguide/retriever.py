@@ -32,6 +32,6 @@ def create_userguide_retriever(
     vectordb = Chroma(
         persist_directory=str(chroma_path),
         embedding_function=embedding,
-        client_settings=chroma_settings,
+        client_settings=chroma_settings(),
     )
     return vectordb.as_retriever(search_kwargs={"k": k})

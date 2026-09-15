@@ -21,7 +21,32 @@ from langchain_core.runnables import Runnable
 from nltk.tokenize import word_tokenize
 from pydantic import ConfigDict
 
-chroma_settings = chromadb.config.Settings(anonymized_telemetry=False)
+
+def chroma_settings() -> chromadb.config.Settings:
+    """A *fresh* Settings object for every Chroma store.
+
+    Not a shared constant, which is what this was. `langchain_chroma` mutates
+    whatever it is handed:
+
+        client_settings.persist_directory = (
+            persist_directory or client_settings.persist_directory
+        )
+
+    so one shared instance means the last store constructed rewrites the
+    persist directory for every earlier one, and chromadb hands back a client
+    keyed on those settings. With only the reactome bundle installed nothing
+    showed, because every store pointed at the same tree. Installing the user
+    guide bundle gave them different trees, and a reactome question started
+    looking for its collection inside the user guide directory:
+
+        PermissionError: [Errno 13] Permission denied:
+        '/app/embeddings/.../userguide/Release95/sections/9c574827-...'
+
+    -- Chroma trying to create a segment folder for a collection that is not
+    there, in a bundle it should never have opened.
+    """
+    return chromadb.config.Settings(anonymized_telemetry=False)
+
 
 multi_query_prompt = PromptTemplate(
     input_variables=["question"],
@@ -274,7 +299,7 @@ class HybridRetriever(BaseRetriever):
             vectordb = Chroma(
                 persist_directory=str(embeddings_directory / subdirectory),
                 embedding_function=embedding,
-                client_settings=chroma_settings,
+                client_settings=chroma_settings(),
             )
             vector_retriever = vectordb.as_retriever(
                 search_kwargs={"k": RESULTS_PER_RETRIEVER * VECTOR_OVERFETCH}
