@@ -60,6 +60,34 @@ not because the tool exists.
 
 ## Transport
 
+Two, and which one you can use depends on where this runs.
+
+| variable | transport | where |
+|---|---|---|
+| `REACTOME_MCP_URL` | Streamable HTTP | **anywhere**, including the container |
+| `REACTOME_MCP_SERVER` | stdio, spawning `node` | a developer's machine only |
+
+`REACTOME_MCP_URL` wins when both are set.
+
+**stdio cannot work in the deployed container.** The image is Python: it has no
+`node`, and it does not mount reactome-mcp. `REACTOME_MCP_SERVER` can never be
+satisfied there, so the live destination worked on every machine it was tested
+on and none that it ships to. That is why the HTTP transport exists.
+
+To run one alongside the chatbot:
+
+```bash
+cd ~/git/reactome-mcp && npm ci && npm run build
+MCP_HTTP_PORT=4320 node dist/http-server.js
+# then, for the chatbot:
+REACTOME_MCP_URL=http://127.0.0.1:4320
+```
+
+reactome-mcp binds loopback by default; see `specs/002-transport-and-hosting`
+in that repository for why, and for the shape of a hosted deployment.
+
+## Transport internals
+
 stdio, by spawning the server. reactome-mcp also serves Streamable HTTP, so a
 hosted instance can be used instead once there is one; that is
 `specs/006-mcp-hosting`. Keeping the transport inside `MCPProcessManager` is

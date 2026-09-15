@@ -25,25 +25,32 @@ from pathlib import Path
 from langchain_core.tools import BaseTool
 
 from reactome_mcp.client import MCPClient
+from reactome_mcp.http_client import MCPHttpClient
 from reactome_mcp.process import MCPConnectionError, MCPProcessManager
-from reactome_mcp.tools import create_mcp_tools
+from reactome_mcp.tools import ToolCaller, create_mcp_tools
 
 logger = logging.getLogger(__name__)
 
 _lock = asyncio.Lock()
 _manager: MCPProcessManager | None = None
+_http: MCPHttpClient | None = None
 _tools: list[BaseTool] | None = None
 _failed = False
 
 
 def mcp_server_path() -> Path | None:
-    """Where the MCP server is, if this deployment has one."""
+    """A local server to spawn, if one is configured."""
     configured = os.getenv("REACTOME_MCP_SERVER")
     return Path(configured) if configured else None
 
 
+def mcp_server_url() -> str | None:
+    """A running server to connect to, if one is configured."""
+    return os.getenv("REACTOME_MCP_URL") or None
+
+
 def is_configured() -> bool:
-    return mcp_server_path() is not None
+    return mcp_server_url() is not None or mcp_server_path() is not None
 
 
 async def get_mcp_tools() -> list[BaseTool] | None:
@@ -68,19 +75,30 @@ async def get_mcp_tools() -> list[BaseTool] | None:
         if _failed:
             return None
 
+        url = mcp_server_url()
         server_path = mcp_server_path()
-        if server_path is None:
-            return None
+        # HTTP first. The deployed image is Python with no node and does not
+        # mount reactome-mcp, so spawning one cannot work there -- stdio is for
+        # a developer's machine, where the repo and node both exist.
+        where = url or str(server_path)
         try:
-            manager = MCPProcessManager(server_path)
-            await manager.start()
-            if manager.process is None:
-                raise MCPConnectionError("server did not start")
-            client = MCPClient(manager.process)
-            # The handshake is the readiness check: if this returns, the server
-            # is up and answering.
-            await client.initialize()
-            _manager = manager
+            client: ToolCaller
+            if url is not None:
+                http = MCPHttpClient(url)
+                # The handshake is the readiness check: if this returns, the
+                # server is up and answering.
+                await http.initialize()
+                _http, client = http, http
+            elif server_path is not None:
+                manager = MCPProcessManager(server_path)
+                await manager.start()
+                if manager.process is None:
+                    raise MCPConnectionError("server did not start")
+                stdio = MCPClient(manager.process)
+                await stdio.initialize()
+                _manager, client = manager, stdio
+            else:
+                return None
             _tools = create_mcp_tools(client)
         except Exception as exc:
             _failed = True
@@ -94,7 +112,7 @@ async def get_mcp_tools() -> list[BaseTool] | None:
                 "MCP server unavailable (%s); live Reactome tools are off for this "
                 "process. Checked %s.%s",
                 exc,
-                server_path,
+                where,
                 f" Server said: {stderr}" if stderr else "",
             )
             return None
@@ -104,10 +122,12 @@ async def get_mcp_tools() -> list[BaseTool] | None:
 
 
 async def shutdown() -> None:
-    global _manager, _tools
+    global _manager, _http, _tools
     if _manager is not None:
         await _manager.stop()
-    _manager, _tools = None, None
+    if _http is not None:
+        await _http.aclose()
+    _manager, _http, _tools = None, None, None
 
 
 def _terminate_at_exit() -> None:
