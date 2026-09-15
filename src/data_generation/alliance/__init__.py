@@ -15,13 +15,10 @@ its behaviour is unverified even where the code still type-checks.
 import os
 
 import requests
-import torch
 from langchain_community.vectorstores import Chroma
-from langchain_core.embeddings import Embeddings
-from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
-from langchain_openai import OpenAIEmbeddings
 
 from data_generation.alliance.csv_generator import generate_all_csvs
+from data_generation.embeddings import build_embeddings
 from data_generation.metadata_csv_loader import MetaDataCSVLoader
 
 
@@ -273,26 +270,7 @@ def upload_to_chromadb(
                 csv_args={"delimiter": "\t"},
             )
             docs = loader.load()
-            embeddings: Embeddings
-
-            # Select embeddings model based on hf_model
-            if hf_model is None:  # Use OpenAI
-                embeddings = OpenAIEmbeddings()
-            elif hf_model.startswith("openai/text-embedding-"):
-                embeddings = OpenAIEmbeddings(model=hf_model[len("openai/") :])
-            elif "HUGGINGFACEHUB_API_TOKEN" in os.environ:
-                embeddings = HuggingFaceEndpointEmbeddings(
-                    huggingfacehub_api_token=os.environ["HUGGINGFACEHUB_API_TOKEN"],
-                    model=hf_model,
-                )
-            else:
-                if device == "cuda":
-                    torch.cuda.empty_cache()
-                embeddings = HuggingFaceEmbeddings(
-                    model_name=hf_model,
-                    model_kwargs={"device": device, "trust_remote_code": True},
-                    encode_kwargs={"batch_size": 12, "normalize_embeddings": False},
-                )
+            embeddings = build_embeddings(hf_model, device)
 
             db = Chroma.from_documents(
                 documents=docs,
