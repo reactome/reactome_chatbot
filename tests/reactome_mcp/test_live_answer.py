@@ -36,6 +36,7 @@ class _FakeLLM:
         self._replies = list(replies)
         self.seen: list[list[Any]] = []
         self.bound_tools: list[Any] = []
+        self.configs: list[Any] = []
 
     def bind_tools(self, tools: Any, **kwargs: Any) -> "_FakeLLM":
         self.bound_tools = tools
@@ -43,6 +44,7 @@ class _FakeLLM:
 
     async def ainvoke(self, messages: Any, *args: Any, **kwargs: Any) -> AIMessage:
         self.seen.append(list(messages))
+        self.configs.append(args[0] if args else kwargs.get("config"))
         return self._replies.pop(0) if self._replies else AIMessage("out of replies")
 
 
@@ -152,3 +154,67 @@ def test_content_blocks_are_flattened() -> None:
     llm = _FakeLLM([AIMessage([{"type": "text", "text": "96 species."}])])
     answer = asyncio.run(answer_from_live_services(llm, [reactome_species], "x"))
     assert answer == "96 species."
+
+
+def test_the_config_reaches_every_model_call() -> None:
+    """Without this the answer is correct and invisible.
+
+    The Chainlit UI displays only what the callback handlers stream --
+    `chat-chainlit.py` reads `chainlit_cb.final_stream` and has no path that
+    posts the returned string. The callbacks travel in the RunnableConfig, so a
+    config that is dropped anywhere in this loop means the user sees nothing at
+    all while the tests pass.
+
+    Shipped exactly that way on 2026-09-15: measured 0 streamed tokens for a
+    live answer, against 103 after the fix.
+    """
+    config = {"callbacks": ["sentinel"]}
+    llm = _FakeLLM(
+        [
+            AIMessage("", tool_calls=[_call("reactome_species")]),
+            AIMessage("Reactome covers 96 species."),
+        ]
+    )
+    asyncio.run(
+        answer_from_live_services(llm, [reactome_species], "x", config=config)  # type: ignore[arg-type]
+    )
+
+    assert llm.configs, "the model was never invoked"
+    assert all(
+        c == config for c in llm.configs
+    ), f"a model call lost the config: {llm.configs}"
+
+
+def test_the_config_reaches_the_forced_final_answer_too() -> None:
+    """The round cap takes a different path out of the loop, and it needs the
+    config just as much -- that call is the one that produces the text."""
+    config = {"callbacks": ["sentinel"]}
+    llm = _FakeLLM(
+        [
+            AIMessage("", tool_calls=[_call("reactome_species", str(i))])
+            for i in range(10)
+        ]
+    )
+    asyncio.run(
+        answer_from_live_services(llm, [reactome_species], "x", config=config)  # type: ignore[arg-type]
+    )
+
+    assert all(c == config for c in llm.configs)
+
+
+def test_chat_history_is_carried_into_the_conversation() -> None:
+    """A follow-up such as "can you tell me?" is meaningless without it."""
+    from langchain_core.messages import HumanMessage
+
+    history = [HumanMessage("what species are in reactome")]
+    llm = _FakeLLM([AIMessage("96 species.")])
+    asyncio.run(
+        answer_from_live_services(
+            llm, [reactome_species], "can you tell me?", chat_history=history
+        )
+    )
+
+    sent = llm.seen[0]
+    assert any(
+        isinstance(m, HumanMessage) and "what species" in str(m.content) for m in sent
+    ), "the history never reached the model"
