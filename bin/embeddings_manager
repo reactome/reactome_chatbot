@@ -131,8 +131,31 @@ def rm(embedding: EmbeddingSelection):
 
 
 def ls():
-    for embedding_path in EM_ARCHIVE.glob("*/*/*/*/"):
-        print(embedding_path.relative_to(EM_ARCHIVE))
+    """Installed bundles, and whether the app can actually see each one.
+
+    Installing a bundle and registering it are separate steps -- `use()` writes
+    `embeddings/current`, and the app reads only what is listed there. A bundle
+    present on disk but absent from that file is invisible, and the symptom is
+    not an error: the source silently falls back, retrieval answers from the
+    wrong store, and the model reports the result as fact. That happened on
+    2026-09-14 with the user guide bundle, and cost a round trip to notice.
+    """
+    active = set(EmbeddingEnvironment.get_dict().values())
+    unregistered = []
+    for embedding_path in sorted(EM_ARCHIVE.glob("*/*/*/*/")):
+        relative = embedding_path.relative_to(EM_ARCHIVE)
+        if relative in active:
+            print(f"  * {relative}")
+        else:
+            print(f"    {relative}")
+            unregistered.append(relative)
+
+    if unregistered:
+        print(
+            f"\n  * = active. {len(unregistered)} bundle(s) are installed but not "
+            f"registered, so the app cannot see them.\n"
+            f"  Register one with:  ./bin/embeddings_manager use <embedding-id>"
+        )
 
 
 def ls_remote():

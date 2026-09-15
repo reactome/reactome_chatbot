@@ -2,13 +2,10 @@ import os
 from pathlib import Path
 from shutil import rmtree
 
-import torch
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
-from langchain_core.embeddings import Embeddings
-from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
-from langchain_openai import OpenAIEmbeddings
 
+from data_generation.embeddings import build_embeddings
 from data_generation.userguide.fetch import fetch_userguide_pages
 from data_generation.userguide.html_loader import UserGuideHTMLLoader
 from data_generation.userguide.urls import USER_GUIDE_URLS
@@ -24,31 +21,7 @@ def upload_to_chromadb(
     hf_model: str | None = None,
     device: str | None = None,
 ) -> Chroma:
-    embeddings_instance: Embeddings
-    if hf_model is None:  # Use OpenAI
-        embeddings_instance = OpenAIEmbeddings(
-            chunk_size=500,
-            show_progress_bar=True,
-        )
-    elif hf_model.startswith("openai/text-embedding-"):
-        embeddings_instance = OpenAIEmbeddings(
-            model=hf_model[len("openai/") :],
-            chunk_size=500,
-            show_progress_bar=True,
-        )
-    elif "HUGGINGFACEHUB_API_TOKEN" in os.environ:
-        embeddings_instance = HuggingFaceEndpointEmbeddings(
-            huggingfacehub_api_token=os.environ["HUGGINGFACEHUB_API_TOKEN"],
-            model=hf_model,
-        )
-    else:
-        if device == "cuda":
-            torch.cuda.empty_cache()
-        embeddings_instance = HuggingFaceEmbeddings(
-            model_name=hf_model,
-            model_kwargs={"device": device, "trust_remote_code": True},
-            encode_kwargs={"batch_size": 12, "normalize_embeddings": False},
-        )
+    embeddings_instance = build_embeddings(hf_model, device, chunk_size=500)
 
     return Chroma.from_documents(
         documents=docs,

@@ -1,12 +1,9 @@
 import os
 from pathlib import Path
 
-import torch
 from langchain_community.vectorstores import Chroma
-from langchain_core.embeddings import Embeddings
-from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
-from langchain_openai import OpenAIEmbeddings
 
+from data_generation.embeddings import build_embeddings
 from data_generation.metadata_csv_loader import MetaDataCSVLoader
 from data_generation.reactome.csv_generator import generate_all_csvs
 from data_generation.reactome.neo4j_connector import Neo4jConnector
@@ -56,31 +53,7 @@ def upload_to_chromadb(
         encoding="utf-8",
     )
     docs = loader.load()
-    embeddings_instance: Embeddings
-    if hf_model is None:  # Use OpenAI
-        embeddings_instance = OpenAIEmbeddings(
-            chunk_size=400,
-            show_progress_bar=True,
-        )
-    elif hf_model.startswith("openai/"):
-        embeddings_instance = OpenAIEmbeddings(
-            model=hf_model[len("openai/") :],
-            chunk_size=400,
-            show_progress_bar=True,
-        )
-    elif "HUGGINGFACEHUB_API_TOKEN" in os.environ:
-        embeddings_instance = HuggingFaceEndpointEmbeddings(
-            huggingfacehub_api_token=os.environ["HUGGINGFACEHUB_API_TOKEN"],
-            model=hf_model,
-        )
-    else:
-        if device == "cuda":
-            torch.cuda.empty_cache()
-        embeddings_instance = HuggingFaceEmbeddings(
-            model_name=hf_model,
-            model_kwargs={"device": device, "trust_remote_code": True},
-            encode_kwargs={"batch_size": 12, "normalize_embeddings": False},
-        )
+    embeddings_instance = build_embeddings(hf_model, device, chunk_size=400)
 
     return Chroma.from_documents(
         documents=docs,
