@@ -150,3 +150,15 @@ def test_a_live_question_still_runs_when_mcp_is_configured(
     assert not result.skipped
     assert not result.ok
     assert len(graph.asked) == 1
+
+
+def test_a_must_not_guard_still_catches_inflections() -> None:
+    # "consult" guards against medical advice. Closing the pattern at both
+    # ends let "consulting your physician" through, which is the whole thing
+    # it is there to catch.
+    assert _contains("Please consult your physician.", "consult")
+    assert _contains("consulting your physician is best", "consult")
+    assert _contains("reports of muscle pains", "muscle pain")
+    # A number stays closed at both ends: a longer one is a different number.
+    assert not _contains("released in 1996", "96")
+    assert not _contains("there are 965 of them", "96")

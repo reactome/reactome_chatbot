@@ -173,7 +173,12 @@ def _contains(haystack: str, needle: str) -> bool:
     pattern = re.escape(needle)
     if needle[:1].isalnum():
         pattern = r"\b" + pattern
-    if needle[-1:].isalnum():
+    # Closed at the end only for a number, where a longer one is a different
+    # number: "96" must not match "1996" or "965". A word is left open,
+    # because its inflections are the same word and a `must_not` has to catch
+    # them -- "consult" is a medical-advice guard, and the answer that trips
+    # it says "consulting your physician".
+    if needle[-1:].isdigit():
         pattern = pattern + r"\b"
     return re.search(pattern, haystack, re.IGNORECASE) is not None
 
