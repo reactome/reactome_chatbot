@@ -40,7 +40,9 @@ reactome_field_info: dict[str, list[AttributeInfo]] = {
         AttributeInfo(
             name="disease_id",
             description="Disease Ontology identifier, e.g. DOID:1388 for "
-            "Tangier disease. Matches `disease` position for position.",
+            "Tangier disease. DOID throughout, and lines up with `disease` "
+            "position for position. Not to be confused with `cross_references`, "
+            "which mixes a Mondo disease id with COSMIC and ClinVar variant ids.",
             type="string",
         ),
         AttributeInfo(

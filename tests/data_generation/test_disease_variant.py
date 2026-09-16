@@ -127,3 +127,26 @@ def test_every_renamed_column_is_used_somewhere() -> None:
     # A column renamed but left out of both lists is silently dropped.
     used = set(CONTENT_COLUMNS) | set(METADATA_COLUMNS)
     assert set(COLUMNS.values()) - used == set()
+
+
+def test_regenerating_replaces_rather_than_appends(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Chroma.from_documents appends. Twice would double the collection.
+
+    Every variant stored twice, with no error: the bundle would look fine and
+    retrieve the same document twice in a result set.
+    """
+    from langchain_core.embeddings import FakeEmbeddings
+
+    import data_generation.disease_variant as dv
+
+    monkeypatch.setattr(dv, "build_embeddings", lambda *a, **k: FakeEmbeddings(size=8))
+    tsv = _tsv(
+        tmp_path, [ROW, dict(ROW, stable_id="R-HSA-2", displayName="ABCA1 N935S")]
+    )
+
+    first = dv.generate_disease_variant_embeddings(str(tmp_path), tsv)
+    assert first._collection.count() == 2
+    second = dv.generate_disease_variant_embeddings(str(tmp_path), tsv)
+    assert second._collection.count() == 2, "regenerating must not append"

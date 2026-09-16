@@ -14,8 +14,10 @@ collection can be built when the others cannot.
 
 import csv
 import os
+import shutil
 from pathlib import Path
 
+from chromadb.api.client import SharedSystemClient
 from langchain_chroma import Chroma
 
 from data_generation.embeddings import build_embeddings
@@ -44,9 +46,14 @@ COLUMNS: dict[str, str] = {
     "entityWithAccessionedSequence_pathway_normalPathway_goBiologicalProcess_displayName": "normal_process",
     # Identifiers. Kept out of the embedded text -- nobody types R-HSA-5682201
     # at a chatbot, and embedding it costs tokens in every document.
+    # `cross_references` is deliberately not called a disease identifier: it
+    # carries a Mondo disease id on every row AND COSMIC, ClinVar, ClinGen or
+    # LOVD *variant* ids on thousands of them (4,239 rows have a COSMIC id).
+    # The disease identifier proper is `disease_id`, which is DOID throughout
+    # and lines up with `disease` position for position on all 6,294 rows.
     "stable_id": "st_id",
     "referenceEntity_id": "uniprot_id",
-    "cross_reference": "disease_cross_reference",
+    "cross_reference": "cross_references",
     "disease_identifier": "disease_id",
     "entityWithAccessionedSequence_reactionLikeEvent_stable_id": "reaction_id",
     "entityWithAccessionedSequence_pathway_stable_id": "disease_pathway_id",
@@ -81,7 +88,7 @@ METADATA_COLUMNS: list[str] = [
     "uniprot_id",
     "disease",
     "disease_id",
-    "disease_cross_reference",
+    "cross_references",
     "mutation_type",
     "reaction_id",
     "disease_pathway_id",
@@ -147,6 +154,18 @@ def generate_disease_variant_embeddings(
     csv_path = bundle / "csv_files" / f"{COLLECTION}.csv"
     count = write_csv(Path(tsv_path), csv_path)
     print(f"  wrote {csv_path} ({count} variants)")
+
+    # Chroma.from_documents appends to whatever is already in the directory, so
+    # a second run would silently double the collection -- 12,588 documents,
+    # every variant twice, and no error anywhere. Regeneration replaces.
+    persist = bundle / COLLECTION
+    if persist.exists():
+        shutil.rmtree(persist)
+        # chromadb caches one system client per path. Removing the directory
+        # underneath it leaves that client pointing at a deleted sqlite file,
+        # and the next write fails with "attempt to write a readonly database".
+        SharedSystemClient.clear_system_cache()
+        print(f"  removed the previous {COLLECTION} collection")
 
     loader = MetaDataCSVLoader(
         file_path=str(csv_path),
