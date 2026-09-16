@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import sys
 import re
 from argparse import ArgumentParser
 from pathlib import Path, PurePosixPath
@@ -11,6 +12,13 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import boto3
 from botocore import UNSIGNED
 from botocore.client import Config
+
+
+# Run from anywhere without setting PYTHONPATH, like the other bin/ scripts.
+# The Dockerfile and CI both set it (`/app/src`, `./bin:./src`), so importing
+# worked there and nowhere else -- including in this script's own documented
+# usage.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from data_generation.alliance import generate_alliance_embeddings
 from data_generation.reactome import generate_reactome_embeddings

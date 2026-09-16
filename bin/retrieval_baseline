@@ -38,6 +38,13 @@ from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 from nltk.tokenize import word_tokenize
 
+
+# Run from anywhere without setting PYTHONPATH, like the other bin/ scripts.
+# The Dockerfile and CI both set it (`/app/src`, `./bin:./src`), so importing
+# worked there and nowhere else -- including in this script's own documented
+# usage.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
 from agent.models import get_embedding, get_llm
 from retrievers.csv_chroma import (
     VECTOR_OVERFETCH,
