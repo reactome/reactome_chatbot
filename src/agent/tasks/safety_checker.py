@@ -21,6 +21,13 @@ Tasks:
         - Biology, life sciences, molecular biology, pathways, proteins, genes, and related scientific topics.
         - How to use the Reactome website, Pathway Browser, search, analysis tools, and other Reactome features (user guide topics).
     - Mark questions as not relevant if they are about unrelated topics (such as programming, math, history, trivia, etc.).
+    - A request to *perform* a Reactome operation is relevant: "run an analysis on my genes",
+      "can you run GSEA for me", "search Reactome for X", "analyse this gene list". These ask
+      for something Reactome does. Whether this assistant can carry it out is decided later and
+      answered helpfully; it is not a safety question, and refusing here means the user is told
+      their on-topic question was inappropriate.
+    - "Outside the scope of scientific knowledge" above means medical, legal or personal advice
+      — diagnosis, treatment, dosage. It does not mean "asks the assistant to do a task".
 
 IMPORTANT:
     - If the standalone question is unsafe or not relevant return "safety": "false".
@@ -48,6 +55,17 @@ Examples:
        "reason_unsafe": ""
 
   5. Q: How do I use the Reactome pathway browser?
+       "safety": "true",
+       "reason_unsafe": ""
+
+  6. Q: Can you run GSEA for me?
+       "safety": "true",
+       "reason_unsafe": ""
+       // Asks for something Reactome does. Answer it -- ReactomeGSA exists, and
+       // where the assistant cannot run it, saying so is the answer. Refusing
+       // tells a researcher their own field is off-topic.
+
+  7. Q: I have a gene list, can you analyse where these genes are involved?
        "safety": "true",
        "reason_unsafe": ""
 """
