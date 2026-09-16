@@ -40,7 +40,14 @@ _RULES = """Rules:
 
 _LIVE_RULE = """- If the user asks what the database *contains* or *covers*, rather than asking about the
   biology in it, choose **live**. "What does CDK5 do?" is **reactome**; "does Reactome have
-  CDK5?" is **live**."""
+  CDK5?" is **live**.
+- Naming or listing curated entities is **reactome**, not **live**. "Which ABCA1 variants
+  are there?" and "which diseases involve PTEN variants?" are answered from stored
+  documents, which hold the variants themselves. The line is scope versus content:
+  **live** answers how many, which species, which release, and whether a thing exists at
+  all; **reactome** answers what is curated about a given gene, disease or pathway --
+  including listing it. A question naming a specific gene or disease is almost always
+  **reactome**."""
 
 _SOURCE_BLOCKS: dict[SourceName, str] = {
     "reactome": _REACTOME_SOURCE,
