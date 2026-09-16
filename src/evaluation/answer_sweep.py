@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 
 from agent.graph import AgentGraph
 from agent.profile_names import ProfileName
+from reactome_mcp.session import is_configured
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,10 @@ class Expectation:
     # For facts whose exact value legitimately changes -- the release number
     # becomes 98 shortly, so asserting "97" would fail on a correct answer.
     must_match: tuple[str, ...] = ()
+    # Only answerable against the live service. Run without an MCP server --
+    # a plain local checkout -- these cannot pass, and reporting them as
+    # regressions is how a gate teaches people to ignore it.
+    needs_live: bool = False
 
 
 EXPECTATIONS: tuple[Expectation, ...] = (
@@ -87,8 +92,12 @@ EXPECTATIONS: tuple[Expectation, ...] = (
         question="what species are in reactome",
         why="Retrieval answered 'primarily Homo sapiens ... no indications of other "
         "species'. Reactome has 96. A sample of the content cannot describe the scope.",
-        must=("96",),
+        # A count, not the literal 96, for the same reason as the release
+        # number below: it goes up, and a check that fails on a correct
+        # answer is a check that gets switched off.
+        must_match=(r"\b\d{2,3}\b",),
         must_not=("primarily Homo sapiens", "no indications"),
+        needs_live=True,
     ),
     Expectation(
         question="Which release of Reactome is this?",
@@ -96,9 +105,11 @@ EXPECTATIONS: tuple[Expectation, ...] = (
         # A plausible release number, rather than a literal: 97 becomes 98
         # shortly, and a check that fails on a correct answer gets disabled.
         # Releases are in the 90s now and will pass 100, so allow both.
-        must=("release",),
-        must_match=(r"\b(?:9\d|[1-9]\d\d)\b",),
+        # "release" and "version" are used interchangeably here, and the live
+        # answer says "version": requiring one word failed a correct answer.
+        must_match=(r"\b(?:release|version)\b", r"\b(?:9\d|[1-9]\d\d)\b"),
         must_not=("cannot", "do not have"),
+        needs_live=True,
     ),
     # --- ordinary retrieval, which an outage took down for a day ------------
     Expectation(
@@ -138,6 +149,7 @@ EXPECTATIONS: tuple[Expectation, ...] = (
 @dataclass
 class Result:
     expectation: Expectation
+    skipped: str = ""
     answer: str = ""
     seconds: float = 0.0
     error: str = ""
@@ -147,7 +159,7 @@ class Result:
 
     @property
     def ok(self) -> bool:
-        return not (self.error or self.missing or self.forbidden)
+        return bool(self.skipped) or not (self.error or self.missing or self.forbidden)
 
 
 def _contains(haystack: str, needle: str) -> bool:
@@ -184,8 +196,17 @@ def _looks_transient(result: "Result") -> bool:
 async def run(expectations: tuple[Expectation, ...], retries: int = 1) -> list[Result]:
     graph = AgentGraph([ProfileName.React_to_Me])
     results: list[Result] = []
+    live = is_configured()
     try:
         for index, expectation in enumerate(expectations, start=1):
+            if expectation.needs_live and not live:
+                results.append(
+                    Result(
+                        expectation=expectation,
+                        skipped="no MCP server configured ($REACTOME_MCP_URL)",
+                    )
+                )
+                continue
             print(
                 f"  [{index}/{len(expectations)}] {expectation.question[:60]}",
                 file=sys.stderr,
@@ -246,10 +267,14 @@ async def run(expectations: tuple[Expectation, ...], retries: int = 1) -> list[R
 def report(results: list[Result]) -> int:
     print()
     failures = [r for r in results if not r.ok]
+    skipped = [r for r in results if r.skipped]
     for r in results:
-        mark = "ok  " if r.ok else "FAIL"
+        mark = "skip" if r.skipped else ("ok  " if r.ok else "FAIL")
         note = "  (retried once)" if r.retried else ""
         print(f"  {mark} {r.seconds:5.1f}s  {r.expectation.question[:58]}{note}")
+        if r.skipped:
+            print(f"        {r.skipped}")
+            continue
         if r.error:
             print(f"        error: {r.error}")
         if r.missing:
@@ -263,9 +288,14 @@ def report(results: list[Result]) -> int:
             print(f"        answered: {r.answer[:160]}")
 
     total = sum(r.seconds for r in results)
-    print(
-        f"\n  {len(results) - len(failures)}/{len(results)} passed, {total:.0f}s total"
-    )
+    ran = len(results) - len(skipped)
+    print(f"\n  {ran - len(failures)}/{ran} passed, {total:.0f}s total")
+    if skipped:
+        print(
+            f"  {len(skipped)} skipped: they need the live service, so a local run"
+            " cannot check them."
+        )
+        print("  The deploy runs this inside the container, where MCP is configured.")
     if failures:
         print(
             "  A failure here is a question the chatbot used to get wrong and does again."

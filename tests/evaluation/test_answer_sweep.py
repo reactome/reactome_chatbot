@@ -116,3 +116,37 @@ def test_every_expectation_asserts_something() -> None:
     for expectation in EXPECTATIONS:
         assert expectation.must or expectation.must_not or expectation.must_match
         assert expectation.why, f"{expectation.question} does not say why"
+
+
+LIVE = (
+    Expectation(
+        question="Which release of Reactome is this?",
+        why="The bundle is a snapshot and cannot know.",
+        must=("release",),
+        needs_live=True,
+    ),
+)
+
+
+def test_a_live_question_is_skipped_when_there_is_no_mcp(
+    stub: Install, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    graph = stub(["I have no idea."])
+    monkeypatch.setattr("evaluation.answer_sweep.is_configured", lambda: False)
+    (result,) = asyncio.run(run(LIVE))
+    assert result.skipped
+    assert result.ok, "a skip is not a failure"
+    assert graph.asked == [], "it should not have been asked at all"
+
+
+def test_a_live_question_still_runs_when_mcp_is_configured(
+    stub: Install, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The dangerous direction: skipping these inside the container would
+    # quietly stop checking the questions the live service exists to answer.
+    graph = stub(["I have no idea."])
+    monkeypatch.setattr("evaluation.answer_sweep.is_configured", lambda: True)
+    (result,) = asyncio.run(run(LIVE))
+    assert not result.skipped
+    assert not result.ok
+    assert len(graph.asked) == 1
