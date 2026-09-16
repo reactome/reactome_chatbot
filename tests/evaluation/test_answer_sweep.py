@@ -162,3 +162,37 @@ def test_a_must_not_guard_still_catches_inflections() -> None:
     # A number stays closed at both ends: a longer one is a different number.
     assert not _contains("released in 1996", "96")
     assert not _contains("there are 965 of them", "96")
+
+
+COLLECTION = (
+    Expectation(
+        question="List the ABCA1 variants in Reactome.",
+        why="Pathway-level prose instead of the variant.",
+        must=("W590S",),
+        needs_collection="disease_variants",
+    ),
+)
+
+
+def test_a_question_is_skipped_when_its_collection_is_not_installed(
+    stub: Install, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    graph = stub(["Defective ABCA1 causes Tangier Disease."])
+    monkeypatch.setattr("evaluation.answer_sweep._has_collection", lambda _n: False)
+    (result,) = asyncio.run(run(COLLECTION))
+    assert result.skipped
+    assert result.ok
+    assert graph.asked == []
+
+
+def test_it_runs_once_the_collection_is_installed(
+    stub: Install, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The direction that matters: once the bundle ships, this must actually be
+    # checked rather than skipped forever.
+    graph = stub(["Defective ABCA1 causes Tangier Disease."])
+    monkeypatch.setattr("evaluation.answer_sweep._has_collection", lambda _n: True)
+    (result,) = asyncio.run(run(COLLECTION))
+    assert not result.skipped
+    assert not result.ok
+    assert len(graph.asked) == 1

@@ -276,6 +276,12 @@ if __name__ == "__main__":
         action="store_true",
         help="Force regeneration of CSV files"
     )
+    make_parser.add_argument(
+        "--disease-variant-tsv",
+        help="disease_variant_ewas_mapping.tsv from the release download "
+             "directory. Adds the disease_variants collection, which is built "
+             "from that file rather than from Neo4j.",
+    )
 
     args = parser.parse_args()
     func = args.func

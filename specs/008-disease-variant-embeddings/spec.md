@@ -4,7 +4,8 @@
 
 **Created**: 2026-09-16
 
-**Status**: Draft. Two decisions (D1, D2) for the team.
+**Status**: Implemented. Both decisions were delegated back and are recorded below,
+with one of the original recommendations withdrawn as impossible.
 
 **Input**: Add disease and variant data to the embeddings, from
 `disease_variant_ewas_mapping.tsv` in the release download directory. Do it as a new
@@ -73,39 +74,58 @@ and should be dropped (`normal_reaction_like_event_go_biological_process_*`, 6.3
 
 ## Decisions
 
-### D1 -- what goes in the embedded text, and what stays metadata
+Both were delegated: *"I think you should decide on the columns ... make your best
+design and go ahead."*
 
-`MetaDataCSVLoader` takes `content_columns` and `metadata_columns`. Getting this wrong
-is how a collection retrieves badly: stable IDs embedded as text add tokens and match
-nothing a person types.
+### D1 -- what is embedded, and what is metadata: decided
 
-Recommendation -- content: `Genename`, `displayName`, `hasModifiedResidue_displayName`,
-`disease`, the reaction and pathway `displayName`s, and the *normal* reaction and
-pathway `displayName`s. Metadata (filterable, not embedded): every `stable_id`,
-`referenceEntity_id`, `disease_identifier`, `cross_reference`, `modifiedResidue_class`,
-PubMed identifiers.
+The loader renders each field as `name: value`, so the **column names are embedded
+too**. The release names are the query paths that produced them, up to 104 characters
+of `entityWithAccessionedSequence_reactionLikeEvent_entityFunctionalStatus_...`. Left
+alone they would contribute more tokens than the values, identically in every
+document. They are renamed to what a person would call them.
 
-The normal-counterpart names belong in content because "what is the healthy version of
-this reaction" is a question the chain uniquely answers.
-
-### D2 -- the pipe-delimited `disease` field
-
-33% of rows (2,105) carry more than one disease in one field, up to nineteen:
+Embedded: `gene`, `variant`, `protein`, `residue_change`, `mutation_type`, `disease`,
+`reaction`, `functional_status`, `disease_pathway`, `normal_reaction`,
+`normal_pathway`, `normal_process`. A document reads:
 
 ```
-Barrett's esophagus|esophagus squamous cell carcinoma|brain meningioma|...|astrocytoma
+gene: ABCA1
+variant: ABCA1 W590S [plasma membrane]
+residue_change: L-tryptophan 590 replaced with L-serine
+mutation_type: ReplacedResidue
+disease: Tangier disease
+reaction: Defective ABCA1 does not transport CHOL from transport vesicle membrane...
+functional_status: loss_of_function
+normal_reaction: 4xPALM-C-p-2S-ABCA1 tetramer transports CHOL from transport vesicle...
 ```
 
-Left as-is, "968 diseases" is really 443, a search for `melanoma` competes with a
-wall of unrelated text in the same document, and the metadata value is unfilterable.
+Metadata, not embedded: every identifier -- `st_id`, `uniprot_id`, `disease_id`,
+`disease_cross_reference`, and the four Reactome stable IDs. Nobody types
+`R-HSA-5682201` at a chatbot, and embedding it costs tokens in every document. The
+variant's own identifier is named **`st_id`** because that is the key `csv_chroma`
+de-duplicates on; a different name would silently disable de-duplication here.
 
-Options: (a) leave as-is, simplest, retrieval suffers on the long ones; (b) split into
-a list for metadata, keep the joined string in content; (c) one document per
-variant-disease pair, which fixes retrieval but inflates 6,294 rows to ~10,000
-documents and repeats the variant text.
+Dropped: the two `go_biological_process` columns at 6.3% fill, and
+`first_entitySet`. A column empty in 94% of documents earns nothing and costs a line
+of `name:` in every one.
 
-Recommendation: **(b)**. It costs nothing at generation time and makes the identifiers
-usable, without multiplying near-duplicate documents.
+Median document: 556 characters, about 140 tokens.
+
+### D2 -- the pipe-delimited `disease` field: decided, and the earlier recommendation withdrawn
+
+This spec first recommended splitting the field into a list for metadata. **That is
+not possible**: Chroma accepts only `str`, `int`, `float` or `bool` as a metadata
+value and rejects a list outright.
+
+Fanning out to one document per variant-disease pair was measured rather than
+estimated: 6,294 documents become **10,500** (+67%), and `p16INK4A R80*` would be
+repeated **45 times**. Forty-five near-identical documents can fill an entire result
+set, which is a worse failure than a long disease string.
+
+Decided: **one document per variant**, with `|` rewritten to `, ` so the field reads
+as a list rather than a path. All disease names stay searchable in the content, and
+the metadata value stays a string Chroma will accept.
 
 ## Scope
 
@@ -117,14 +137,32 @@ Out: `HumanDiseasePathways.txt` and `Reactome2OMIM.txt` -- not needed for this
 publishing to S3, which is blocked separately -- this host's instance profile is
 `EC2CloudwatchAgentRole` and `head_bucket` on `download.reactome.org` returns 403.
 
-## How we will know it worked
+## Result, measured
 
-`src/evaluation/answer_sweep.py` gains expectations that fail today and pass after:
+Built into a scratch bundle and asked through the real retriever:
 
-| question | must contain | why |
+| | before | after |
 |---|---|---|
-| List the ABCA1 variants in Reactome | `W590S` | today it names none |
-| Which diseases involve PTEN variants in Reactome? | `Cowden` | today it answers at pathway level |
+| ABCA1 | *"Defective ABCA1 causes Tangier Disease ... Other diseases may be associated with ABCA1, bu[t]"* -- no variant named | **C1417R, Q537R, N935S, R587W, S1446L**, each with its disease and loss-of-function status |
+| PTEN | *"PTEN Loss of Function in Cancer"* -- a pathway | **Q17\*, Q97\*, Q171\***, named against endometrial cancer |
 
-Cost is not a blocker: 6,294 short documents on `text-embedding-3-large` is cents.
-Disk is not either -- the collection is a fraction of the 3.4 GB the existing four take.
+Two answer-sweep expectations pin this. They match a *pattern* for a named variant
+(`\bABCA1 [A-Z]\d{2,4}[A-Z*]`) rather than a specific one, because which of the six
+come back depends on retrieval order and pinning one would fail a good answer --
+the mistake made in `007` and fixed there. Checked against the recorded answers: the
+pattern does not match the old answer and does match the new one.
+
+They carry `needs_collection="disease_variants"` and skip, loudly, until the bundle
+ships -- otherwise they would turn the deploy gate red for a reason nobody can act
+on. A test covers the direction that matters: that they run once it is installed.
+
+Cost was cents. The collection is a fraction of the 3.4 GB the existing four take.
+
+## Installing it
+
+The embeddings tree is root-owned, so installing needs sudo -- and using sudo is what
+keeps it root-owned. It is not the container's doing: the image has run as `appuser`
+(uid 3001) since 2025-04-17 and the bundle was created 2026-09-02, so something was
+run under sudo on the host. `~/fix-embeddings-ownership.sh` sets `awright:reactome`
+with world-read, which suits both: the owner can manage bundles without sudo, and the
+container, whose uid is not a host user and which only reads at runtime, still can.

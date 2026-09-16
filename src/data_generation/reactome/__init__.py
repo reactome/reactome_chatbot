@@ -3,6 +3,7 @@ from pathlib import Path
 
 from langchain_community.vectorstores import Chroma
 
+from data_generation.disease_variant import generate_disease_variant_embeddings
 from data_generation.embeddings import build_embeddings
 from data_generation.metadata_csv_loader import MetaDataCSVLoader
 from data_generation.reactome.csv_generator import generate_all_csvs
@@ -70,6 +71,7 @@ def generate_reactome_embeddings(
     force: bool = False,
     hf_model: str | None = None,
     device: str | None = None,
+    disease_variant_tsv: str | Path | None = None,
 ) -> None:
     csv_dir = Path(embeddings_dir) / "csv_files"
     reactions_csv = str(csv_dir / "reactions.csv")
@@ -107,3 +109,20 @@ def generate_reactome_embeddings(
     print(db._collection.count())
     db = upload_to_chromadb(embeddings_dir, ewas_csv, "ewas", hf_model, device)
     print(db._collection.count())
+
+    # Built from a release file, not from Neo4j, so it is the one collection
+    # that can be generated without database access. Skipped rather than
+    # failed when no file is given: the other four are still a valid bundle.
+    if disease_variant_tsv:
+        # Its own name: this returns langchain_chroma's Chroma, while the four
+        # above still come back as the deprecated langchain_community one.
+        variants_db = generate_disease_variant_embeddings(
+            embeddings_dir, disease_variant_tsv, hf_model, device
+        )
+        print(variants_db._collection.count())
+    else:
+        print(
+            "No --disease-variant-tsv given; skipping the disease_variants "
+            "collection. The chatbot will answer about disease at the level of "
+            "a pathway and will not be able to name a variant."
+        )
