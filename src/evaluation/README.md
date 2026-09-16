@@ -146,3 +146,37 @@ which is now.
 A single run has no noise floor: retrieval is not deterministic (Chroma's ANN
 search varies run to run), so a difference between two single runs cannot be told
 apart from variance. Use `--repeat 3` and compare against the reported spread.
+
+## The answer sweep
+
+```bash
+./bin/answer-sweep                  # all of them
+./bin/answer-sweep --only gsea      # one
+```
+
+Eleven questions the chatbot has got wrong before, each with what a good answer
+must and must not contain, run end to end through the compiled graph. Exits
+non-zero on a failure, so it can gate a deploy.
+
+This is not the evaluator. `evaluator.py` scores answer *quality* with ragas and
+costs real money; this asks something cheaper — is the chatbot still doing the
+thing it was fixed to do — and takes about two and a half minutes.
+
+**Why it exists.** Every regression in the week of 2026-09-14 was found the same
+way: someone asked beta a question and the answer was wrong. The safety checker
+refusing "can you run gsea for me". Ordinary retrieval taken down for a day by a
+shared Chroma settings object. A live answer that was correct and displayed
+nothing. Each was caught by a person noticing, which is slow, and only happens
+for questions people happen to ask.
+
+`must_not` matters as much as `must`. Most of those failures produced confident,
+plausible text: *"Reactome does not provide a specific tool"* is a fluent
+sentence and a false one about the flagship feature.
+
+**Transient upstream failures are retried once, and the retry is reported.** On
+its first run against production this caught a real degradation — reactome.org
+served a Cloudflare challenge to a burst of requests and the answer became "I
+could not find out ... due to a service error". That is the error handling
+working rather than a regression, and a sweep that cries wolf gets ignored. The
+retry is deliberately narrow: only an exception, or an answer that says the
+lookup failed.

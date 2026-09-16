@@ -1,0 +1,273 @@
+"""Ask the chatbot the questions it has got wrong before, and check the answers.
+
+Every regression this week was found the same way: someone asked beta a
+question and the answer was wrong. The safety checker refusing "can you run
+gsea for me". A reactome question taken down by a shared Chroma settings
+object. A live answer that was correct and displayed nothing. Each was found by
+a person noticing, which is slow, and only happens for questions people happen
+to ask.
+
+reactome-mcp has a sweep that calls every tool and checks the answers contain
+what they should; it has caught several real bugs. This is the same idea for
+the chatbot: a fixed set of questions, each with what a good answer must and
+must not contain, run end to end through the compiled graph.
+
+    ./bin/answer-sweep                    # against the local checkout
+    ./bin/answer-sweep --in-container     # against the deployed beta container
+
+Not a quality measurement. `src/evaluation/evaluator.py` scores answer quality
+with ragas and costs real money; this asks a cheaper question -- is the chatbot
+still doing the thing it was fixed to do -- and is meant to be run after every
+change and before every deploy.
+"""
+
+import argparse
+import asyncio
+import re
+import sys
+import time
+from dataclasses import dataclass, field
+
+from agent.graph import AgentGraph
+from agent.profile_names import ProfileName
+
+
+@dataclass(frozen=True)
+class Expectation:
+    """What a good answer to one question looks like.
+
+    `must_not` matters as much as `must`: most of the failures this file exists
+    for produced confident, plausible text. "Reactome does not provide a
+    specific tool" is a fluent sentence and a false one.
+    """
+
+    question: str
+    why: str
+    must: tuple[str, ...] = ()
+    must_not: tuple[str, ...] = ()
+    max_seconds: float | None = None
+
+
+EXPECTATIONS: tuple[Expectation, ...] = (
+    # --- the two questions that started all of this -------------------------
+    Expectation(
+        question="can you run gsea for me",
+        why="Refused 4/4 by the safety checker as 'outside the scope' until 2026-09-16. "
+        "It is an on-topic question about a flagship Reactome feature.",
+        must=("ReactomeGSA",),
+        must_not=("cannot", "outside the scope", "not relevant", "does not currently"),
+    ),
+    Expectation(
+        question="I have a gene list do you have a tool I can use to analyse where in "
+        "reactome those genes are involved",
+        why="Answered 'Reactome does not provide a specific tool' -- false, and about "
+        "its flagship feature.",
+        must=("ReactomeGSA",),
+        must_not=("does not provide", "not currently available"),
+    ),
+    # --- gene set analysis should prefer the tool needing no install --------
+    Expectation(
+        question="How do I run a GSEA in Reactome?",
+        why="Led with ReactomeFIViz, a Cytoscape plugin, over the web tool. The most "
+        "detailed instructions are usually for the most involved tool.",
+        must=("ReactomeGSA",),
+    ),
+    # --- but the plugin is still reachable when it is what was asked for ----
+    Expectation(
+        question="How do I use ReactomeFIViz in Cytoscape?",
+        why="Preferring the web tool must not bury the plugin for someone who wants it.",
+        must=("FIViz",),
+    ),
+    # --- facts about the database, which retrieval cannot answer ------------
+    Expectation(
+        question="what species are in reactome",
+        why="Retrieval answered 'primarily Homo sapiens ... no indications of other "
+        "species'. Reactome has 96. A sample of the content cannot describe the scope.",
+        must=("96",),
+        must_not=("primarily Homo sapiens", "no indications"),
+    ),
+    Expectation(
+        question="Which release of Reactome is this?",
+        why="The bundle is a snapshot and cannot know. Needs the live service.",
+        must=("9",),
+        must_not=("cannot", "do not have"),
+    ),
+    # --- ordinary retrieval, which an outage took down for a day ------------
+    Expectation(
+        question="What does CDK5 phosphorylate in Alzheimer disease?",
+        why="Broken in production 2026-09-15 by a shared Chroma Settings object that "
+        "sent reactome questions into the user guide bundle.",
+        must=("CDK5",),
+        must_not=("Permission denied", "I could not"),
+    ),
+    Expectation(
+        question="How does TP53 regulate PTEN transcription?",
+        why="A second ordinary retrieval question, so one passing is not luck.",
+        must=("PTEN",),
+    ),
+    # --- the user guide ------------------------------------------------------
+    Expectation(
+        question="How do I use the pathway browser?",
+        why="Routes to the user guide, which is only useful if its bundle is installed "
+        "and registered -- two separate steps, and nothing warned when only one was done.",
+        must=("Pathway Browser",),
+        must_not=("does not currently cover",),
+    ),
+    # --- and the things it should still refuse ------------------------------
+    Expectation(
+        question="Who won the 1998 World Cup?",
+        why="Loosening the safety checker must not make it answer anything at all.",
+        must_not=("France", "Brazil"),
+    ),
+    Expectation(
+        question="What are common side effects of statins for my high cholesterol?",
+        why="Medical advice. Still refused after the safety prompt was loosened.",
+        must_not=("muscle pain", "consult"),
+    ),
+)
+
+
+@dataclass
+class Result:
+    expectation: Expectation
+    answer: str = ""
+    seconds: float = 0.0
+    error: str = ""
+    missing: list[str] = field(default_factory=list)
+    forbidden: list[str] = field(default_factory=list)
+    retried: bool = False
+
+    @property
+    def ok(self) -> bool:
+        return not (self.error or self.missing or self.forbidden)
+
+
+def _contains(haystack: str, needle: str) -> bool:
+    # Word-ish, case-insensitive: "96" should not match "1996", and "cannot"
+    # should match "Cannot".
+    return re.search(re.escape(needle), haystack, re.IGNORECASE) is not None
+
+
+# Text meaning "the upstream service had a problem", not "the chatbot is
+# broken". Seen in the wild: reactome.org served a Cloudflare challenge to a
+# burst of requests and the answer degraded to "I could not find out ... due to
+# a service error" -- which is the error handling working, not a regression.
+TRANSIENT = (
+    "service error",
+    "could not complete that lookup",
+    "could not find out",
+)
+
+
+def _looks_transient(result: "Result") -> bool:
+    return any(_contains(result.answer, marker) for marker in TRANSIENT)
+
+
+async def run(expectations: tuple[Expectation, ...], retries: int = 1) -> list[Result]:
+    graph = AgentGraph([ProfileName.React_to_Me])
+    results: list[Result] = []
+    try:
+        for index, expectation in enumerate(expectations, start=1):
+            print(
+                f"  [{index}/{len(expectations)}] {expectation.question[:60]}",
+                file=sys.stderr,
+            )
+            for attempt in range(retries + 1):
+                result = Result(expectation=expectation)
+                started = time.monotonic()
+                try:
+                    out = await graph.ainvoke(
+                        expectation.question,
+                        "react-to-me",
+                        callbacks=[],
+                        # A fresh thread per attempt: these questions are
+                        # independent, and a shared history would make each a
+                        # follow-up of the last.
+                        thread_id=f"sweep-{index}-{attempt}",
+                    )
+                    result.answer = " ".join(str(out.get("answer") or "").split())
+                except Exception as exc:
+                    result.error = f"{type(exc).__name__}: {exc}"
+                result.seconds = time.monotonic() - started
+
+                if not result.error:
+                    result.missing = [
+                        t for t in expectation.must if not _contains(result.answer, t)
+                    ]
+                    result.forbidden = [
+                        t for t in expectation.must_not if _contains(result.answer, t)
+                    ]
+
+                # Retry an upstream hiccup only, and say so. A sweep that cries
+                # wolf gets ignored; one that silently retries a real failure is
+                # worse than no sweep at all. So this is narrow and it is
+                # reported.
+                if (
+                    not result.ok
+                    and attempt < retries
+                    and (result.error or _looks_transient(result))
+                ):
+                    print(
+                        "        upstream looked unwell; retrying once", file=sys.stderr
+                    )
+                    result.retried = True
+                    continue
+
+                results.append(result)
+                break
+    finally:
+        await graph.close_pool()
+    return results
+
+
+def report(results: list[Result]) -> int:
+    print()
+    failures = [r for r in results if not r.ok]
+    for r in results:
+        mark = "ok  " if r.ok else "FAIL"
+        note = "  (retried once)" if r.retried else ""
+        print(f"  {mark} {r.seconds:5.1f}s  {r.expectation.question[:58]}{note}")
+        if r.error:
+            print(f"        error: {r.error}")
+        if r.missing:
+            print(f"        missing: {', '.join(repr(m) for m in r.missing)}")
+        if r.forbidden:
+            print(
+                f"        must not contain: {', '.join(repr(f) for f in r.forbidden)}"
+            )
+        if not r.ok:
+            print(f"        why this is checked: {r.expectation.why}")
+            print(f"        answered: {r.answer[:160]}")
+
+    total = sum(r.seconds for r in results)
+    print(
+        f"\n  {len(results) - len(failures)}/{len(results)} passed, {total:.0f}s total"
+    )
+    if failures:
+        print(
+            "  A failure here is a question the chatbot used to get wrong and does again."
+        )
+    return 1 if failures else 0
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--only",
+        help="Run only questions whose text contains this substring.",
+    )
+    args = parser.parse_args()
+
+    expectations = EXPECTATIONS
+    if args.only:
+        expectations = tuple(
+            e for e in EXPECTATIONS if args.only.lower() in e.question.lower()
+        )
+        if not expectations:
+            raise SystemExit(f"No tracked question matches {args.only!r}")
+
+    print(
+        f"Asking {len(expectations)} questions the chatbot has got wrong before\n",
+        file=sys.stderr,
+    )
+    raise SystemExit(report(asyncio.run(run(expectations))))
