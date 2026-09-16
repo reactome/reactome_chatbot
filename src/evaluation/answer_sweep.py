@@ -12,8 +12,10 @@ what they should; it has caught several real bugs. This is the same idea for
 the chatbot: a fixed set of questions, each with what a good answer must and
 must not contain, run end to end through the compiled graph.
 
-    ./bin/answer-sweep                    # against the local checkout
-    ./bin/answer-sweep --in-container     # against the deployed beta container
+    ./bin/answer-sweep                       # against the local checkout
+    ./bin/answer-sweep --only species        # just the questions matching that
+    docker exec reactome_chat \\
+        python /app/bin/answer-sweep         # against the deployed container
 
 Not a quality measurement. `src/evaluation/evaluator.py` scores answer quality
 with ragas and costs real money; this asks a cheaper question -- is the chatbot
@@ -45,7 +47,9 @@ class Expectation:
     why: str
     must: tuple[str, ...] = ()
     must_not: tuple[str, ...] = ()
-    max_seconds: float | None = None
+    # For facts whose exact value legitimately changes -- the release number
+    # becomes 98 shortly, so asserting "97" would fail on a correct answer.
+    must_match: tuple[str, ...] = ()
 
 
 EXPECTATIONS: tuple[Expectation, ...] = (
@@ -89,7 +93,11 @@ EXPECTATIONS: tuple[Expectation, ...] = (
     Expectation(
         question="Which release of Reactome is this?",
         why="The bundle is a snapshot and cannot know. Needs the live service.",
-        must=("9",),
+        # A plausible release number, rather than a literal: 97 becomes 98
+        # shortly, and a check that fails on a correct answer gets disabled.
+        # Releases are in the 90s now and will pass 100, so allow both.
+        must=("release",),
+        must_match=(r"\b(?:9\d|[1-9]\d\d)\b",),
         must_not=("cannot", "do not have"),
     ),
     # --- ordinary retrieval, which an outage took down for a day ------------
@@ -143,9 +151,19 @@ class Result:
 
 
 def _contains(haystack: str, needle: str) -> bool:
-    # Word-ish, case-insensitive: "96" should not match "1996", and "cannot"
-    # should match "Cannot".
-    return re.search(re.escape(needle), haystack, re.IGNORECASE) is not None
+    """Case-insensitive, and bounded at word edges where that is meaningful.
+
+    Without the boundaries "96" matches "1996" and "9" matches any text with a
+    digit in it -- which made the release-version check assert almost nothing.
+    The boundary is only added where the needle actually starts or ends with a
+    word character, so a needle like "R-HSA-" still matches its prefix.
+    """
+    pattern = re.escape(needle)
+    if needle[:1].isalnum():
+        pattern = r"\b" + pattern
+    if needle[-1:].isalnum():
+        pattern = pattern + r"\b"
+    return re.search(pattern, haystack, re.IGNORECASE) is not None
 
 
 # Text meaning "the upstream service had a problem", not "the chatbot is
@@ -172,8 +190,9 @@ async def run(expectations: tuple[Expectation, ...], retries: int = 1) -> list[R
                 f"  [{index}/{len(expectations)}] {expectation.question[:60]}",
                 file=sys.stderr,
             )
+            retried = False
             for attempt in range(retries + 1):
-                result = Result(expectation=expectation)
+                result = Result(expectation=expectation, retried=retried)
                 started = time.monotonic()
                 try:
                     out = await graph.ainvoke(
@@ -193,6 +212,10 @@ async def run(expectations: tuple[Expectation, ...], retries: int = 1) -> list[R
                 if not result.error:
                     result.missing = [
                         t for t in expectation.must if not _contains(result.answer, t)
+                    ] + [
+                        f"/{p}/"
+                        for p in expectation.must_match
+                        if not re.search(p, result.answer, re.IGNORECASE)
                     ]
                     result.forbidden = [
                         t for t in expectation.must_not if _contains(result.answer, t)
@@ -210,7 +233,7 @@ async def run(expectations: tuple[Expectation, ...], retries: int = 1) -> list[R
                     print(
                         "        upstream looked unwell; retrying once", file=sys.stderr
                     )
-                    result.retried = True
+                    retried = True
                     continue
 
                 results.append(result)
