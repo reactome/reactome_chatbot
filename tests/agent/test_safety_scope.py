@@ -56,3 +56,25 @@ def test_capability_is_answered_downstream_not_refused_here() -> None:
     """Whether the assistant can run an analysis is a different question from
     whether it is allowed to be asked."""
     assert "decided later" in safety_check_message
+
+
+def test_the_user_guide_prefers_the_tool_that_needs_no_install() -> None:
+    """Asked "can you run gsea for me", beta answered with ReactomeFIViz --
+    the Cytoscape plugin -- rather than ReactomeGSA, the web tool.
+
+    Not a retrieval failure: the top four passages were the ReactomeGSA page.
+    The FIViz page arrived fifth (the rephrase expands "gsea" to "Gene Set
+    Enrichment Analysis", and that page has a "Perform GSEA Analysis" menu
+    item), and the model led with it because the prompt asks for actionable
+    steps and FIViz has the most step-by-step text.
+
+    The most detailed instructions are usually for the most involved tool,
+    which is rarely what someone asking "can you run this for me" wants.
+    """
+    from retrievers.userguide.prompt import userguide_system_prompt
+
+    assert "least setup" in userguide_system_prompt
+    assert "ReactomeGSA" in userguide_system_prompt
+    assert "Cytoscape" in userguide_system_prompt
+    # The trap that caused it, named so a later edit does not reintroduce it.
+    assert "most step-by-step text" in userguide_system_prompt
