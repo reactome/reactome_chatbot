@@ -1,6 +1,8 @@
 import os
+import shutil
 from pathlib import Path
 
+from chromadb.api.client import SharedSystemClient
 from langchain_community.vectorstores import Chroma
 
 from data_generation.disease_variant import generate_disease_variant_embeddings
@@ -17,13 +19,28 @@ def upload_to_chromadb(
     hf_model: str | None = None,
     device: str | None = None,
 ) -> Chroma:
+    # `species` is deliberately absent from reactions and summations. Both
+    # queries filter on speciesName = "Homo sapiens" and never return it, so
+    # asking for it here killed generation on the first upload with
+    # "Metadata column 'species' not found in CSV file" -- `make` has been
+    # broken for the reactome bundle, and the Release95 bundle predates it.
+    #
+    # Adding it to the queries would be worse than removing it here: these
+    # collections pass no `content_columns`, so every CSV column is embedded,
+    # and a column that reads "species: Homo sapiens" in all 52,000 documents
+    # is noise in every one of them.
+    #
+    # `complexes` does return it, and its value is constant too -- all 38,967
+    # rows are Homo sapiens, because that query filters on it as well. That is
+    # existing noise in an existing bundle rather than noise this adds, so it
+    # is left alone here; removing it means changing the query and rebuilding,
+    # which is a separate change with its own before-and-after measurement.
     metadata_columns: dict[str, list] = {
         "reactions": [
             "st_id",
             "display_name",
             "pathway_id",
             "pathway_name",
-            "species",
             "input_id",
             "input_name",
             "output_id",
@@ -31,7 +48,7 @@ def upload_to_chromadb(
             "catalyst_id",
             "catalyst_name",
         ],
-        "summations": ["st_id", "display_name", "labels", "species", "summation"],
+        "summations": ["st_id", "display_name", "labels", "summation"],
         "complexes": [
             "st_id",
             "display_name",
@@ -47,6 +64,19 @@ def upload_to_chromadb(
             "uniprot_link",
         ],
     }
+
+    # Chroma.from_documents appends to whatever is already in the directory.
+    # The shipped Release95 bundle has 33,498 reaction documents for 16,749 CSV
+    # rows -- exactly 2.00x, every reaction stored twice, because generation ran
+    # twice. Nothing reported it, and the vector retriever spends half its
+    # overfetch on duplicates. Regeneration replaces.
+    persist = Path(embeddings_dir) / embedding_table
+    if persist.exists():
+        shutil.rmtree(persist)
+        # chromadb caches one system client per path; without this the next
+        # write fails with "attempt to write a readonly database".
+        SharedSystemClient.clear_system_cache()
+        print(f"  replaced the previous {embedding_table} collection")
 
     loader = MetaDataCSVLoader(
         file_path=file,
