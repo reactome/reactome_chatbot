@@ -15,6 +15,12 @@ packages = [
 [tool.poetry.dependencies]
 python = ">=3.12, <4"
 langchain = "^1.4.0"
+# Declared, not inherited. The answer endpoint verifies a signed proof-of-human
+# token, so this repository imports PyJWT directly. It arrives transitively today
+# via chainlit and mcp, which is not a dependency -- it is a coincidence that a
+# chainlit upgrade could end, and the symptom would be an endpoint that cannot
+# verify anyone.
+pyjwt = {version = "^2.10", extras = ["crypto"]}
 # Declared, not inherited. LangChain 1.0 moved the pre-LCEL chain builders here
 # (retrievers/rag_chain.py, the metadata_info modules), so this repository
 # imports langchain_classic directly and must depend on it directly. It arrived
