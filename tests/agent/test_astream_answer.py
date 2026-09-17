@@ -14,7 +14,9 @@ silently and the symptom would be an answer panel showing "Which proteins...".
 """
 
 import asyncio
-from typing import Any
+from typing import Any, cast
+
+from langgraph.graph.state import CompiledStateGraph
 
 from agent.graph import ANSWER_NODE, MAX_CITATIONS, AgentGraph
 
@@ -51,8 +53,18 @@ class _FakeCompiled:
 
 
 def _graph(events: list[dict[str, Any]]) -> AgentGraph:
+    """An AgentGraph with a scripted event stream and no real construction.
+
+    `__new__` rather than `__init__` on purpose: building one takes about 85
+    seconds and would make these tests useless as a fast guard. The cast names
+    the substitution once -- _FakeCompiled is not a CompiledStateGraph and mypy
+    is right to say so.
+    """
     graph = AgentGraph.__new__(AgentGraph)
-    graph.graph = {"react-to-me": _FakeCompiled(events)}  # type: ignore[assignment]
+    graph.graph = cast(
+        "dict[str, CompiledStateGraph[Any, None, Any, Any]]",
+        {"react-to-me": _FakeCompiled(events)},
+    )
     return graph
 
 
