@@ -69,13 +69,26 @@ the same question, that is a defect.
 
 ## Budget
 
-| | target | today |
+| | first increment promises | measured today |
 |---|---|---|
-| first token | 2s | n/a -- no streaming endpoint exists |
-| complete | 10s | p50 **15.2s**, p90 **22.4s**, max **31.5s** over the 15 tracked questions |
+| first token | **nothing** | ~20-36s: the answer starts only after four preprocessing calls and a retrieval |
+| complete | **nothing** | p50 15.2s, p90 22.4s, max 31.5s end to end |
+| streaming | **yes** | 1,168 token events for one answer |
 
-Retrieval dominates the heavy questions -- about 12.5s of a 27s answer -- and it
-scales with *queries x collections*. Query expansion turns one question into five
+**The first increment makes no latency promise, deliberately.** Two seconds was in an
+earlier draft of this contract; building the streaming surface showed the answer's
+first token arrives around 36 seconds, because nothing of it exists until the
+rephrase, safety, language and intent calls and a retrieval have all finished.
+Streaming improves the last part and does nothing about the first.
+
+Design the panel for that: it must be able to show nothing for a long time, and to be
+absent entirely. Do not build a spinner that implies an imminent answer, and do not
+let the search results wait on it (FR-009).
+
+A naive measurement reports 3.0s to first token. That token is the rephraser's.
+
+Retrieval is one part and no longer the obvious first target. It dominates the heavy
+questions -- about 12.5s of a 27s answer -- and scales with *queries x collections*. Query expansion turns one question into five
 queries (2.4s, one LLM call) and each runs against every collection, so cutting
 queries is a lever of the same size as cutting collections. Only the latter has a
 spec. See [009](../../009-collection-routing/spec.md), and note that it is one lever

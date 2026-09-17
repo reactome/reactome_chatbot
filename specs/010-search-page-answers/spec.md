@@ -57,6 +57,47 @@ cutting five queries to two, and only the first has a spec. Measured 2026-09-17:
 [Spec 009](../009-collection-routing/spec.md) remains worth doing. The claim that it
 alone is on the critical path does not survive the measurement.
 
+## The latency target, and why it is not a requirement yet
+
+This spec was written with a first-token budget of two seconds, on the assumption that
+streaming was the answer to a slow completion. Building the streaming surface
+disproved that, and the requirement changed rather than the measurement.
+
+Measured 2026-09-17 by streaming `astream_events` and grouping by `run_id`:
+
+| at | tokens | what it is |
+|---|---|---|
+| 5.4s | 17 | rephrase |
+| 9.0s | 12 | safety check |
+| 12.6s | 1 | language detection |
+| 16.1s | 6 | intent classifier |
+| 19.8s | 80 | query expansion |
+| **36.1s** | **1,189** | **the answer** |
+
+**Nothing of the answer exists until four sequential preprocessing calls and a
+retrieval have finished.** Streaming makes the last 16 seconds pleasant and does
+nothing about the first 36. A panel would show an empty box and then fill quickly.
+
+A naive measurement reports 3.0s, because the first streamed token of any kind
+belongs to the rephraser. That number is wrong in the most flattering direction, and
+is the one a casual check would have produced.
+
+**So the first increment makes no latency promise.** It is correct, verified and
+streaming, at roughly today's speed. The website repo can build the panel, the token
+handshake and every failure path against it, none of which depend on how fast it is.
+
+What would have to change for FR-005a, in the order the measurement suggests:
+
+1. **The four preprocessing calls**, ~16s for 36 tokens between them, all before
+   retrieval starts. Whether they must be sequential, and whether a search-page
+   question needs all four, is the largest open question
+2. **Query expansion**, its own call plus a 5x retrieval fan-out
+3. **Retrieval**, which [spec 009](../009-collection-routing/spec.md) addresses and
+   which is no longer the obvious first target
+
+Stating a budget the code cannot meet would bake it into a contract another repo
+builds against. This is what we are doing instead.
+
 ## User Scenarios & Testing
 
 ### User Story 1 - A verified person searches and sees an answer forming (Priority: P1)
@@ -71,8 +112,10 @@ token; assert the first token arrives inside the budget and citations resolve to
 stable IDs.
 
 **Acceptance**
-1. First streamed token within **2s** (FR-005)
-2. Complete answer within **10s** (FR-005)
+1. Tokens stream: more than one token event, so the caller can render progressively
+2. The first token belongs to the **answer**, not to the rephraser or the query
+   expander -- they stream too, and rendering them would show a search panel an
+   expanded query as though it were an answer
 3. Every factual claim carries a citation resolvable at `reactome.org/content/detail/<stId>`
 4. A question the knowledgebase cannot answer says so, rather than inventing
 
@@ -125,8 +168,12 @@ classifier's decision matches, and that no LLM answer call happens for the latte
   token, before any model call
 - **FR-004**: Citations MUST be Reactome stable IDs, so the website can render links
   in its own style rather than parsing prose
-- **FR-005**: First token within **2s** and complete within **10s**, at p50, for a
-  question the knowledgebase can answer
+- **FR-005**: The caller MUST be able to render the answer progressively as it
+  arrives. **No latency guarantee is made by the first increment**, and the reason is
+  measured rather than assumed -- see "The latency target, and why it is not a
+  requirement yet" below
+- **FR-005a** *(target, not met)*: first token within 2s and complete within 10s at
+  p50. Tracked as a goal with a named blocker, not promised to the website repo
 - **FR-006**: The service MUST fail invisibly: any error, timeout or refusal returns
   a response the website can render as "no panel", never a broken panel
 - **FR-007**: Answers MUST be attributable to a Reactome release, so a cached or
@@ -147,8 +194,10 @@ classifier's decision matches, and that no LLM answer call happens for the latte
 
 ### Measurable Outcomes
 
-- **SC-001**: p50 first token ≤ 2s, p50 complete ≤ 10s, measured on the tracked
-  question set against a real bundle -- today p50 is 15.2s and p90 22.4s
+- **SC-001**: the endpoint streams -- more than one token event for a question the
+  knowledgebase can answer -- and its first-token and completion times are measured
+  and published as a distribution over the tracked question set. A number going down
+  is the goal; a number being met is not, until FR-005a's blocker is removed
 - **SC-002**: Zero model calls for requests without a valid token, measured by
   counting calls under a load of unauthenticated requests
 - **SC-003**: The answer sweep stays green: the endpoint and the chat UI give the
