@@ -14,7 +14,9 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from agent.registry import build_graph, set_graph
+from api.answer import router as answer_router
 from util.captcha_scope import is_captcha_exempt
+from util.human_token import load_verifying_key
 from util.logging import logging
 from util.secrets import SECRET_NAMES, get_secret, load_secrets_to_environ
 
@@ -38,6 +40,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # is the local default in .env, and is why this line did not appear the first
     # time it was checked. beta runs LOG_LEVEL=info and does print it.
     started = time.monotonic()
+    # Before the graph: a missing verifying key must stop the process, and
+    # spending 52 seconds building a graph first only delays the failure.
+    _app.state.human_token_key = load_verifying_key()
     graph = build_graph()
     set_graph(graph)
     logging.info("Agent graph ready in %.1fs", time.monotonic() - started)
@@ -50,6 +55,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(lifespan=lifespan)
 
 CHAINLIT_URI = os.getenv("CHAINLIT_URI")
+
+# Defined after CHAINLIT_URI, which it is built from. The endpoint lives under
+# the Chainlit mount point so one nginx location covers both.
+API_PREFIX = f"{CHAINLIT_URI}/api" if CHAINLIT_URI else "/chat/api"
+app.include_router(answer_router, prefix=API_PREFIX)
 CHAINLIT_URL = os.getenv("CHAINLIT_URL")
 
 CLOUDFLARE_SECRET_KEY = get_secret("CLOUDFLARE_SECRET_KEY")
@@ -116,6 +126,11 @@ async def verify_captcha_middleware(
         # and skip the captcha entirely -- switching off a protection the
         # operator had configured, silently.
         captcha_configured=bool(CLOUDFLARE_SECRET_KEY),
+        # The answer endpoint verifies its own caller, with a signed token rather
+        # than a captcha, so redirecting it to a captcha page would break it. This
+        # is a deliberate hole in an authentication boundary, which is why the
+        # rule was pinned by tests before it was widened.
+        extra_prefixes=[API_PREFIX],
     ):
         return await call_next(request)
 
