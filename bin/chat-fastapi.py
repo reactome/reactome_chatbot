@@ -33,6 +33,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     Here the cost is the same but it is paid where a startup cost belongs, and
     both surfaces -- Chainlit and the answer endpoint -- get the same instance.
     """
+    # At INFO, so it is silent where an operator has set LOG_LEVEL=error -- which
+    # is the local default in .env, and is why this line did not appear the first
+    # time it was checked. beta runs LOG_LEVEL=info and does print it.
     started = time.monotonic()
     graph = build_graph()
     set_graph(graph)
