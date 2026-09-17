@@ -39,9 +39,9 @@ def download_file(url: str, dest: str, force: bool) -> str | None:
     return None
 
 
-def get_genes(version: str, force: bool) -> str:
+def get_genes(version: str, force: bool, parent_dir: str) -> str:
     # Define the file path
-    directory = f"csv_files/alliance/{version}"
+    directory = f"{parent_dir}/csv_files/alliance/{version}"
     os.makedirs(directory, exist_ok=True)
     gene_csv = f"{directory}/genes.tsv"
 
@@ -106,11 +106,11 @@ def get_genes(version: str, force: bool) -> str:
     return gene_csv
 
 
-def generate_all_csvs(version: str, force: bool) -> tuple[str, ...]:
+def generate_all_csvs(version: str, force: bool, parent_dir: str) -> tuple[str, ...]:
     files = []
 
     # Download gene file
-    gene_csv = get_genes(version, force)
+    gene_csv = get_genes(version, force, parent_dir)
     files.append(gene_csv)
 
     # Define other files to download
@@ -128,9 +128,10 @@ def generate_all_csvs(version: str, force: bool) -> tuple[str, ...]:
         "variants_yeast": "https://fms.alliancegenome.org/download/VARIANT-ALLELE_NCBITaxon559292.tsv.gz",
     }
 
+    base = f"{parent_dir}/csv_files/alliance/{version}"
     for name, url in other_files.items():
-        gz_dest = f"csv_files/alliance/{version}/{name}.tsv.gz"
-        csv_dest = f"csv_files/alliance/{version}/{name}.tsv"
+        gz_dest = f"{base}/{name}.tsv.gz"
+        csv_dest = f"{base}/{name}.tsv"
 
         if not os.path.exists(csv_dest) or force:
             unzipped_dest = download_file(url, gz_dest, force)

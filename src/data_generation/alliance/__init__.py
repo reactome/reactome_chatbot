@@ -12,9 +12,12 @@ If it is ever un-parked, note that it has not been exercised since 2026-09-10, s
 its behaviour is unverified even where the code still type-checks.
 """
 
-import os
+import logging
+import shutil
+from pathlib import Path
 
 import requests
+from chromadb.api.shared_system_client import SharedSystemClient
 from langchain_community.vectorstores import Chroma
 
 from data_generation.alliance.csv_generator import generate_all_csvs
@@ -36,6 +39,216 @@ def get_release_version() -> str:
     )
 
 
+# The Alliance column schemas, at module scope because they are data: 203 lines
+# of them inside the function made a 40-line routine read as a 246-line one.
+# tests/data_generation/test_alliance_columns.py parses these and guards them
+# against the missing-comma bug that once collapsed seven molecular_interaction
+# columns into three.
+COLUMN_SCHEMAS: dict[str, list[str]] = {
+    "genes": [
+        "Your Input",
+        "Gene ID",
+        "Gene Symbol",
+        "Gene Name",
+        "Description",
+        "Species",
+        "NCBI ID",
+        "ENSEMBL ID",
+        "UniProtKB ID",
+        "PANTHER ID",
+        "RefSeq ID",
+        "Synonym",
+        "Disease Association",
+        "Expression Location",
+        "Expression Stage",
+        "Variants",
+        "Genetic Interaction",
+        "Molecular/Physical Interaction",
+        "Homo sapiens Ortholog",
+        "Mus musculus Ortholog",
+        "Rattus norvegicus Ortholog",
+        "Danio rerio Ortholog",
+        "Drosophila melanogaster Ortholog",
+        "Caenorhabditis elegans Ortholog",
+        "Saccharomyces cerevisiae Ortholog",
+        "Xenopus laevis Ortholog",
+        "Xenopus tropicalis Ortholog",
+    ],
+    "disease": [
+        "Taxon",
+        "SpeciesName",
+        "DBobjectType",
+        "DBObjectID",
+        "DBObjectSymbol",
+        "AssociationType",
+        "DOID",
+        "DOtermName",
+        "WithOrtholog",
+        "InferredFromID",
+        "InferredFromSymbol",
+        "ExperimentalCondition",
+        "Modifier",
+        "EvidenceCode",
+        "EvidenceCodeName",
+        "Reference",
+        "Date",
+        "Source",
+    ],
+    "expression": [
+        "Species",
+        "SpeciesID",
+        "GeneID",
+        "GeneSymbol",
+        "Location",
+        "StageTerm",
+        "AssayID",
+        "AssayTermName",
+        "CellularComponentID",
+        "CellularComponentTerm",
+        "CellularComponentQualifierIDs",
+        "CellularComponentQualifierTermNames",
+        "SubStructureID",
+        "SubStructureName",
+        "SubStructureQualifierIDs",
+        "SubStructureQualifierTermNames",
+        "AnatomyTermID",
+        "AnatomyTermName",
+        "AnatomyTermQualifierIDs",
+        "AnatomyTermQualifierTermNames",
+        "SourceURL",
+        "Source,Reference",
+    ],
+    "molecular_interaction": [
+        "ID(s) interactor A",
+        "ID(s) interactor B",
+        "Alt. ID(s) interactor A",
+        "Alt. ID(s) interactor B",
+        "Alias(es) interactor A",
+        "Alias(es) interactor B",
+        "Interaction detection method(s)",
+        "Publication 1st author(s)",
+        "Publication Identifier(s)",
+        "Taxid interactor A",
+        "Taxid interactor B",
+        "Interaction type(s)",
+        "Source database(s)",
+        "Interaction identifier(s)",
+        "Confidence value(s)",
+        "Expansion method(s)",
+        "Biological role(s) interactor A",
+        "Biological role(s) interactor B",
+        "Experimental role(s) interactor A",
+        "Experimental role(s) interactor B",
+        "Type(s) interactor A",
+        "Type(s) interactor B",
+        "Xref(s) interactor A",
+        "Xref(s) interactor B",
+        "Interaction Xref(s)",
+        "Annotation(s) interactor A",
+        "Annotation(s) interactor B",
+        "Interaction annotation(s)",
+        "Host organism(s)",
+        "Interaction parameter(s)",
+        "Creation date",
+        "Update date",
+        "Checksum(s) interactor A",
+        "Checksum(s) interactor B",
+        "Interaction Checksum(s) Negative",
+        "Feature(s) interactor A",
+        "Feature(s) interactor B",
+        "Stoichiometry(s) interactor A",
+        "Stoichiometry(s) interactor B",
+        "Identification method participant A",
+        "Identification method participant B",
+    ],
+    "genetic_interaction": [
+        "ID(s) interactor A",
+        "ID(s) interactor B",
+        "Alt. ID(s) interactor A",
+        "Alt. ID(s) interactor B",
+        "Alias(es) interactor A",
+        "Alias(es) interactor B",
+        "Interaction detection method(s)",
+        "Publication 1st author(s)",
+        "Publication Identifier(s)",
+        "Taxid interactor A",
+        "Taxid interactor B",
+        "Interaction type(s)",
+        "Source database(s)",
+        "Interaction identifier(s)",
+        "Confidence value(s)",
+        "Expansion method(s)",
+        "Biological role(s) interactor A",
+        "Biological role(s) interactor B",
+        "Experimental role(s) interactor A",
+        "Experimental role(s) interactor B",
+        "Type(s) interactor A",
+        "Type(s) interactor B",
+        "Xref(s) interactor A",
+        "Xref(s) interactor B",
+        "Interaction Xref(s)",
+        "Annotation(s) interactor A",
+        "Annotation(s) interactor B",
+        "Interaction annotation(s)",
+        "Host organism(s)",
+        "Interaction parameter(s)",
+        "Creation date",
+        "Update date",
+        "Checksum(s) interactor A",
+        "Checksum(s) interactor B",
+        "Interaction Checksum(s) Negative",
+        "Feature(s) interactor A",
+        "Feature(s) interactor B",
+        "Stoichiometry(s) interactor A",
+        "Stoichiometry(s) interactor B",
+        "Identification method participant A",
+        "Identification method participant B",
+    ],
+    "orthology": [
+        "Gene1ID Gene1Symbol",
+        "Gene1SpeciesTaxonID",
+        "Gene1SpeciesName",
+        "Gene2ID Gene2Symbol",
+        "Gene2SpeciesTaxonID",
+        "Gene2SpeciesName",
+        "Algorithms",
+        "AlgorithmsMatch",
+        "OutOfAlgorithms",
+        "IsBestScore",
+        "IsBestRevScore",
+    ],
+    "variants": [
+        "Taxon",
+        "SpeciesName",
+        "AlleleId",
+        "AlleleSymbol",
+        "AlleleSynonyms",
+        "VariantId",
+        "VariantSymbol",
+        "VariantSynonyms",
+        "VariantCrossReferences",
+        "AlleleAssociatedGeneId",
+        "AlleleAssociatedGeneSymbol",
+        "VariantAffectedGeneId",
+        "VariantAffectedGeneSymbol",
+        "Category",
+        "VariantsTypeId",
+        "VariantsTypeName",
+        "VariantsHgvsNames",
+        "Assembly",
+        "Chromosome",
+        "StartPosition",
+        "EndPosition",
+        "SequenceOfReference",
+        "SequenceOfVariant",
+        "MostSevereConsequenceName",
+        "VariantInformationReference",
+        "HasDiseaseAnnotations",
+        "HasPhenotypeAnnotations",
+    ],
+}
+
+
 def upload_to_chromadb(
     embeddings_dir: str,
     version: str,
@@ -43,246 +256,58 @@ def upload_to_chromadb(
     hf_model: str | None = None,
     device: str | None = None,
 ) -> Chroma | None:
-    metadata_columns: dict[str, list[str]] = {
-        "genes": [
-            "Your Input",
-            "Gene ID",
-            "Gene Symbol",
-            "Gene Name",
-            "Description",
-            "Species",
-            "NCBI ID",
-            "ENSEMBL ID",
-            "UniProtKB ID",
-            "PANTHER ID",
-            "RefSeq ID",
-            "Synonym",
-            "Disease Association",
-            "Expression Location",
-            "Expression Stage",
-            "Variants",
-            "Genetic Interaction",
-            "Molecular/Physical Interaction",
-            "Homo sapiens Ortholog",
-            "Mus musculus Ortholog",
-            "Rattus norvegicus Ortholog",
-            "Danio rerio Ortholog",
-            "Drosophila melanogaster Ortholog",
-            "Caenorhabditis elegans Ortholog",
-            "Saccharomyces cerevisiae Ortholog",
-            "Xenopus laevis Ortholog",
-            "Xenopus tropicalis Ortholog",
-        ],
-        "disease": [
-            "Taxon",
-            "SpeciesName",
-            "DBobjectType",
-            "DBObjectID",
-            "DBObjectSymbol",
-            "AssociationType",
-            "DOID",
-            "DOtermName",
-            "WithOrtholog",
-            "InferredFromID",
-            "InferredFromSymbol",
-            "ExperimentalCondition",
-            "Modifier",
-            "EvidenceCode",
-            "EvidenceCodeName",
-            "Reference",
-            "Date",
-            "Source",
-        ],
-        "expression": [
-            "Species",
-            "SpeciesID",
-            "GeneID",
-            "GeneSymbol",
-            "Location",
-            "StageTerm",
-            "AssayID",
-            "AssayTermName",
-            "CellularComponentID",
-            "CellularComponentTerm",
-            "CellularComponentQualifierIDs",
-            "CellularComponentQualifierTermNames",
-            "SubStructureID",
-            "SubStructureName",
-            "SubStructureQualifierIDs",
-            "SubStructureQualifierTermNames",
-            "AnatomyTermID",
-            "AnatomyTermName",
-            "AnatomyTermQualifierIDs",
-            "AnatomyTermQualifierTermNames",
-            "SourceURL",
-            "Source,Reference",
-        ],
-        "molecular_interaction": [
-            "ID(s) interactor A",
-            "ID(s) interactor B",
-            "Alt. ID(s) interactor A",
-            "Alt. ID(s) interactor B",
-            "Alias(es) interactor A",
-            "Alias(es) interactor B",
-            "Interaction detection method(s)",
-            "Publication 1st author(s)",
-            "Publication Identifier(s)",
-            "Taxid interactor A",
-            "Taxid interactor B",
-            "Interaction type(s)",
-            "Source database(s)",
-            "Interaction identifier(s)",
-            "Confidence value(s)",
-            "Expansion method(s)",
-            "Biological role(s) interactor A",
-            "Biological role(s) interactor B",
-            "Experimental role(s) interactor A",
-            "Experimental role(s) interactor B",
-            "Type(s) interactor A",
-            "Type(s) interactor B",
-            "Xref(s) interactor A",
-            "Xref(s) interactor B",
-            "Interaction Xref(s)",
-            "Annotation(s) interactor A",
-            "Annotation(s) interactor B",
-            "Interaction annotation(s)",
-            "Host organism(s)",
-            "Interaction parameter(s)",
-            "Creation date",
-            "Update date",
-            "Checksum(s) interactor A",
-            "Checksum(s) interactor B",
-            "Interaction Checksum(s) Negative",
-            "Feature(s) interactor A",
-            "Feature(s) interactor B",
-            "Stoichiometry(s) interactor A",
-            "Stoichiometry(s) interactor B",
-            "Identification method participant A",
-            "Identification method participant B",
-        ],
-        "genetic_interaction": [
-            "ID(s) interactor A",
-            "ID(s) interactor B",
-            "Alt. ID(s) interactor A",
-            "Alt. ID(s) interactor B",
-            "Alias(es) interactor A",
-            "Alias(es) interactor B",
-            "Interaction detection method(s)",
-            "Publication 1st author(s)",
-            "Publication Identifier(s)",
-            "Taxid interactor A",
-            "Taxid interactor B",
-            "Interaction type(s)",
-            "Source database(s)",
-            "Interaction identifier(s)",
-            "Confidence value(s)",
-            "Expansion method(s)",
-            "Biological role(s) interactor A",
-            "Biological role(s) interactor B",
-            "Experimental role(s) interactor A",
-            "Experimental role(s) interactor B",
-            "Type(s) interactor A",
-            "Type(s) interactor B",
-            "Xref(s) interactor A",
-            "Xref(s) interactor B",
-            "Interaction Xref(s)",
-            "Annotation(s) interactor A",
-            "Annotation(s) interactor B",
-            "Interaction annotation(s)",
-            "Host organism(s)",
-            "Interaction parameter(s)",
-            "Creation date",
-            "Update date",
-            "Checksum(s) interactor A",
-            "Checksum(s) interactor B",
-            "Interaction Checksum(s) Negative",
-            "Feature(s) interactor A",
-            "Feature(s) interactor B",
-            "Stoichiometry(s) interactor A",
-            "Stoichiometry(s) interactor B",
-            "Identification method participant A",
-            "Identification method participant B",
-        ],
-        "orthology": [
-            "Gene1ID Gene1Symbol",
-            "Gene1SpeciesTaxonID",
-            "Gene1SpeciesName",
-            "Gene2ID Gene2Symbol",
-            "Gene2SpeciesTaxonID",
-            "Gene2SpeciesName",
-            "Algorithms",
-            "AlgorithmsMatch",
-            "OutOfAlgorithms",
-            "IsBestScore",
-            "IsBestRevScore",
-        ],
-        "variants": [
-            "Taxon",
-            "SpeciesName",
-            "AlleleId",
-            "AlleleSymbol",
-            "AlleleSynonyms",
-            "VariantId",
-            "VariantSymbol",
-            "VariantSynonyms",
-            "VariantCrossReferences",
-            "AlleleAssociatedGeneId",
-            "AlleleAssociatedGeneSymbol",
-            "VariantAffectedGeneId",
-            "VariantAffectedGeneSymbol",
-            "Category",
-            "VariantsTypeId",
-            "VariantsTypeName",
-            "VariantsHgvsNames",
-            "Assembly",
-            "Chromosome",
-            "StartPosition",
-            "EndPosition",
-            "SequenceOfReference",
-            "SequenceOfVariant",
-            "MostSevereConsequenceName",
-            "VariantInformationReference",
-            "HasDiseaseAnnotations",
-            "HasPhenotypeAnnotations",
-        ],
-    }
+    # Derived from embeddings_dir, as every other generator does. It was the
+    # literal "./csv_files/alliance/<version>/", so generation worked from the
+    # repo root and silently found nothing anywhere else.
+    csv_dir = str(Path(embeddings_dir) / "csv_files" / "alliance" / version)
 
-    csv_dir = "./csv_files/alliance/" + version + "/"
+    # Only `genes` is embedded. The other six lists above are curated MITAB and
+    # Alliance schemas kept for when they are, and `tests/data_generation/
+    # test_alliance_columns.py` guards them against the missing-comma bug that
+    # once collapsed seven molecular_interaction columns into three. They are
+    # data waiting on code, not dead code.
+    #
+    # They are not reachable as written: csv_generator downloads variants as
+    # variants_c_elegans.tsv, variants_zebrafish.tsv and so on, so the
+    # "variants" key below could never match a file. Anything that starts
+    # embedding them must reconcile the two lists rather than assume they agree.
+    embedded = ("genes",)
 
-    for filename in os.listdir(csv_dir):
-        file_path = os.path.join(csv_dir, filename)
+    db = None
+    for filetype, column_names in COLUMN_SCHEMAS.items():
+        if filetype not in embedded:
+            continue
+        file = Path(csv_dir) / f"{filetype}.tsv"
+        if not file.is_file():
+            # Returned rather than raised from inside Chroma: `force` governs
+            # whether the CSVs were downloaded at all, and a caller that skipped
+            # that should get a clear message, not a FileNotFoundError.
+            logging.warning("No Alliance %s file at %s; skipping.", filetype, file)
+            continue
 
-        if os.path.isfile(file_path):
-            # Get the basename (filename without path)
-            base_name = os.path.basename(file_path)
-            print(base_name)
+        loader = MetaDataCSVLoader(
+            file_path=str(file),
+            metadata_columns=column_names,
+            encoding="utf-8",
+            csv_args={"delimiter": "\t"},
+        )
+        docs = loader.load()
+        logging.info("Embedding %d Alliance %s documents.", len(docs), filetype)
 
-    db = None  # Initialize db variable
+        persist = Path(embeddings_dir) / filetype
+        if persist.exists():
+            # Chroma.from_documents appends; a second run would double the
+            # collection silently, as it did to the reactome bundle.
+            shutil.rmtree(persist)
+            SharedSystemClient.clear_system_cache()
 
-    for filetype, column_names in metadata_columns.items():
-        file = csv_dir + filetype + ".tsv"
-        if filetype == "genes":
-            print(column_names)
-            loader = MetaDataCSVLoader(
-                file_path=file,
-                metadata_columns=column_names,
-                encoding="utf-8",
-                csv_args={"delimiter": "\t"},
-            )
-            docs = loader.load()
-            embeddings = build_embeddings(hf_model, device)
+        db = Chroma.from_documents(
+            documents=docs,
+            embedding=build_embeddings(hf_model, device),
+            persist_directory=str(persist),
+        )
 
-            db = Chroma.from_documents(
-                documents=docs,
-                embedding=embeddings,
-                persist_directory=os.path.join(embeddings_dir, filetype),
-            )
-            print(db)
-
-    print("filetype")
-    print(filetype)
-
-    return db  # Ensure to return the db at the end
+    return db
 
 
 def generate_alliance_embeddings(
@@ -303,5 +328,7 @@ def generate_alliance_embeddings(
         )
         exit()
 
-    generate_all_csvs(release_version, force)
+    # Same directory the loader reads from, passed rather than assumed: the two
+    # used to agree only because both were relative to the working directory.
+    generate_all_csvs(release_version, force, embeddings_dir)
     upload_to_chromadb(embeddings_dir, release_version, force, hf_model, device)
