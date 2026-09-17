@@ -129,6 +129,42 @@ this change is a real difference in behaviour rather than noise.
 That last one matters: the point of this change is a number going down, and it
 should be reported as one.
 
+## Finding: the collections overlap more than this spec assumed
+
+Phase 2 set out to add one sweep question per collection, each failing if its
+collection stopped being searched. Building them changed the picture.
+
+Method: ask a candidate against the full bundle and against a copy with exactly one
+collection removed. A question guards a collection only if it answers with it and
+fails without it.
+
+| collection | with | without | result |
+|---|---|---|---|
+| `ewas` | yes | no | **guards it** -- UniProt accessions live only there |
+| `summations` | yes | no | **guards it** -- the curated prose lives only there |
+| `complexes` | -- | -- | no question found yet |
+| `reactions` | yes | **yes** | answered with the collection removed entirely |
+
+**No reaction name is unique to `reactions`.** The `summations` query covers
+`Pathway OR ReactionLikeEvent`, so every event name appears in both collections by
+construction. They overlap by design.
+
+Two consequences for this feature.
+
+The recall risk is **lower** than this spec assumed. If a question can be answered
+with a whole collection removed, routing away from that collection costs little --
+which argues for the change rather than against it.
+
+But the gate hole is **harder to close** than the plan implies, and for a reason the
+plan had wrong. It is not that nobody wrote the questions; it is that a collection
+whose content is duplicated elsewhere cannot be guarded by asking a question. For
+`reactions` the guard would have to assert on retrieval -- which documents were
+searched -- rather than on the answer.
+
+Recorded rather than worked around: `tasks.md` T004-T008 are written as though four
+such questions exist. Two do. T007 (`reactions`) needs rewriting as a retrieval-level
+assertion, and T005 (`complexes`) needs a better candidate before it can be claimed.
+
 ## Scope
 
 In: collection selection for the `reactome` source, defaulting to all; the

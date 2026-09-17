@@ -91,6 +91,26 @@ EXPECTATIONS: tuple[Expectation, ...] = (
         why="Preferring the web tool must not bury the plugin for someone who wants it.",
         must=("FIViz",),
     ),
+    # --- one question per collection, so routing cannot quietly skip one ----
+    # Each was chosen by removing its collection from a copy of the bundle and
+    # confirming the answer changes. A question that still answers without its
+    # collection guards nothing, and three of the first four candidates were
+    # exactly that -- see specs/009-collection-routing/spec.md.
+    Expectation(
+        question="What is the UniProt accession for the TP53 protein in Reactome?",
+        why="Guards the `ewas` collection: it is the only one holding UniProt "
+        "links. Verified by removing ewas from a bundle copy, after which the "
+        "accession is no longer answered.",
+        must_match=(r"\bP04637\b",),
+    ),
+    Expectation(
+        question="What does Reactome's summary of Selective autophagy say about "
+        "where cargo is degraded?",
+        why="Guards the `summations` collection: the curated prose summaries live "
+        "only there. Without it the chatbot says no summary is available.",
+        must=("lysosom",),
+        must_not=("does not provide", "not currently available"),
+    ),
     # --- disease variants, which only the new collection can name -----------
     Expectation(
         question="List the ABCA1 variants in Reactome and the disease each one causes.",

@@ -18,11 +18,11 @@ before it is changed.
 routing stops searching them. Routing must not land before this closes, or the
 acceptance criterion cannot detect the failure the feature can cause.
 
-- [ ] T004 [P] Add a `summations`-dependent question to `EXPECTATIONS` in src/evaluation/answer_sweep.py, with a `must`/`must_match` that fails if that collection is not searched
-- [ ] T005 [P] Add a `complexes`-dependent question to `EXPECTATIONS` in src/evaluation/answer_sweep.py
-- [ ] T006 [P] Add an `ewas`-dependent question to `EXPECTATIONS` in src/evaluation/answer_sweep.py
-- [ ] T007 [P] Add a `reactions`-dependent question to `EXPECTATIONS` in src/evaluation/answer_sweep.py
-- [ ] T008 Verify each new question FAILS when its collection is removed from the bundle copy, and passes with it present; record the evidence in the PR
+- [x] T004 [P] Add a `summations`-dependent question to `EXPECTATIONS` in src/evaluation/answer_sweep.py (Selective autophagy / lysosome; verified by removal)
+- [ ] T005 [P] Find a `complexes` candidate that fails without the collection (the first attempt did not), then add the question to `EXPECTATIONS` in src/evaluation/answer_sweep.py
+- [x] T006 [P] Add an `ewas`-dependent question to `EXPECTATIONS` in src/evaluation/answer_sweep.py (TP53 UniProt P04637; verified by removal)
+- [ ] T007 Assert at retrieval level that `reactions` was searched, in tests/retrievers/test_collection_selection.py -- no answer-level question can guard it, because every reaction name also appears in `summations`
+- [x] T008 Verify each new question FAILS when its collection is removed from the bundle copy, and passes with it present; record the evidence in the PR (method established; two of four candidates survived it)
 - [ ] T009 Pin current behaviour: a characterization test in tests/retrievers/test_collection_selection.py asserting that with no selection every collection in the bundle is searched
 - [ ] T010 Run `./bin/answer-sweep` against Release97 and confirm green before any behaviour change
 
