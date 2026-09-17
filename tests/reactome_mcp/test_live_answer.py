@@ -48,7 +48,9 @@ class _FakeLLM:
         return self._replies.pop(0) if self._replies else AIMessage("out of replies")
 
 
-def _call(name: str, call_id: str = "1", args: dict | None = None) -> dict:
+def _call(
+    name: str, call_id: str = "1", args: dict[str, Any] | None = None
+) -> dict[str, Any]:
     return {"name": name, "args": args or {}, "id": call_id, "type": "tool_call"}
 
 

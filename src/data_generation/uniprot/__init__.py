@@ -15,7 +15,7 @@ def upload_to_chromadb(
     hf_model: str | None = None,
     device: str | None = None,
 ) -> Chroma:
-    metadata_columns: dict[str, list] = {
+    metadata_columns: dict[str, list[str]] = {
         "uniprot_data": [
             "gene_names",
             "short_protein_name",

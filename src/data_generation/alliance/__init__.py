@@ -43,7 +43,7 @@ def upload_to_chromadb(
     hf_model: str | None = None,
     device: str | None = None,
 ) -> Chroma | None:
-    metadata_columns: dict[str, list] = {
+    metadata_columns: dict[str, list[str]] = {
         "genes": [
             "Your Input",
             "Gene ID",

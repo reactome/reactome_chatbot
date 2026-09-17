@@ -27,7 +27,7 @@ class ORCIDOAuthProvider(OAuthProvider):
         if prompt := self.get_prompt():
             self.authorize_params["prompt"] = prompt
 
-    async def get_raw_token_response(self, code: str, url: str) -> dict:
+    async def get_raw_token_response(self, code: str, url: str) -> dict[str, Any]:
         payload = {
             "client_id": self.client_id,
             "client_secret": self.client_secret,

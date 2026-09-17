@@ -10,7 +10,8 @@ from chainlit.data.storage_clients.s3 import S3StorageClient
 from langchain_community.callbacks import OpenAICallbackHandler
 
 from tools.external_search.state import WebSearchResult
-from util.config_yml import Config, TriggerEvent
+from util.config_yml import Config
+from util.config_yml.messages import TriggerEvent
 from util.config_yml.usage_limits import MessageRate
 
 _GUEST_METADATA_KEY = "_guest_metadata"
@@ -80,7 +81,9 @@ def is_feature_enabled(config: Config | None, feature_id: str) -> bool:
 
 
 def save_openai_metrics(message_id: str, openai_cb: OpenAICallbackHandler) -> None:
-    openai_metrics: dict[str, dict] = cl.user_session.get("openai_metrics", {})
+    openai_metrics: dict[str, dict[str, Any]] = cl.user_session.get(
+        "openai_metrics", {}
+    )
     openai_metrics[message_id] = {
         prop: openai_cb.__dict__.get(prop, None)
         for prop in [

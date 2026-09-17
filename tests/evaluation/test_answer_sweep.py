@@ -21,7 +21,9 @@ class StubGraph:
         self.answers = answers
         self.asked: list[str] = []
 
-    async def ainvoke(self, question: str, *_args: object, **_kwargs: object) -> dict:
+    async def ainvoke(
+        self, question: str, *_args: object, **_kwargs: object
+    ) -> dict[str, object]:
         self.asked.append(question)
         answer = self.answers[min(len(self.asked) - 1, len(self.answers) - 1)]
         if isinstance(answer, Exception):

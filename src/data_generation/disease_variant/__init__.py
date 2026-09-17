@@ -19,7 +19,7 @@ import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
-from chromadb.api.client import SharedSystemClient
+from chromadb.api.shared_system_client import SharedSystemClient
 from langchain_chroma import Chroma
 
 from data_generation.embeddings import build_embeddings

@@ -2,7 +2,7 @@ import os
 import shutil
 from pathlib import Path
 
-from chromadb.api.client import SharedSystemClient
+from chromadb.api.shared_system_client import SharedSystemClient
 from langchain_community.vectorstores import Chroma
 
 from data_generation.disease_variant import generate_disease_variant_embeddings
@@ -35,7 +35,7 @@ def upload_to_chromadb(
     # existing noise in an existing bundle rather than noise this adds, so it
     # is left alone here; removing it means changing the query and rebuilding,
     # which is a separate change with its own before-and-after measurement.
-    metadata_columns: dict[str, list] = {
+    metadata_columns: dict[str, list[str]] = {
         "reactions": [
             "st_id",
             "display_name",

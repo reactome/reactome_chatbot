@@ -23,3 +23,9 @@ LOGGING_CONFIG = {
     },
 }
 logging.config.dictConfig(LOGGING_CONFIG)
+
+# Importing this module configures logging as a side effect, and callers write
+# `from util.logging import logging` so that the configuration is guaranteed to
+# have run before they take a logger. That re-export is the point of the module,
+# so declare it rather than leaving it implicit.
+__all__ = ["DEFAULT_LOG_LEVEL", "LOGGING_CONFIG", "logging"]

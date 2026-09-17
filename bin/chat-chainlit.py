@@ -1,3 +1,7 @@
+# mypy: disallow-untyped-calls=False
+# chainlit ships no annotations for cl.user_session.get/set, cl.Message.send
+# or get_data_layer. Not fixable here; it needs stubs upstream. The file is
+# named with a hyphen, so it cannot be listed in [[tool.mypy.overrides]].
 import os
 
 import chainlit as cl
@@ -9,7 +13,8 @@ from dotenv import load_dotenv
 from langchain_community.callbacks import OpenAICallbackHandler
 
 from agent.graph import AgentGraph
-from agent.profiles import ProfileName, get_chat_profiles
+from agent.profile_names import ProfileName
+from agent.profiles import get_chat_profiles
 from agent.profiles.base import OutputState
 from util.chainlit_helpers import (
     PrefixedS3StorageClient,
@@ -19,7 +24,8 @@ from util.chainlit_helpers import (
     static_messages,
     update_search_results,
 )
-from util.config_yml import Config, TriggerEvent
+from util.config_yml import Config
+from util.config_yml.messages import TriggerEvent
 from util.logging import logging
 from util.orcid_provider import ORCIDOAuthProvider
 from util.secrets import (
