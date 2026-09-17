@@ -1,7 +1,9 @@
 import asyncio
 import os
 import re
-from typing import Any, cast
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from typing import Any, Literal, cast
 
 from langchain_core.callbacks.base import Callbacks
 from langchain_core.embeddings import Embeddings
@@ -192,6 +194,40 @@ def resolve_llm_model(llm_config: "LLMConfig | None") -> tuple[str, str, str | N
     return provider, os.getenv("LLM_MODEL", model), base_url
 
 
+MAX_CITATIONS = 12
+"""How many sources one answer may cite.
+
+Without a cap this emitted **315** for one question. `HybridRetriever` queries
+every collection for every expanded query, and each sub-retriever raises its own
+`on_retriever_end`, so the union across them is far larger than the fused set the
+model actually saw. A panel cannot show 315 sources, and a caller should not have
+to guess which of them mattered.
+
+First twelve by order of appearance, which is fusion order, so the best-ranked
+survive. This is a presentation limit, not a claim about what the answer used --
+see research.md R3: these are what retrieval found, not what the prose cited.
+"""
+
+ANSWER_NODE = "model"
+"""The graph node the final answer streams from.
+
+`preprocess` carries the rephrase, safety, language and intent calls. `model`
+carries both the query expander and the answer, which is why a retriever
+completing is used as the boundary between them rather than this name alone.
+"""
+
+
+@dataclass(frozen=True)
+class AnswerEvent:
+    """One thing worth telling a caller about while an answer is produced."""
+
+    kind: Literal["token", "citation", "done"]
+    text: str = ""
+    st_id: str = ""
+    display_name: str = ""
+    state: Literal["answered", "nothing_found", "refused", "failed"] | None = None
+
+
 class AgentGraph:
     def __init__(
         self,
@@ -299,6 +335,80 @@ class AgentGraph:
     async def close_pool(self) -> None:
         if self.pool:
             await self.pool.close()
+
+    async def astream_answer(
+        self,
+        user_input: str,
+        profile: str,
+        *,
+        thread_id: str,
+        enable_postprocess: bool = True,
+    ) -> AsyncIterator["AnswerEvent"]:
+        """Stream one answer: its tokens, then the sources retrieval found.
+
+        Why this is not simply "stream every model token": six model calls run
+        around one answer -- rephrase, safety, language, intent, query expansion,
+        and the answer itself. Measured 2026-09-17, the first token of any kind
+        arrives at 3.0s and belongs to the rephraser; the answer's own first token
+        arrives at 36.1s. Streaming the lot would render the safety check and an
+        expanded query into the caller's panel as though they were the answer.
+
+        The expander and the answer are not separable by metadata: both run at
+        `langgraph_node == "model"` with identical keys and no distinguishing
+        tags. What does separate them is order -- the expander runs *inside*
+        retrieval, the answer after it. So a retriever completing is the boundary.
+        """
+        if self.graph is None:
+            self.graph = await self.initialize()
+        if profile not in self.graph:
+            yield AnswerEvent(kind="done", state="failed")
+            return
+
+        retrieval_done = False
+        seen_citations: set[str] = set()
+        answered = False
+
+        async for event in self.graph[profile].astream_events(
+            InputState(user_input=user_input),
+            config=RunnableConfig(
+                configurable={
+                    "thread_id": thread_id,
+                    "enable_postprocess": enable_postprocess,
+                },
+            ),
+            version="v2",
+        ):
+            kind = event["event"]
+
+            if kind == "on_retriever_end":
+                retrieval_done = True
+                for document in event["data"].get("output") or []:
+                    if len(seen_citations) >= MAX_CITATIONS:
+                        break
+                    stable_id = document.metadata.get("st_id")
+                    if not stable_id or stable_id in seen_citations:
+                        continue
+                    seen_citations.add(stable_id)
+                    yield AnswerEvent(
+                        kind="citation",
+                        st_id=str(stable_id),
+                        display_name=str(document.metadata.get("display_name") or ""),
+                    )
+                continue
+
+            if kind != "on_chat_model_stream" or not retrieval_done:
+                continue
+            if event.get("metadata", {}).get("langgraph_node") != ANSWER_NODE:
+                continue
+
+            text = getattr(event["data"].get("chunk"), "content", "")
+            if text:
+                answered = True
+                yield AnswerEvent(kind="token", text=str(text))
+
+        yield AnswerEvent(
+            kind="done", state="answered" if answered else "nothing_found"
+        )
 
     async def ainvoke(
         self,
