@@ -39,7 +39,7 @@ def download_file(url: str, dest: str, force: bool) -> str | None:
     return None
 
 
-def get_genes(version: str, force: bool, parent_dir: str = ".") -> str:
+def get_genes(version: str, force: bool, parent_dir: str) -> str:
     # Define the file path
     directory = f"{parent_dir}/csv_files/alliance/{version}"
     os.makedirs(directory, exist_ok=True)
@@ -106,9 +106,7 @@ def get_genes(version: str, force: bool, parent_dir: str = ".") -> str:
     return gene_csv
 
 
-def generate_all_csvs(
-    version: str, force: bool, parent_dir: str = "."
-) -> tuple[str, ...]:
+def generate_all_csvs(version: str, force: bool, parent_dir: str) -> tuple[str, ...]:
     files = []
 
     # Download gene file
@@ -130,8 +128,8 @@ def generate_all_csvs(
         "variants_yeast": "https://fms.alliancegenome.org/download/VARIANT-ALLELE_NCBITaxon559292.tsv.gz",
     }
 
+    base = f"{parent_dir}/csv_files/alliance/{version}"
     for name, url in other_files.items():
-        base = f"{parent_dir}/csv_files/alliance/{version}"
         gz_dest = f"{base}/{name}.tsv.gz"
         csv_dest = f"{base}/{name}.tsv"
 
