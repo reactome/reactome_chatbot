@@ -1,7 +1,9 @@
 import hashlib
 import hmac
 import os
-from collections.abc import Awaitable, Callable
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from string import Template
 from urllib.parse import urlsplit
 
@@ -11,6 +13,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from agent.registry import build_graph, set_graph
+from util.logging import logging
 from util.secrets import SECRET_NAMES, get_secret, load_secrets_to_environ
 
 load_dotenv()
@@ -18,7 +22,28 @@ load_dotenv()
 # that had already drifted from it in both directions.
 load_secrets_to_environ(SECRET_NAMES)
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Build the one shared graph before serving, and close its pool after.
+
+    At startup rather than at import: building it at import cost 85 seconds
+    before the module finished loading, which is why the container needs a
+    three-minute startup wait and why nothing could load this app in a test.
+    Here the cost is the same but it is paid where a startup cost belongs, and
+    both surfaces -- Chainlit and the answer endpoint -- get the same instance.
+    """
+    started = time.monotonic()
+    graph = build_graph()
+    set_graph(graph)
+    logging.info("Agent graph ready in %.1fs", time.monotonic() - started)
+    try:
+        yield
+    finally:
+        await graph.close_pool()
+
+
+app = FastAPI(lifespan=lifespan)
 
 CHAINLIT_URI = os.getenv("CHAINLIT_URI")
 CHAINLIT_URL = os.getenv("CHAINLIT_URL")

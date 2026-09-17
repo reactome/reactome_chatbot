@@ -12,10 +12,10 @@ from chainlit.types import ThreadDict
 from dotenv import load_dotenv
 from langchain_community.callbacks import OpenAICallbackHandler
 
-from agent.graph import AgentGraph
 from agent.profile_names import ProfileName
 from agent.profiles import get_chat_profiles
 from agent.profiles.base import OutputState
+from agent.registry import get_graph
 from util.chainlit_helpers import (
     PrefixedS3StorageClient,
     is_feature_enabled,
@@ -53,7 +53,11 @@ if _mounted:
 config: Config | None = Config.from_yaml()
 
 profiles: list[ProfileName] = config.profiles if config else [ProfileName.React_to_Me]
-llm_graph = AgentGraph(profiles, llm_config=config.llm if config else None)
+# Not built here any more. Building at module scope meant importing this file
+# -- which mount_chainlit does -- constructed the graph and every BM25 index,
+# 85 seconds before the app could serve or a test could load it. The FastAPI
+# lifespan builds it now, and get_graph() falls back to building on demand so
+# `chainlit run bin/chat-chainlit.py` still works.
 
 POSTGRES_CHAINLIT_DB = os.getenv("POSTGRES_CHAINLIT_DB")
 S3_BUCKET = os.getenv("S3_BUCKET")
@@ -156,7 +160,7 @@ async def main(message: cl.Message) -> None:
     openai_cb = OpenAICallbackHandler()
 
     enable_postprocess: bool = is_feature_enabled(config, "postprocessing")
-    result: OutputState = await llm_graph.ainvoke(
+    result: OutputState = await get_graph().ainvoke(
         message.content,
         chat_profile.lower(),
         callbacks=[chainlit_cb, openai_cb],
