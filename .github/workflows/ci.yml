@@ -49,6 +49,13 @@ jobs:
             - name: Set up Python and Poetry
               uses: ./.github/actions/install_python_poetry
 
+            # The same data the Dockerfile installs. BM25 tokenises with
+            # word_tokenize(..., language="english"), so any test that drives
+            # retrieval needs punkt_tab -- without it the suite passes locally,
+            # where a developer has downloaded it, and fails here.
+            - name: Fetch NLTK data used by BM25
+              run: poetry run python -m nltk.downloader punkt_tab
+
             - name: Run tests
               run: poetry run pytest
 

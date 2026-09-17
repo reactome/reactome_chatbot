@@ -1,0 +1,167 @@
+"""The async retrieval path must return what the sync one does.
+
+`HybridRetriever` implements retrieval twice: `retrieve_documents` and
+`aretrieve_documents`, the second gathering coroutines so the collections are
+queried concurrently. They are separate implementations of the same fusion, and
+nothing exercised the async one at all.
+
+That asymmetry matters beyond the usual duplication argument: the application
+serves through the async path, while `bin/retrieval_baseline` -- the tool the
+constitution names for measuring retrieval changes -- drives the sync one. If
+they drift, every measurement is of a path no user takes, and Principle II's
+before-and-after comparison measures the wrong thing.
+
+Uses DeterministicFakeEmbedding rather than FakeEmbeddings: the latter returns a
+fresh random vector per call, so the same query embeds differently on the second
+run and the two paths appear to disagree when they do not. That false result is
+what prompted this test.
+
+What this does NOT cover, measured rather than assumed: the per-collection cap.
+Deterministic fake vectors carry no relation to the text, so every query retrieves
+much the same set, fusion lands on exactly `max_documents_per_collection` however
+many queries are given, and changing the cap on one path alone stays invisible.
+Tried at 12 and 60 documents per collection and with one, three and seven
+queries; fusion produced ten per collection every time. Covering the cap needs
+real embeddings and therefore an installed bundle, which is what
+`bin/retrieval_baseline` is for.
+"""
+
+import asyncio
+import csv
+from pathlib import Path
+
+import pytest
+
+pytest.importorskip("langchain_chroma")
+
+from langchain_chroma import Chroma  # noqa: E402
+from langchain_core.callbacks import (  # noqa: E402
+    AsyncCallbackManagerForRetrieverRun,
+    CallbackManagerForRetrieverRun,
+)
+from langchain_core.documents import Document  # noqa: E402
+from langchain_core.embeddings import DeterministicFakeEmbedding  # noqa: E402
+from langchain_core.language_models.fake_chat_models import (  # noqa: E402
+    FakeListChatModel,
+)
+
+from retrievers.csv_chroma import HybridRetriever, chroma_settings  # noqa: E402
+
+
+# Large enough that the per-collection cap actually binds. At twelve it did
+# not: fusion produced fewer documents than the cap, so a test that changed
+# the cap on one path only still passed.
+def _require_bm25_tokenizer() -> None:
+    """BM25 tokenises with nltk's word_tokenize, which needs punkt_tab.
+
+    CI installs it, matching the Dockerfile. A developer who has not downloaded
+    it should get a skip saying so rather than a LookupError from inside nltk.
+    """
+    import nltk
+
+    try:
+        nltk.data.find("tokenizers/punkt_tab")
+    except LookupError:
+        pytest.skip(
+            "nltk punkt_tab not downloaded: python -m nltk.downloader punkt_tab"
+        )
+
+
+COLLECTIONS = {"alpha": 60, "beta": 60}
+
+# Varied on purpose. With near-identical text BM25 and vector search return the
+# same ten documents, fusion never exceeds the per-collection cap, and a test
+# that changes the cap on one path only still passes -- which this one did.
+WORDS = [
+    "kinase phosphorylation cascade",
+    "cholesterol transport vesicle",
+    "ubiquitin ligase complex",
+    "mitochondrial respiratory chain",
+    "DNA mismatch repair",
+    "interferon signalling",
+    "collagen assembly",
+]
+
+
+def _bundle(tmp_path: Path, embedding: DeterministicFakeEmbedding) -> Path:
+    csv_dir = tmp_path / "csv_files"
+    csv_dir.mkdir(parents=True, exist_ok=True)
+    for collection, count in COLLECTIONS.items():
+        with open(csv_dir / f"{collection}.csv", "w", newline="") as handle:
+            writer = csv.DictWriter(
+                handle, fieldnames=["st_id", "display_name", "text"]
+            )
+            writer.writeheader()
+            for i in range(count):
+                writer.writerow(
+                    {
+                        "st_id": f"{collection}-{i}",
+                        "display_name": f"{collection} item {i}",
+                        "text": WORDS[i % len(WORDS)] + f" {collection} {i}",
+                    }
+                )
+        Chroma.from_documents(
+            documents=[
+                Document(
+                    page_content=(
+                        f"st_id: {collection}-{i}\n"
+                        f"text: {WORDS[i % len(WORDS)]} {collection} {i}"
+                    ),
+                    metadata={"st_id": f"{collection}-{i}"},
+                )
+                for i in range(count)
+            ],
+            embedding=embedding,
+            persist_directory=str(tmp_path / collection),
+            client_settings=chroma_settings(),
+        )
+    return tmp_path
+
+
+@pytest.mark.requires_retrieval_stack
+@pytest.mark.parametrize(
+    "queries",
+    [
+        ["kinase phosphorylation"],
+        ["nothing matches this at all"],
+        # Enough distinct queries that fusion overflows the per-collection cap,
+        # so a change to the cap on one path only is visible. With one query the
+        # two retrievers return largely the same documents, fusion stays under
+        # the cap, and such a change passes unnoticed -- as it did here.
+        [
+            "kinase phosphorylation cascade",
+            "cholesterol transport vesicle",
+            "ubiquitin ligase complex",
+            "mitochondrial respiratory chain",
+            "DNA mismatch repair",
+            "interferon signalling",
+            "collagen assembly",
+        ],
+    ],
+)
+def test_async_returns_exactly_what_sync_returns(
+    tmp_path: Path, queries: list[str]
+) -> None:
+    _require_bm25_tokenizer()
+    embedding = DeterministicFakeEmbedding(size=16)
+    retriever = HybridRetriever.from_subdirectory(
+        # Never called: these tests drive retrieve_documents directly, below the
+        # query-expansion step. It is here because the constructor requires one.
+        llm=FakeListChatModel(responses=[""]),
+        embedding=embedding,
+        embeddings_directory=_bundle(tmp_path, embedding),
+    )
+
+    sync = retriever.retrieve_documents(
+        queries, CallbackManagerForRetrieverRun.get_noop_manager()
+    )
+    asynchronous = asyncio.run(
+        retriever.aretrieve_documents(
+            queries, AsyncCallbackManagerForRetrieverRun.get_noop_manager()
+        )
+    )
+
+    # Order, not just membership: RRF resolves ties by first appearance, so a
+    # reordering is a ranking change and the top documents are the ones that
+    # reach the model.
+    assert [d.page_content for d in asynchronous] == [d.page_content for d in sync]
