@@ -1,0 +1,89 @@
+# Tasks: Searching Only the Collections a Question Needs
+
+**Feature**: 009-collection-routing | **Plan**: [plan.md](./plan.md) | **Spec**: [spec.md](./spec.md)
+
+Test tasks are included. Principle II requires a before-and-after measurement on any
+change to what reaches the LLM, and Principle III requires current behaviour pinned
+before it is changed.
+
+## Phase 1: Setup
+
+- [ ] T001 Create branch `009-collection-routing` from main and set `.specify/feature.json` to `specs/009-collection-routing`
+- [ ] T002 Capture the retrieval baseline before any code change: `./bin/retrieval_baseline capture --out specs/009-collection-routing/before.json` against the installed Release97 bundle
+- [ ] T003 [P] Record the current cost in `specs/009-collection-routing/quickstart.md`: documents, context tokens and retrieval seconds for one question needing no variant data
+
+## Phase 2: Foundational (blocks every user story)
+
+**The gate has a hole.** Four of the five collections have no question that fails if
+routing stops searching them. Routing must not land before this closes, or the
+acceptance criterion cannot detect the failure the feature can cause.
+
+- [ ] T004 [P] Add a `summations`-dependent question to `EXPECTATIONS` in src/evaluation/answer_sweep.py, with a `must`/`must_match` that fails if that collection is not searched
+- [ ] T005 [P] Add a `complexes`-dependent question to `EXPECTATIONS` in src/evaluation/answer_sweep.py
+- [ ] T006 [P] Add an `ewas`-dependent question to `EXPECTATIONS` in src/evaluation/answer_sweep.py
+- [ ] T007 [P] Add a `reactions`-dependent question to `EXPECTATIONS` in src/evaluation/answer_sweep.py
+- [ ] T008 Verify each new question FAILS when its collection is removed from the bundle copy, and passes with it present; record the evidence in the PR
+- [ ] T009 Pin current behaviour: a characterization test in tests/retrievers/test_collection_selection.py asserting that with no selection every collection in the bundle is searched
+- [ ] T010 Run `./bin/answer-sweep` against Release97 and confirm green before any behaviour change
+
+## Phase 3: User Story 1 — a question searches only the collections it needs (P1)
+
+**Goal**: cut context tokens and retrieval latency on questions that do not need every
+collection, with no extra LLM call.
+
+**Independent test**: `./bin/answer-sweep` stays green while the measured context
+tokens for a question needing one collection fall relative to `before.json`.
+
+- [ ] T011 [US1] Add `collections: list[str] = []` to `QueryIntent` in src/agent/tasks/intent_classifier.py, defaulting to empty so an omitted field means "all"
+- [ ] T012 [US1] Extend the classifier prompt in src/agent/tasks/intent_classifier.py to name selectable collections, sourced from `reactome_descriptions_info` rather than a literal list
+- [ ] T013 [P] [US1] Add `resolve_collections(selected, available)` to src/retrievers/csv_chroma.py implementing data-model.md: empty means all, unknown names log WARNING and return all
+- [ ] T014 [P] [US1] Unit-test `resolve_collections` in tests/retrievers/test_collection_selection.py for empty, all-valid, some-unknown and all-unknown, asserting every failure widens rather than narrows
+- [ ] T015 [US1] Filter `self.collection_retrievers` by the selection in `retrieve_documents` in src/retrievers/csv_chroma.py, reading it from `RunnableConfig["configurable"]["collections"]`
+- [ ] T016 [US1] Apply the identical filter in `aretrieve_documents` in src/retrievers/csv_chroma.py — this is the served path
+- [ ] T017 [US1] Extend tests/retrievers/test_sync_async_equivalence.py to assert both paths honour the same selection, and confirm it fails when only one is filtered
+- [ ] T018 [US1] Carry `collections` on `ReactToMeState` in src/agent/profiles/react_to_me.py, set in `preprocess` beside `active_sources`
+- [ ] T019 [US1] Pass the selection into the RAG call via `config["configurable"]` in `generate_answer` in src/agent/profiles/react_to_me.py
+- [ ] T020 [US1] Verify through the agent, not the retriever: a test that a variant question routes to `disease_variants` and a userguide question does not, per Principle I
+
+## Phase 4: Measurement and acceptance
+
+- [ ] T021 Capture `./bin/retrieval_baseline capture --out specs/009-collection-routing/after.json` and `compare` it with before.json; report the diff in the PR as information, not as a gate
+- [ ] T022 Re-measure context tokens and retrieval seconds for the same question as T003 and state the change as a number
+- [ ] T023 Run `./bin/answer-sweep` against Release97 with live MCP; it must be green including all nine collection-dependent questions
+- [ ] T024 Record in the PR how often the classifier selected a subset, and how often it named an unknown collection
+
+## Phase 5: Polish
+
+- [ ] T025 [P] Update the Status line and add a Results section to specs/009-collection-routing/spec.md with the measured before/after
+- [ ] T026 [P] Note in src/retrievers/reactome/metadata_info.py that `reactome_descriptions_info` is now a serving input, so an inaccurate description degrades routing
+- [ ] T027 Run `/speckit-analyze` across spec, plan and tasks and resolve anything CRITICAL or HIGH
+
+## Dependencies
+
+```
+Phase 1 (T001-T003)
+   ↓
+Phase 2 (T004-T010)   ← blocking: the gate must detect routing mistakes first
+   ↓
+Phase 3 (T011-T020)   ← the feature
+   ↓
+Phase 4 (T021-T024)   ← acceptance
+   ↓
+Phase 5 (T025-T027)
+```
+
+Within Phase 3: T011 → T012; T013 → T014, T015, T016; T015 and T016 → T017; T018 → T019 → T020.
+
+## Parallel opportunities
+
+- T004-T007: four sweep questions, four independent edits to the same list — write together, run T008 once
+- T013 and T014 alongside T011 and T012: `resolve_collections` is pure and does not depend on the prompt
+- T025 and T026: different files
+
+## Implementation strategy
+
+**MVP is Phase 2 plus Phase 3.** Phase 2 alone is worth landing on its own: it closes
+a hole in the gate that exists today, independently of whether routing is ever built.
+
+Ship Phase 2 as its own PR. If routing then turns out to cost more recall than it
+saves, that PR still stands on its own merit.

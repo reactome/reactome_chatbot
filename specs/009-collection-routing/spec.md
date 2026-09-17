@@ -4,7 +4,8 @@
 
 **Created**: 2026-09-17
 
-**Status**: Draft. Two decisions (D1, D2) for the team.
+**Status**: Planned. D1, D2 and the acceptance bar are all decided and recorded
+below; plan.md, data-model.md and tasks.md exist and depend on them.
 
 **Input**: *"the more tables we add the more tokens we use up and the longer the
 responses take to return, it would be nice to search the disease variant table if
@@ -79,9 +80,14 @@ instead of all of them -- a filter on `self.collection_retrievers.items()`.
 
 ## Decisions
 
+*Both were left as recommendations after the Clarifications session, which settled
+only the acceptance bar. `/speckit-analyze` caught that plan.md and data-model.md had
+already built on them as though decided -- so they are recorded as decisions here,
+on 2026-09-17, rather than left to be inferred from downstream documents.*
+
 ### D1 -- what happens when the classifier is unsure
 
-Recommendation: **select all collections**. A wrong selection costs recall silently,
+**Decided: select all collections.** A wrong selection costs recall silently,
 which is the failure this project keeps finding; a wrong *default* costs only what
 we already pay today. So the change can only make things faster, never worse than
 the current behaviour, unless the classifier actively picks a wrong subset.
@@ -100,7 +106,7 @@ Option (a): leave the cap alone. Simple, and routing alone removes most of the w
 Option (b): give the 50-document budget out by score rather than by collection, so a
 collection with nothing relevant contributes nothing even when it is searched.
 
-Recommendation: **(a) first, measured, then (b) separately**. They are independent,
+**Decided: (a) first, measured, then (b) separately.** They are independent,
 and doing both at once makes it impossible to say which one moved the numbers.
 
 ## How we will know it worked
