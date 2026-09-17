@@ -87,7 +87,12 @@ async def verify_captcha_middleware(
             f"{CHAINLIT_URI}/static",
         ]
         or path.startswith("/static")
-        or not os.getenv("CLOUDFLARE_SECRET_KEY")
+        # The value resolved through get_secret, not os.environ. get_secret
+        # prefers a mounted Docker secret file, so a deployment that mounts the
+        # key rather than exporting it used to land here with the env var unset
+        # and skip the captcha entirely -- switching off a protection the
+        # operator had configured, silently.
+        or not CLOUDFLARE_SECRET_KEY
         or (CHAINLIT_URI and not path.startswith(CHAINLIT_URI))
     ):
         return await call_next(request)
@@ -170,7 +175,10 @@ async def verify_captcha(request: Request) -> Response:
     # Verify the CAPTCHA with Cloudflare
     url = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
     data = {
-        "secret": os.getenv("CLOUDFLARE_SECRET_KEY"),
+        # Same reason: os.environ can be empty while the secret is mounted, and
+        # sending Cloudflare a null secret fails in a way that reads as a captcha
+        # problem rather than a configuration one.
+        "secret": CLOUDFLARE_SECRET_KEY,
         "response": cf_turnstile_response,
         "remoteip": client_ip,
     }
