@@ -14,9 +14,19 @@ Content-Type: application/json
   "human_token": "<evidence the caller verified a person>" }
 ```
 
-`human_token` is D1 and **not yet decided** -- a signed cookie on the shared parent
-domain, a short-lived minted token, or a server-side vouch. This repo verifies
-evidence; it does not perform the check.
+`human_token` is a short-lived token minted by the **website's** server after it
+verifies its own captcha, presented on a server-side proxied call (D1, agreed with
+the website session on 2026-09-17). This repo verifies a signature; it never sees a
+captcha, which is what makes it irrelevant that this repo uses Cloudflare Turnstile
+and the search page uses hCaptcha.
+
+Proposed, and this repo's to settle: **asymmetric signing** -- the website holds the
+signing key, this service holds only a verifying key, so compromising this service
+cannot mint tokens. A shared secret would let either side mint, which is a worse
+blast radius for the side that is reachable from a search page.
+
+The token carries a query budget, and the **website enforces it** before calling,
+because it proxies every request. The rate limit here is a backstop, not the budget.
 
 ## Response: Server-Sent Events
 
@@ -48,6 +58,17 @@ back out and re-style them. Stable IDs resolve at
 `reactome.org/content/detail/<st_id>`.
 
 ## Properties worth holding to
+
+**The search page must not wait for it.** The panel is optional and the results are
+not; a search page that waits fifteen seconds for an optional answer is worse than
+one with no answer. This is the website's to enforce, and it is written here because
+it constrains the endpoint too -- there is no "just wait a bit longer" mode.
+
+**Do not rely on the site's edge blocking.** `block-all-automation.conf` is on dev and
+release and deliberately never on production, because it blocks Googlebot and would
+deindex reactome.org. The edge blocks crawlers on beta and not where search traffic
+actually lives, so an endpoint depending on it would test clean and ship naked. This
+service gates itself.
 
 **It must be safe to ignore.** Any failure, timeout, refusal or unverified caller
 produces a `done` with a non-`answered` state. The website renders no panel. The

@@ -132,7 +132,12 @@ classifier's decision matches, and that no LLM answer call happens for the latte
 - **FR-007**: Answers MUST be attributable to a Reactome release, so a cached or
   stale answer can be identified after a release
 - **FR-008**: The endpoint MUST be rate limited per verified person, independently of
-  the chat UI's existing limits
+  the chat UI's existing limits. This is a backstop, not the budget: under D1 the
+  website enforces the query budget before calling, because it proxies every request
+- **FR-009**: The search results MUST render without waiting for this service. The
+  panel is optional; a search page that waits fifteen seconds for an optional answer
+  is a worse search page than one with no answer at all (raised by the website
+  session, 2026-09-17)
 
 ### Key Entities
 
@@ -158,6 +163,21 @@ classifier's decision matches, and that no LLM answer call happens for the latte
 
 ## Decisions
 
+### D0 -- a correction from the website repo, 2026-09-17
+
+An earlier draft of the contract assumed the site's edge blocking would help keep
+crawlers off this endpoint. **It will not, on the host where it matters.**
+
+`block-all-automation.conf` is included in `dev.conf` and `release.conf` and
+deliberately **never** in `production.conf`, because it blocks anything
+self-identifying as automation -- Googlebot and Bingbot included -- and putting it on
+production would deindex reactome.org.
+
+So the edge blocks crawlers on beta and not on production. An endpoint relying on it
+would be protected exactly where it is tested and naked exactly where it ships, which
+is the worst arrangement available: it would test clean. FR-003 stands on its own and
+this service gates itself.
+
 ### D1 -- what proves a person is human?
 
 Turnstile already exists here, and a bug in it was fixed on 2026-09-17: a deployment
@@ -170,8 +190,26 @@ service. Options: a signed cookie on the shared parent domain (what the chat use
 now); a short-lived token the website mints after its own Turnstile check; or the
 website proxying the call and vouching server-side.
 
-**Open.** It is a security boundary and belongs with whoever owns the website's
-session model, not with this repo alone.
+**Decided in shape, 2026-09-17, with the website session.** The browser solves a
+captcha once per session and posts it to the *website's* server; that server verifies
+it and mints a short-lived, narrowly-scoped token carrying a query budget; the
+website proxies to this endpoint presenting the token; this service verifies it and
+refuses otherwise.
+
+Why not the simpler shared cookie on the parent domain: it is a long-lived bearer
+credential, liftable once and reusable, and the cost exposure here is *per query*.
+The minted token bounds that by construction.
+
+A second reason, found while checking: this repo verifies **Cloudflare Turnstile**
+(`bin/chat-fastapi.py`), and the website's search page uses **hCaptcha**
+(`search.component.ts`). Under a shared cookie those two would have to be reconciled.
+Under minting, this service never sees a captcha at all -- it verifies a signature --
+so the mismatch stops being a problem rather than being solved.
+
+Still to settle, and they are this repo's to propose: the token format and whether
+signing is symmetric or asymmetric (asymmetric preferred -- this service should hold
+a verifying key only, so compromising it cannot mint tokens), clock-skew tolerance,
+and what happens when a token expires mid-stream.
 
 ### D2 -- which searches get an answer?
 
@@ -188,8 +226,14 @@ Search traffic repeats in a way chat traffic does not. A cache keyed by question
 release would cut both latency and cost, and FR-007 exists to make invalidation
 possible.
 
-**Open.** It needs a measurement of repeat rate on real search traffic, which this
-repo does not have -- the website does.
+**Decided, 2026-09-17**: the website's, in front of this service, keyed on
+`(normalised query, release)`.
+
+Not yet built, and deliberately: neither side has the repeat rate on real search
+traffic, and that number decides whether it is worth building at all. FR-007 is what
+makes it safe to defer -- because every answer is tagged with its release, a cache
+invalidates itself when the release changes, with no coordination between the two
+repos.
 
 ## Scope
 
