@@ -10,6 +10,7 @@ only on refusal happening before any model call, on the stream's shape, and on
 a failure ending with a terminal event rather than a hang.
 """
 
+import asyncio
 import json
 import time
 from collections.abc import AsyncIterator
@@ -264,3 +265,46 @@ def test_a_refusal_has_the_same_done_shape_as_an_answer(
     assert done["state"] == "refused"
     assert set(done) == {"state", "seconds"}
     assert stub.calls == 0
+
+
+class _HangingGraph(_StubGraph):
+    """Never yields its second event, like an upstream that stopped responding."""
+
+    async def astream_answer(self, *_a: Any, **_k: Any) -> AsyncIterator[AnswerEvent]:
+        self.calls += 1
+        yield AnswerEvent(kind="token", text="partial ")
+        await asyncio.sleep(
+            5
+        )  # finite, so a regression fails fast instead of hanging CI
+
+
+def test_a_hanging_upstream_still_ends_the_stream(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FR-006 names timeout alongside error, and nothing implemented it.
+
+    The only bound was the LLM client's 360s request_timeout, once per model call
+    and six calls per answer, so a stuck upstream could hold the connection for
+    over half an hour and never send `done`. The search page must not depend on
+    this service being up.
+
+    The timeout is patched to 0.25s so the test is quick, and the stand-in hangs
+    for a finite 5s so that a regression fails in five seconds rather than hanging
+    the suite for an hour.
+    """
+    private, public = keys
+    graph = _HangingGraph()
+    monkeypatch.setattr("api.answer.get_graph", lambda: graph)
+    monkeypatch.setattr("api.answer.ANSWER_TIMEOUT_SECONDS", 0.25)
+    client = _client(public)
+
+    started = time.monotonic()
+    response = client.post(
+        f"{PREFIX}/answer",
+        json={"question": "what is CDK5", "human_token": _token(private)},
+    )
+    elapsed = time.monotonic() - started
+
+    events = dict(_events(response.text))
+    assert json.loads(events["done"])["state"] == "failed"
+    assert elapsed < 2, f"stream ran {elapsed:.1f}s; the timeout did not fire"

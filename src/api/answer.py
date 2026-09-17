@@ -17,6 +17,7 @@ failure answering one question is quiet, while *misconfiguration* -- a missing
 verifying key -- stops the process at startup.
 """
 
+import asyncio
 import json
 import time
 import uuid
@@ -36,6 +37,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 PROFILE = "react-to-me"
+
+# FR-006 names timeout alongside error, and nothing here implemented it. The only
+# bound was the LLM client's `request_timeout=360.0` -- six minutes per model call,
+# and six calls run around one answer, so a pathological request could hold a
+# connection for over half an hour and never send `done`.
+#
+# 120s is about twice the worst complete answer measured (max 31.5s, with the first
+# answer token near 36s on a heavy question), so it does not cut off answers that
+# were going to arrive; it converts an unbounded hang into a bounded one.
+ANSWER_TIMEOUT_SECONDS = 120.0
 
 
 class AnswerRequest(BaseModel):
@@ -96,18 +107,31 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
         started = time.monotonic()
         state = "failed"
         try:
-            async for event in graph.astream_answer(
-                body.question, PROFILE, thread_id=f"search-{uuid.uuid4()}"
-            ):
-                if event.kind == "token":
-                    yield _sse("token", {"text": event.text})
-                elif event.kind == "citation":
-                    yield _sse(
-                        "citation",
-                        {"st_id": event.st_id, "display_name": event.display_name},
-                    )
-                elif event.kind == "done":
-                    state = event.state or "failed"
+            async with asyncio.timeout(ANSWER_TIMEOUT_SECONDS):
+                async for event in graph.astream_answer(
+                    body.question, PROFILE, thread_id=f"search-{uuid.uuid4()}"
+                ):
+                    if event.kind == "token":
+                        yield _sse("token", {"text": event.text})
+                    elif event.kind == "citation":
+                        yield _sse(
+                            "citation",
+                            {
+                                "st_id": event.st_id,
+                                "display_name": event.display_name,
+                            },
+                        )
+                    elif event.kind == "done":
+                        state = event.state or "failed"
+        except TimeoutError:
+            # Distinct from the crash below so an operator can tell a slow
+            # upstream from a broken one.
+            logger.warning(
+                "answering %r exceeded %.0fs",
+                body.question[:80],
+                ANSWER_TIMEOUT_SECONDS,
+            )
+            state = "failed"
         except Exception:
             # Deliberately broad, and deliberately not re-raised: a half-written
             # SSE stream cannot become an HTTP error code, and the caller needs a
