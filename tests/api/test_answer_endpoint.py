@@ -179,7 +179,9 @@ class _ThreadRecordingGraph(_StubGraph):
         super().__init__()
         self.thread_ids: list[str] = []
 
-    async def astream_answer(self, *_a: Any, **kwargs: Any) -> AsyncIterator[AnswerEvent]:
+    async def astream_answer(
+        self, *_a: Any, **kwargs: Any
+    ) -> AsyncIterator[AnswerEvent]:
         self.thread_ids.append(kwargs["thread_id"])
         for event in self._events:
             yield event
@@ -215,9 +217,9 @@ def test_separate_requests_do_not_share_a_thread(
         assert response.status_code == 200
 
     assert len(graph.thread_ids) == requests
-    assert len(set(graph.thread_ids)) == requests, (
-        f"{requests} requests shared {requests - len(set(graph.thread_ids))} threads"
-    )
+    assert (
+        len(set(graph.thread_ids)) == requests
+    ), f"{requests} requests shared {requests - len(set(graph.thread_ids))} threads"
 
 
 def test_start_carries_the_release_and_done_carries_seconds(
