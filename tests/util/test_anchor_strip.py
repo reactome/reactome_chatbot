@@ -91,7 +91,7 @@ def test_character_at_a_time_is_the_same_as_all_at_once() -> None:
 def test_random_splits_agree_with_whole_input() -> None:
     raw = "x <a href='u'>a</a> y <a href='v'>b</a> z < w"
     whole = _through(AnchorStripper(), [raw])
-    rng = random.Random(0)
+    rng = random.Random(0)  # noqa: S311 - splitting a test string, not crypto
     for _ in range(200):
         pieces, rest = [], raw
         while rest:
