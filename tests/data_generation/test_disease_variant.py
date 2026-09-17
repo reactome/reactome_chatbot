@@ -1,6 +1,7 @@
 """The disease_variants collection, built from a release file rather than Neo4j."""
 
 import csv
+import json
 from pathlib import Path
 
 import pytest
@@ -150,3 +151,25 @@ def test_regenerating_replaces_rather_than_appends(
     assert first._collection.count() == 2
     second = dv.generate_disease_variant_embeddings(str(tmp_path), tsv)
     assert second._collection.count() == 2, "regenerating must not append"
+
+
+def test_provenance_records_which_release_file_was_used(tmp_path: Path) -> None:
+    # The bundle directory is named for a release; this collection can come
+    # from a different one, and nothing else in the bundle says so.
+    from data_generation.disease_variant import record_provenance
+
+    record_provenance(
+        tmp_path, Path("/downloads/97/disease_variant_ewas_mapping.tsv"), 6294
+    )
+    written = json.loads((tmp_path / "provenance.json").read_text())
+    assert written["disease_variants"]["rows"] == 6294
+    assert "97" in written["disease_variants"]["source"]
+
+    # Another collection's entry must survive.
+    (tmp_path / "provenance.json").write_text(
+        json.dumps({"reactions": {"source": "neo4j"}})
+    )
+    record_provenance(tmp_path, Path("/downloads/97/x.tsv"), 1)
+    written = json.loads((tmp_path / "provenance.json").read_text())
+    assert written["reactions"]["source"] == "neo4j"
+    assert "disease_variants" in written

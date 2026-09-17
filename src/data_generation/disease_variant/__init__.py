@@ -13,8 +13,10 @@ collection can be built when the others cannot.
 """
 
 import csv
+import json
 import os
 import shutil
+from datetime import UTC, datetime
 from pathlib import Path
 
 from chromadb.api.client import SharedSystemClient
@@ -143,6 +145,31 @@ def write_csv(tsv_path: Path, csv_path: Path) -> int:
     return len(rows)
 
 
+def record_provenance(bundle: Path, source: Path, rows: int) -> None:
+    """Note where this collection came from, beside the bundle.
+
+    The bundle directory is named for a release, and this collection is built
+    from a release file that may not be the same one -- the four Neo4j-backed
+    collections are Release95 while `disease_variant_ewas_mapping.tsv` came
+    from the Release 97 download directory. Nothing else in the bundle records
+    that, and `build_embeddings` already warns that a bundle whose contents
+    disagree with its path is unusable in a way nothing reports.
+
+    Merged rather than overwritten, so each collection keeps its own entry.
+    """
+    path = bundle / "provenance.json"
+    try:
+        known = json.loads(path.read_text())
+    except (OSError, ValueError):
+        known = {}
+    known[COLLECTION] = {
+        "source": str(source),
+        "rows": rows,
+        "generated": datetime.now(UTC).isoformat(timespec="seconds"),
+    }
+    path.write_text(json.dumps(known, indent=2, sort_keys=True) + "\n")
+
+
 def generate_disease_variant_embeddings(
     embeddings_dir: str,
     tsv_path: str | Path,
@@ -154,6 +181,7 @@ def generate_disease_variant_embeddings(
     csv_path = bundle / "csv_files" / f"{COLLECTION}.csv"
     count = write_csv(Path(tsv_path), csv_path)
     print(f"  wrote {csv_path} ({count} variants)")
+    record_provenance(bundle, Path(tsv_path), count)
 
     # Chroma.from_documents appends to whatever is already in the directory, so
     # a second run would silently double the collection -- 12,588 documents,
