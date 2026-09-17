@@ -44,6 +44,19 @@ def fetch_userguide_pages(
             continue
 
         response = session.get(url, timeout=60)
+        if response.status_code == 403:
+            # beta serves block-all-automation.conf, which blocks anything
+            # self-identifying as automation -- which this deliberately does.
+            # A bare 403 here looks like a missing page; it is an allowlist gap.
+            raise RuntimeError(
+                f"403 fetching {url} as User-Agent {USER_AGENT!r}.\n"
+                "The site's edge blocks self-identified automation, and this "
+                "fetcher identifies itself honestly, so it needs allowlisting "
+                "in block-all-automation.conf on the host being fetched.\n"
+                "Production does not carry that config and answers 200; set "
+                "REACTOME_USERGUIDE_BASE to override the host if that is what "
+                "you intend."
+            )
         response.raise_for_status()
         cache_path.write_text(response.text, encoding=response.encoding or "utf-8")
         html_paths[url] = cache_path

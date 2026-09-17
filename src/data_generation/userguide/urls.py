@@ -4,21 +4,24 @@ This is the one place in this repo that *fetches* from reactome.org rather than
 linking to it, so it is the one worth thinking about. Ten pages, and only when the
 userguide bundle is regenerated -- not per request and not per push.
 
-**It stays on production on purpose, and that is not an oversight.** The MCP was
-moved to beta.reactome.org on 2026-09-17 because a test gate should not lean on the
-service it protects, and the two hosts answer identically there: same release, same
-species count. That reasoning does not carry here. The user guide documents the site
-people are actually using, and beta's guide can describe interface changes that have
-not shipped. A bundle built from beta would confidently explain a UI the reader
-cannot see.
+**It fetches beta, not production.** Adam's instruction on 2026-09-17: nothing in
+this repo should be making requests to reactome.org. The MCP moved the same day for
+the same reason -- this is a dev host, and a rebuild here should not put load on the
+public site.
 
-Overridable for testing, so a rebuild can be pointed elsewhere without editing this
-file -- but the default is deliberate.
+The trade, stated so it is not rediscovered as a surprise: beta's user guide can
+describe interface changes that have not reached production, so a bundle built from
+beta may explain a UI some readers cannot see yet. That is a content-freshness risk,
+not a correctness one -- the guide is a description of the software, and beta is
+where this deployment's software comes from. If a released bundle is ever built for
+production users, point this at production for that build with the variable below.
+
+Overridable so either target is one environment variable away.
 """
 
 import os
 
-REACTOME_BASE = os.getenv("REACTOME_USERGUIDE_BASE", "https://reactome.org")
+REACTOME_BASE = os.getenv("REACTOME_USERGUIDE_BASE", "https://beta.reactome.org")
 
 USER_GUIDE_URLS: tuple[str, ...] = (
     f"{REACTOME_BASE}/userguide",
