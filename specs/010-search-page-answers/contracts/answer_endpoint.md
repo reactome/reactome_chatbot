@@ -72,11 +72,19 @@ the same question, that is a defect.
 | | target | today |
 |---|---|---|
 | first token | 2s | n/a -- no streaming endpoint exists |
-| complete | 10s | **25.4s and 32.2s** measured 2026-09-17 |
+| complete | 10s | p50 **15.2s**, p90 **22.4s**, max **31.5s** over the 15 tracked questions |
 
-Retrieval is 14.9s of that, which is why
-[spec 009](../../009-collection-routing/spec.md) is on this feature's critical path
-rather than a parallel nicety.
+Retrieval dominates the heavy questions -- about 12.5s of a 27s answer -- and it
+scales with *queries x collections*. Query expansion turns one question into five
+queries (2.4s, one LLM call) and each runs against every collection, so cutting
+queries is a lever of the same size as cutting collections. Only the latter has a
+spec. See [009](../../009-collection-routing/spec.md), and note that it is one lever
+rather than the whole of it.
+
+One measurement worth keeping in view for anyone optimising this: the async
+retrieval path is **not faster than the sync one** here -- 12.5s against 10.9s on the
+same five queries. The concurrency in `aretrieve_documents` is not currently buying
+throughput, so a plan that assumes it will is assuming something unmeasured.
 
 ## What the website side needs to decide
 

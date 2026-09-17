@@ -16,24 +16,46 @@ available to proven to be human users."*
 
 Measured on 2026-09-17, beta, Release97 bundle, `gpt-4o-mini`, warm process:
 
+Across all fifteen tracked questions, not one question twice:
+
 | | |
 |---|---|
-| Whole answer | **25.4s and 32.2s** on two runs of the same question |
-| Retrieval alone | 14.9s of that |
-| Answer length | ~4,400 characters |
+| Whole answer | min **6.7s**, p50 **15.2s**, p90 **22.4s**, max **31.5s** |
+| Retrieval step, heavy reactome question | ~12.5s of a 27s answer |
+| Retrieval step, userguide question | a fraction of a 12.8s answer |
+| Query expansion | 2.4s, one LLM call, producing 4 variants + the original |
 | Graph construction | 51.5s, once at startup |
 
-A Google AI overview arrives in roughly one to two seconds. At twenty-five, a panel
-on the search results page spins for the entire time a person reads the ordinary
-results and leaves.
+*An earlier draft of this spec quoted "25.4s and 32.2s" as the headline. That was two
+runs of one question, and that question is near the maximum -- roughly twice the p50.
+Corrected on 2026-09-17 after measuring the distribution.*
+
+A Google AI overview is generally reported to arrive in one to two seconds -- an
+assumption here, not a measurement of ours. At a p50 of fifteen seconds, a panel on
+the search results page is still spinning long after a person has read the ordinary
+results, so the conclusion survives the correction even though the number did not.
 
 This is not a polish problem. It decides whether the feature works, so it is stated
 here as a requirement rather than discovered during implementation.
 
-Two consequences run through the rest of this spec: the answer **must stream**, so
-something appears in the first second or two; and the work in
-[spec 009](../009-collection-routing/spec.md) is on this feature's critical path,
-because retrieval is the largest single component.
+Two consequences run through the rest of this spec.
+
+The answer **must stream**, so something appears in the first second or two.
+
+And retrieval is the largest single component for the questions that matter here --
+but **collection routing is not the only lever on it, and may not be the biggest**.
+Retrieval cost scales with *queries x collections*. Query expansion turns one
+question into **five** queries at a cost of 2.4s, and every one of them is run
+against every collection. Cutting five collections to two saves about as much as
+cutting five queries to two, and only the first has a spec. Measured 2026-09-17:
+
+| | |
+|---|---|
+| 5 queries x 5 collections, served async path | 12.5s |
+| 1 query x 5 collections, served async path | ~1.5s |
+
+[Spec 009](../009-collection-routing/spec.md) remains worth doing. The claim that it
+alone is on the critical path does not survive the measurement.
 
 ## User Scenarios & Testing
 
@@ -126,7 +148,7 @@ classifier's decision matches, and that no LLM answer call happens for the latte
 ### Measurable Outcomes
 
 - **SC-001**: p50 first token ≤ 2s, p50 complete ≤ 10s, measured on the tracked
-  question set against a real bundle -- today the whole answer is 25-32s
+  question set against a real bundle -- today p50 is 15.2s and p90 22.4s
 - **SC-002**: Zero model calls for requests without a valid token, measured by
   counting calls under a load of unauthenticated requests
 - **SC-003**: The answer sweep stays green: the endpoint and the chat UI give the
