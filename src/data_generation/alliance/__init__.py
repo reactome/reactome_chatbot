@@ -256,7 +256,10 @@ def upload_to_chromadb(
     hf_model: str | None = None,
     device: str | None = None,
 ) -> Chroma | None:
-    csv_dir = "./csv_files/alliance/" + version + "/"
+    # Derived from embeddings_dir, as every other generator does. It was the
+    # literal "./csv_files/alliance/<version>/", so generation worked from the
+    # repo root and silently found nothing anywhere else.
+    csv_dir = str(Path(embeddings_dir) / "csv_files" / "alliance" / version)
 
     # Only `genes` is embedded. The other six lists above are curated MITAB and
     # Alliance schemas kept for when they are, and `tests/data_generation/
@@ -325,5 +328,7 @@ def generate_alliance_embeddings(
         )
         exit()
 
-    generate_all_csvs(release_version, force)
+    # Same directory the loader reads from, passed rather than assumed: the two
+    # used to agree only because both were relative to the working directory.
+    generate_all_csvs(release_version, force, embeddings_dir)
     upload_to_chromadb(embeddings_dir, release_version, force, hf_model, device)
