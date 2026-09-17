@@ -54,6 +54,11 @@ produces a `done` with a non-`answered` state. The website renders no panel. The
 search page must never be slower or broken because this service is down (FR-006,
 SC-004).
 
+**The stream is bounded.** The server gives up after 120 seconds and sends `done`
+with `state: failed`. A caller still needs its own timeout -- a dropped connection
+sends nothing -- but the server will not hold one open indefinitely. 120s is about
+twice the slowest complete answer measured; it is a ceiling, not a target.
+
 **No answer without a token.** Refused before any model call, not after (FR-003).
 Search pages get crawled, and every crawled search reaching the model is a bill.
 
