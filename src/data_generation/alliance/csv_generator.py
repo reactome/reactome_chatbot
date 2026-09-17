@@ -106,7 +106,7 @@ def get_genes(version: str, force: bool) -> str:
     return gene_csv
 
 
-def generate_all_csvs(version: str, force: bool) -> tuple:
+def generate_all_csvs(version: str, force: bool) -> tuple[str, ...]:
     files = []
 
     # Download gene file

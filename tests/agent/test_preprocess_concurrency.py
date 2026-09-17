@@ -34,17 +34,17 @@ def _slow(
 def _builder(log: list[tuple[str, float, float]]) -> BaseGraphBuilder:
     """Build without __init__, which would construct real LLM chains."""
     b = BaseGraphBuilder.__new__(BaseGraphBuilder)
-    b.rephrase_chain = _slow("rephrased", log, "rephrase")  # type: ignore[assignment]
-    b.safety_checker = _slow(  # type: ignore[assignment]
+    b.rephrase_chain = _slow("rephrased", log, "rephrase")
+    b.safety_checker = _slow(
         SafetyCheck(safety="true", reason_unsafe=""), log, "safety"
     )
-    b.language_detector = _slow("en", log, "language")  # type: ignore[assignment]
+    b.language_detector = _slow("en", log, "language")
     return b
 
 
 def test_safety_and_language_overlap() -> None:
     log: list[tuple[str, float, float]] = []
-    state = BaseState(user_input="what is TP53?")  # type: ignore[typeddict-item]
+    state = BaseState(user_input="what is TP53?")
 
     result = asyncio.run(_builder(log).preprocess(state, RunnableConfig()))
 
@@ -78,7 +78,7 @@ def test_safety_and_language_overlap() -> None:
 def test_rephrase_still_precedes_the_safety_check() -> None:
     """Ordering that must not be lost: the safety check reads the rephrased text."""
     log: list[tuple[str, float, float]] = []
-    state = BaseState(user_input="what is TP53?")  # type: ignore[typeddict-item]
+    state = BaseState(user_input="what is TP53?")
     asyncio.run(_builder(log).preprocess(state, RunnableConfig()))
 
     spans = {name: (start, end) for name, start, end in log}

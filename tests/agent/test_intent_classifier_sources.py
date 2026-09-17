@@ -51,3 +51,28 @@ def test_an_unavailable_source_falls_back_rather_than_failing() -> None:
     assert resolve_active_sources("live", TWO) == ["reactome"]
     assert resolve_active_sources("live", THREE) == ["live"]
     assert resolve_active_sources("userguide", ONE) == ["reactome"]
+
+
+def test_listing_curated_entities_is_steered_away_from_live() -> None:
+    """With `live` offered, "List the ABCA1 variants" routed there.
+
+    The live prompt says `live` answers "whether some specific thing exists in
+    it at all", and a request to list variants reads like a question about what
+    the database contains. It is not: the variants are documents in the
+    `disease_variants` collection, and the live services answer that question
+    at the level of the pathway -- 393 characters naming no variant, where
+    retrieval names five.
+    """
+    message = build_classifier_message(THREE)
+    assert "Naming or listing curated entities is **reactome**" in message
+    assert "scope versus content" in message
+    # The examples are the two questions that actually failed.
+    assert "Which ABCA1 variants" in message
+    assert "which diseases involve PTEN variants" in message
+
+
+def test_that_steer_is_absent_when_live_is_not_offered() -> None:
+    # It only makes sense next to `live`; without it the rule is noise, and
+    # FR-007 requires the no-MCP prompt to stay byte-for-byte unchanged.
+    assert "Naming or listing curated entities" not in build_classifier_message(TWO)
+    assert "Naming or listing curated entities" not in build_classifier_message(ONE)

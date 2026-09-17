@@ -11,11 +11,54 @@ reactome_descriptions_info: dict[str, str] = {
     "ewas": "Contains data on proteins and nucleic acids with known sequences. Includes entity names, IDs, canonical and synonymous gene names, and functions.",
     "complexes": "Catalogs biological complexes, listing complex names and IDs along with the names and IDs of their components. ",
     "reactions": "Documents biological pathways and their constituent reactions, detailing pathway and reaction names and IDs. It includes information on the inputs, outputs, and catalysts for each reaction, emphasizing the interconnected nature of cellular processes. Inputs and outputs, critical to the initiation and conclusion of reactions, along with catalysts that facilitate these processes, are cataloged to highlight their roles across various reactions and pathways",
+    "disease_variants": "Individual disease-causing variants of proteins: the gene, the variant name, the amino acid change in prose, the disease it causes with its Mondo and DOID identifiers, the reaction the variant takes part in and whether it is a loss or gain of function, and the normal reaction and pathway the defective one replaces. This is the only collection holding the variants themselves; the others describe disease at the level of a pathway or reaction.",
     "summations": "Enumerates biological reactions, accompanied by concise summaries ('summations') of each reaction. These summations encapsulate the essence and biochemical significance of the reactions, offering insights into their roles within cellular processes and pathways.",
 }
 
 
 reactome_field_info: dict[str, list[AttributeInfo]] = {
+    "disease_variants": [
+        AttributeInfo(
+            name="st_id",
+            description="The Reactome Identifier for the variant entity itself, "
+            "e.g. R-HSA-5682201 for ABCA1 W590S.",
+            type="string",
+        ),
+        AttributeInfo(
+            name="gene",
+            description="The gene the variant belongs to, e.g. ABCA1 or PTEN. "
+            "One gene has many variants: Reactome curates 108 for PTEN.",
+            type="string",
+        ),
+        AttributeInfo(
+            name="disease",
+            description="The disease or diseases the variant causes, comma "
+            "separated. A third of variants list more than one, and the "
+            "well-covered ones list many.",
+            type="string",
+        ),
+        AttributeInfo(
+            name="disease_id",
+            description="Disease Ontology identifier, e.g. DOID:1388 for "
+            "Tangier disease. DOID throughout, and lines up with `disease` "
+            "position for position. Not to be confused with `cross_references`, "
+            "which mixes a Mondo disease id with COSMIC and ClinVar variant ids.",
+            type="string",
+        ),
+        AttributeInfo(
+            name="mutation_type",
+            description="How the sequence differs: ReplacedResidue, "
+            "NonsenseMutation, FragmentDeletionModification, "
+            "FragmentInsertionModification or FragmentReplacedModification.",
+            type="string",
+        ),
+        AttributeInfo(
+            name="normal_reaction_id",
+            description="The Reactome Identifier of the normal reaction this "
+            "defective one replaces, for comparing against healthy biology.",
+            type="string",
+        ),
+    ],
     "summations": [
         AttributeInfo(
             name="st_id",

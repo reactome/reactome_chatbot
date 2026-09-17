@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from agent.graph import AgentGraph
 from agent.profile_names import ProfileName
 from reactome_mcp.session import is_configured
+from util.embedding_environment import EmbeddingEnvironment
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,9 @@ class Expectation:
     # a plain local checkout -- these cannot pass, and reporting them as
     # regressions is how a gate teaches people to ignore it.
     needs_live: bool = False
+    # A collection that may not be in the installed bundle yet. Same reasoning
+    # as needs_live: a question that cannot pass is not a regression.
+    needs_collection: str = ""
 
 
 EXPECTATIONS: tuple[Expectation, ...] = (
@@ -86,6 +90,24 @@ EXPECTATIONS: tuple[Expectation, ...] = (
         question="How do I use ReactomeFIViz in Cytoscape?",
         why="Preferring the web tool must not bury the plugin for someone who wants it.",
         must=("FIViz",),
+    ),
+    # --- disease variants, which only the new collection can name -----------
+    Expectation(
+        question="List the ABCA1 variants in Reactome and the disease each one causes.",
+        why="Answered 'Defective ABCA1 causes Tangier Disease' and named none of "
+        "the six curated variants. Pathway-level prose instead of the variant.",
+        must=("Tangier",),
+        # A named variant, not a specific one: which of the six come back
+        # depends on retrieval order, and pinning one would fail a good answer.
+        must_match=(r"\bABCA1 [A-Z]\d{2,4}[A-Z*]",),
+        needs_collection="disease_variants",
+    ),
+    Expectation(
+        question="Which diseases involve variants of the PTEN gene in Reactome?",
+        why="Answered with the PTEN Loss of Function pathway. Reactome curates "
+        "108 PTEN variants across 86 diseases.",
+        must_match=(r"\bPTEN [A-Z]\d{2,4}[A-Z*]",),
+        needs_collection="disease_variants",
     ),
     # --- facts about the database, which retrieval cannot answer ------------
     Expectation(
@@ -194,6 +216,11 @@ TRANSIENT = (
 )
 
 
+def _has_collection(name: str) -> bool:
+    bundle = EmbeddingEnvironment.get_dir("reactome")
+    return bool(bundle and (bundle / name / "chroma.sqlite3").exists())
+
+
 def _looks_transient(result: "Result") -> bool:
     return any(_contains(result.answer, marker) for marker in TRANSIENT)
 
@@ -204,6 +231,17 @@ async def run(expectations: tuple[Expectation, ...], retries: int = 1) -> list[R
     live = is_configured()
     try:
         for index, expectation in enumerate(expectations, start=1):
+            if expectation.needs_collection and not _has_collection(
+                expectation.needs_collection
+            ):
+                results.append(
+                    Result(
+                        expectation=expectation,
+                        skipped=f"the {expectation.needs_collection} collection "
+                        "is not in the installed bundle",
+                    )
+                )
+                continue
             if expectation.needs_live and not live:
                 results.append(
                     Result(
@@ -296,11 +334,16 @@ def report(results: list[Result]) -> int:
     ran = len(results) - len(skipped)
     print(f"\n  {ran - len(failures)}/{ran} passed, {total:.0f}s total")
     if skipped:
-        print(
-            f"  {len(skipped)} skipped: they need the live service, so a local run"
-            " cannot check them."
-        )
-        print("  The deploy runs this inside the container, where MCP is configured.")
+        # Grouped by reason: "they need the live service" was printed for
+        # every skip, including one whose collection was simply not installed.
+        reasons: dict[str, int] = {}
+        for r in skipped:
+            reasons[r.skipped] = reasons.get(r.skipped, 0) + 1
+        print(f"  {len(skipped)} skipped, neither a pass nor a failure:")
+        for reason, count in reasons.items():
+            print(f"    {count}x {reason}")
+        print("  The deploy runs this inside the container, where the bundle is")
+        print("  installed and MCP is configured.")
     if failures:
         print(
             "  A failure here is a question the chatbot used to get wrong and does again."

@@ -15,7 +15,8 @@ from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
 from agent.models import get_embedding, get_llm
-from agent.profiles import ProfileName, create_profile_graphs
+from agent.profile_names import ProfileName
+from agent.profiles import create_profile_graphs
 from agent.profiles.base import InputState, OutputState
 from util.config_yml.models import LLMConfig
 from util.embedding_environment import EmbeddingEnvironment

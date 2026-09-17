@@ -217,8 +217,45 @@ disallow_incomplete_defs = true
 warn_no_return = true
 warn_return_any = true
 extra_checks = true
+# Free: both already pass with zero errors, so they cost nothing to hold and
+# stop the corresponding slippage from arriving unnoticed.
+warn_unused_configs = true
+disallow_subclassing_any = true
+# A stale ignore is a claim about the code that is no longer true. There were
+# five, all in one test file, all obsolete.
+warn_unused_ignores = true
+# Names now come from where they are defined rather than from whichever module
+# happened to import them first: ProfileName from agent.profile_names,
+# TriggerEvent from util.config_yml.messages, SharedSystemClient from
+# chromadb.api.shared_system_client. The one deliberate re-export, `logging`
+# from util.logging, is declared in that module's __all__ -- importing it is
+# what runs dictConfig, so callers take the logger through it on purpose.
+no_implicit_reexport = true
+# Enabled repo-wide, with three modules exempted below. Every violation is a
+# call into an untyped third-party API rather than anything we could annotate,
+# so exempting those three keeps the rule meaningful everywhere else: new
+# untyped calls cannot appear in ordinary code.
+disallow_untyped_calls = true
+# disallow_any_generics is the one strict setting still off. Every bare builtin
+# it flagged is now parameterised; the 43 left are all framework generics --
+# Runnable (29), StateGraph (9), CompiledStateGraph (3), RunnableLambda and
+# BasePromptTemplate. Turning it on means writing the real input and output
+# type of every chain and graph, and a guess there encodes a type that is
+# wrong rather than absent, which is worse than the bare form. It needs doing
+# per chain, with the chain in front of you.
 # disallow_untyped_decorators stays off: chainlit's @cl.* decorators are
 # untyped upstream, so it only ever fires on bin/chat-chainlit.py.
+
+# Untyped third-party surfaces, not our debt. chainlit ships no annotations for
+# `cl.user_session.get/set`, `cl.Message.send` or `get_data_layer`, and boto3's
+# `Session` is untyped without boto3-stubs. Nothing here is fixable by
+# annotating our own code; it needs stubs upstream or a typed wrapper of our
+# own, which is a change with its own design rather than a lint fix.
+# bin/chat-chainlit.py carries the same exemption as an inline directive: its
+# hyphenated name cannot appear in an overrides section.
+[[tool.mypy.overrides]]
+module = ["util.chainlit_helpers", "util.secrets"]
+disallow_untyped_calls = false
 
 # --- mypy baseline -------------------------------------------------------------
 # Modules that do not yet meet the floor above. Each entry is debt: fix the module,
