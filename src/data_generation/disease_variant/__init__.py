@@ -145,7 +145,9 @@ def write_csv(tsv_path: Path, csv_path: Path) -> int:
     return len(rows)
 
 
-def record_provenance(bundle: Path, source: Path, rows: int) -> None:
+def record_provenance(
+    bundle: Path, source: Path, rows: int, collection: str = COLLECTION
+) -> None:
     """Note where this collection came from, beside the bundle.
 
     The bundle directory is named for a release, and this collection is built
@@ -162,7 +164,7 @@ def record_provenance(bundle: Path, source: Path, rows: int) -> None:
         known = json.loads(path.read_text())
     except (OSError, ValueError):
         known = {}
-    known[COLLECTION] = {
+    known[collection] = {
         "source": str(source),
         "rows": rows,
         "generated": datetime.now(UTC).isoformat(timespec="seconds"),

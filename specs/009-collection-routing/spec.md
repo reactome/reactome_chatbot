@@ -10,6 +10,25 @@
 responses take to return, it would be nice to search the disease variant table if
 that is what they are asking about."*
 
+## Clarifications
+
+### Session 2026-09-17
+
+- Q: When routing skips a collection that would have contributed a document, how much recall loss should reject the change? → A: Gate on answers, measure documents. No numeric document-loss threshold is set until there is one real measurement to set it from.
+
+The answer sweep staying green is the pass/fail. `bin/retrieval_baseline` is captured
+before and after and its diff reported, because Principle II requires the measurement
+-- but a changed document set does not by itself block, since dropping documents is
+what this change is for. A wrong answer is the defect; a dropped document is data.
+
+Any threshold chosen today would be invented: there is no evidence yet on how often
+the classifier picks wrong, and a number that looks rigorous and means nothing is the
+failure this project keeps finding.
+
+The weakness in that, stated rather than hidden: thirteen questions is a thin net, and
+routing could break something nobody tracks. So growing the tracked set is part of
+this work rather than a follow-up -- see Success Criteria.
+
 ## The cost is real, and it was measured
 
 Every collection in the bundle is searched for every question. `retrieve_documents`
@@ -96,6 +115,10 @@ this change is a real difference in behaviour rather than noise.
   fail if routing sends them past `disease_variants`, and the species and release
   questions, which fail if it stops routing to `live`
 - the token and latency numbers above, re-measured
+- the tracked question set grown before the change lands, not after. Thirteen
+  questions cannot cover five collections; each collection needs at least one
+  question that fails if routing stops searching it. `disease_variants` has two
+  already, and the other four have none.
 
 That last one matters: the point of this change is a number going down, and it
 should be reported as one.

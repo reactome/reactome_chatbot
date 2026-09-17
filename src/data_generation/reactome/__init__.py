@@ -5,7 +5,10 @@ from pathlib import Path
 from chromadb.api.shared_system_client import SharedSystemClient
 from langchain_community.vectorstores import Chroma
 
-from data_generation.disease_variant import generate_disease_variant_embeddings
+from data_generation.disease_variant import (
+    generate_disease_variant_embeddings,
+    record_provenance,
+)
 from data_generation.embeddings import build_embeddings
 from data_generation.metadata_csv_loader import MetaDataCSVLoader
 from data_generation.reactome.csv_generator import generate_all_csvs
@@ -84,6 +87,9 @@ def upload_to_chromadb(
         encoding="utf-8",
     )
     docs = loader.load()
+    # Recorded for every collection, not just disease_variants: a provenance
+    # file that covers one of five implies the other four are unknown.
+    record_provenance(Path(embeddings_dir), Path(file), len(docs), embedding_table)
     embeddings_instance = build_embeddings(hf_model, device, chunk_size=400)
 
     return Chroma.from_documents(
