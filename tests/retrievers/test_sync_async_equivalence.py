@@ -47,9 +47,26 @@ from langchain_core.language_models.fake_chat_models import (  # noqa: E402
 
 from retrievers.csv_chroma import HybridRetriever, chroma_settings  # noqa: E402
 
+
 # Large enough that the per-collection cap actually binds. At twelve it did
 # not: fusion produced fewer documents than the cap, so a test that changed
 # the cap on one path only still passed.
+def _require_bm25_tokenizer() -> None:
+    """BM25 tokenises with nltk's word_tokenize, which needs punkt_tab.
+
+    CI installs it, matching the Dockerfile. A developer who has not downloaded
+    it should get a skip saying so rather than a LookupError from inside nltk.
+    """
+    import nltk
+
+    try:
+        nltk.data.find("tokenizers/punkt_tab")
+    except LookupError:
+        pytest.skip(
+            "nltk punkt_tab not downloaded: python -m nltk.downloader punkt_tab"
+        )
+
+
 COLLECTIONS = {"alpha": 60, "beta": 60}
 
 # Varied on purpose. With near-identical text BM25 and vector search return the
@@ -125,6 +142,7 @@ def _bundle(tmp_path: Path, embedding: DeterministicFakeEmbedding) -> Path:
 def test_async_returns_exactly_what_sync_returns(
     tmp_path: Path, queries: list[str]
 ) -> None:
+    _require_bm25_tokenizer()
     embedding = DeterministicFakeEmbedding(size=16)
     retriever = HybridRetriever.from_subdirectory(
         # Never called: these tests drive retrieve_documents directly, below the
