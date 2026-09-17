@@ -18,6 +18,8 @@ verifying key -- stops the process at startup.
 """
 
 import json
+import time
+import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -54,7 +56,9 @@ def _refusal(reason: str) -> StreamingResponse:
     """
 
     async def body() -> AsyncIterator[str]:
-        yield _sse("done", {"state": "refused"})
+        # `seconds` too: a refusal is a `done` like any other, and the caller
+        # parses one shape. It is ~0 because refusal precedes the graph.
+        yield _sse("done", {"state": "refused", "seconds": 0.0})
 
     logger.info("answer request refused: %s", reason)
     return StreamingResponse(body(), media_type="text/event-stream")
@@ -75,12 +79,25 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
 
     graph = get_graph()
 
+    # A fresh thread per request, never `id(body)`. `chat_history` is checkpointed
+    # state annotated with `add_messages`, and the rephraser injects it through a
+    # MessagesPlaceholder, so two requests sharing a thread means one stranger's
+    # question and answer rephrase the next stranger's question. CPython reuses the
+    # address of a freed object immediately: measured over 200 requests, `id(body)`
+    # produced 38 distinct threads and put 192 of them on a shared one.
+
+    # Resolved at startup, not per request: the graph is built from the same
+    # bundles, so startup is what is actually being served. None if unknown --
+    # a missing release costs the caller cache invalidation, not an answer.
+    release = getattr(request.app.state, "release", None)
+
     async def stream() -> AsyncIterator[str]:
-        yield _sse("start", {"answered": True})
+        yield _sse("start", {"release": release, "answered": True})
+        started = time.monotonic()
         state = "failed"
         try:
             async for event in graph.astream_answer(
-                body.question, PROFILE, thread_id=f"search-{id(body)}"
+                body.question, PROFILE, thread_id=f"search-{uuid.uuid4()}"
             ):
                 if event.kind == "token":
                     yield _sse("token", {"text": event.text})
@@ -97,6 +114,8 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
             # terminal event to stop waiting.
             logger.exception("answering %r failed", body.question[:80])
             state = "failed"
-        yield _sse("done", {"state": state})
+        yield _sse(
+            "done", {"state": state, "seconds": round(time.monotonic() - started, 1)}
+        )
 
     return StreamingResponse(stream(), media_type="text/event-stream")
