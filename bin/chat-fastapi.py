@@ -14,6 +14,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from agent.registry import build_graph, set_graph
+from util.captcha_scope import is_captcha_exempt
 from util.logging import logging
 from util.secrets import SECRET_NAMES, get_secret, load_secrets_to_environ
 
@@ -106,22 +107,15 @@ async def verify_captcha_middleware(
             return RedirectResponse(url=f"{clean_path}/")
 
     # Allow access to CAPTCHA pages and static files
-    if (
-        path
-        in [
-            "/chat/",
-            f"{CHAINLIT_URI}/verify_captcha",
-            f"{CHAINLIT_URI}/verify_captcha_page",
-            f"{CHAINLIT_URI}/static",
-        ]
-        or path.startswith("/static")
+    if is_captcha_exempt(
+        path,
+        chainlit_uri=CHAINLIT_URI,
         # The value resolved through get_secret, not os.environ. get_secret
         # prefers a mounted Docker secret file, so a deployment that mounts the
         # key rather than exporting it used to land here with the env var unset
         # and skip the captcha entirely -- switching off a protection the
         # operator had configured, silently.
-        or not CLOUDFLARE_SECRET_KEY
-        or (CHAINLIT_URI and not path.startswith(CHAINLIT_URI))
+        captcha_configured=bool(CLOUDFLARE_SECRET_KEY),
     ):
         return await call_next(request)
 
