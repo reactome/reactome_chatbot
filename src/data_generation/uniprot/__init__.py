@@ -1,6 +1,8 @@
 import os
+import shutil
 from pathlib import Path
 
+from chromadb.api.shared_system_client import SharedSystemClient
 from langchain_community.vectorstores import Chroma
 
 from data_generation.embeddings import build_embeddings
@@ -35,6 +37,14 @@ def upload_to_chromadb(
     print(f"Loaded {len(docs)} documents from {file}")
 
     embeddings_instance = build_embeddings(hf_model, device, chunk_size=500)
+
+    # Chroma.from_documents appends, so a second run doubles the collection
+    # silently. The shipped reactome bundle carried every reaction twice for
+    # exactly this reason, and nothing reported it.
+    persist = Path(embeddings_dir) / embedding_table
+    if persist.exists():
+        shutil.rmtree(persist)
+        SharedSystemClient.clear_system_cache()
 
     return Chroma.from_documents(
         documents=docs,

@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from shutil import rmtree
 
+from chromadb.api.shared_system_client import SharedSystemClient
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
 
@@ -39,8 +40,15 @@ def generate_userguide_embeddings(
 ) -> None:
     embeddings_path = Path(embeddings_dir)
     chroma_dir = embeddings_path / CHROMA_COLLECTION
-    if force and chroma_dir.exists():
+    # Unconditionally, not just under `force`. Chroma.from_documents appends, so
+    # a plain rebuild used to add a second copy of every section to the existing
+    # collection -- the same fault that left the shipped reactome bundle with
+    # 33,498 documents for 16,749 rows. `force` governs whether the HTML pages
+    # are re-fetched, which is a separate question from whether this collection
+    # is rebuilt from them.
+    if chroma_dir.exists():
         rmtree(chroma_dir)
+        SharedSystemClient.clear_system_cache()
 
     cache_dir = embeddings_path / HTML_CACHE_DIR
     html_paths = fetch_userguide_pages(
