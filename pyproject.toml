@@ -217,6 +217,13 @@ disallow_incomplete_defs = true
 warn_no_return = true
 warn_return_any = true
 extra_checks = true
+# Free: both already pass with zero errors, so they cost nothing to hold and
+# stop the corresponding slippage from arriving unnoticed.
+warn_unused_configs = true
+disallow_subclassing_any = true
+# A stale ignore is a claim about the code that is no longer true. There were
+# five, all in one test file, all obsolete.
+warn_unused_ignores = true
 # disallow_untyped_decorators stays off: chainlit's @cl.* decorators are
 # untyped upstream, so it only ever fires on bin/chat-chainlit.py.
 
