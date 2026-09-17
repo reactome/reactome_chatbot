@@ -47,6 +47,24 @@ anchors -- what the chat UI does today -- would force the search page to parse t
 back out and re-style them. Stable IDs resolve at
 `reactome.org/content/detail/<st_id>`.
 
+At most **12** citations are sent. Measured against the live endpoint this cap is
+binding on ordinary questions, so treat it as the most relevant few rather than
+the complete set.
+
+### What `token` text contains
+
+**Markdown, never HTML.** Headings and lists appear; anchors do not. The answer
+prompt is the chat UI's and does emit inline `<a href=...>` links, so the endpoint
+strips them -- across fragment boundaries, because the model streams one anchor as
+twenty-odd pieces (`' <'`, `'a'`, `' href'`, `'="'`, `'https'`, ...). A caller that
+rendered fragments as they arrived would otherwise show the raw tag before it
+became a link.
+
+The anchor's *text* is kept, since removing it would break any sentence with a
+linked phrase in the middle. Where the model used a link as a trailing citation,
+that leaves the pathway title as a bare clause -- cosmetic, and the structured
+`citation` events are the reliable source for links.
+
 ## Properties worth holding to
 
 **It must be safe to ignore.** Any failure, timeout, refusal or unverified caller

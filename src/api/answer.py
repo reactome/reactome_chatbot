@@ -29,6 +29,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from agent.registry import get_graph
+from util.anchor_strip import AnchorStripper
 from util.human_token import TokenRejectedError, verify
 from util.logging import logging
 
@@ -106,13 +107,20 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
         yield _sse("start", {"release": release, "answered": True})
         started = time.monotonic()
         state = "failed"
+        # The `react-to-me` prompt is the chat UI's and asks for inline anchors.
+        # The contract promises this caller prose without them, citations being
+        # separate events, so they come out here -- across fragment boundaries,
+        # because one anchor arrives as twenty-odd fragments.
+        stripper = AnchorStripper()
         try:
             async with asyncio.timeout(ANSWER_TIMEOUT_SECONDS):
                 async for event in graph.astream_answer(
                     body.question, PROFILE, thread_id=f"search-{uuid.uuid4()}"
                 ):
                     if event.kind == "token":
-                        yield _sse("token", {"text": event.text})
+                        text = stripper.feed(event.text)
+                        if text:
+                            yield _sse("token", {"text": text})
                     elif event.kind == "citation":
                         yield _sse(
                             "citation",
@@ -138,6 +146,9 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
             # terminal event to stop waiting.
             logger.exception("answering %r failed", body.question[:80])
             state = "failed"
+        held = stripper.flush()
+        if held:
+            yield _sse("token", {"text": held})
         yield _sse(
             "done", {"state": state, "seconds": round(time.monotonic() - started, 1)}
         )
