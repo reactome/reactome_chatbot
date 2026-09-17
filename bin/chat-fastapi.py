@@ -1,7 +1,9 @@
 import hashlib
 import hmac
 import os
-from collections.abc import Awaitable, Callable
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from string import Template
 from urllib.parse import urlsplit
 
@@ -11,6 +13,9 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from agent.registry import build_graph, set_graph
+from util.captcha_scope import is_captcha_exempt
+from util.logging import logging
 from util.secrets import SECRET_NAMES, get_secret, load_secrets_to_environ
 
 load_dotenv()
@@ -18,7 +23,31 @@ load_dotenv()
 # that had already drifted from it in both directions.
 load_secrets_to_environ(SECRET_NAMES)
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Build the one shared graph before serving, and close its pool after.
+
+    At startup rather than at import: building it at import cost 85 seconds
+    before the module finished loading, which is why the container needs a
+    three-minute startup wait and why nothing could load this app in a test.
+    Here the cost is the same but it is paid where a startup cost belongs, and
+    both surfaces -- Chainlit and the answer endpoint -- get the same instance.
+    """
+    # At INFO, so it is silent where an operator has set LOG_LEVEL=error -- which
+    # is the local default in .env, and is why this line did not appear the first
+    # time it was checked. beta runs LOG_LEVEL=info and does print it.
+    started = time.monotonic()
+    graph = build_graph()
+    set_graph(graph)
+    logging.info("Agent graph ready in %.1fs", time.monotonic() - started)
+    try:
+        yield
+    finally:
+        await graph.close_pool()
+
+
+app = FastAPI(lifespan=lifespan)
 
 CHAINLIT_URI = os.getenv("CHAINLIT_URI")
 CHAINLIT_URL = os.getenv("CHAINLIT_URL")
@@ -78,22 +107,15 @@ async def verify_captcha_middleware(
             return RedirectResponse(url=f"{clean_path}/")
 
     # Allow access to CAPTCHA pages and static files
-    if (
-        path
-        in [
-            "/chat/",
-            f"{CHAINLIT_URI}/verify_captcha",
-            f"{CHAINLIT_URI}/verify_captcha_page",
-            f"{CHAINLIT_URI}/static",
-        ]
-        or path.startswith("/static")
+    if is_captcha_exempt(
+        path,
+        chainlit_uri=CHAINLIT_URI,
         # The value resolved through get_secret, not os.environ. get_secret
         # prefers a mounted Docker secret file, so a deployment that mounts the
         # key rather than exporting it used to land here with the env var unset
         # and skip the captcha entirely -- switching off a protection the
         # operator had configured, silently.
-        or not CLOUDFLARE_SECRET_KEY
-        or (CHAINLIT_URI and not path.startswith(CHAINLIT_URI))
+        captcha_configured=bool(CLOUDFLARE_SECRET_KEY),
     ):
         return await call_next(request)
 

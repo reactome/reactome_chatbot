@@ -45,8 +45,9 @@ state.
 
 ## Phase 5: Latency (does NOT gate the handover)
 
-- [ ] T019 Measure first-token and completion separately across the tracked questions; publish the distribution, not one question
-- [ ] T020 Reduce query expansion from 5 variants, measuring recall with bin/retrieval_baseline — 2.4s and a 5x retrieval fan-out, the larger of the two known levers
+- [ ] T019 Measure first-token and completion separately across the tracked questions; publish the distribution, not one question. Baseline for one question, 2026-09-17: first ANSWER token at 36.1s, not the 3.0s a naive stream-the-first-token measurement reports
+- [ ] T020 Reduce query expansion from 5 variants, measuring recall with bin/retrieval_baseline — its own call plus a 5x retrieval fan-out
+- [ ] T020b Establish whether the four preprocessing calls must be sequential, and whether a search-page question needs all of them. They cost ~16s before retrieval starts and produce 36 tokens between them — the largest block in front of the first answer token
 - [ ] T021 Land spec 009 collection routing and re-measure
 - [ ] T022 Re-assess FR-005 against the result and say plainly whether 2s/10s is reachable
 

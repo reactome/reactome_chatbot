@@ -74,6 +74,50 @@ This is also a reminder that the middleware is where a bug was found today: it r
 `os.environ` for a secret that comes from `get_secret`, so a mounted Docker secret
 silently disabled the captcha. Adding a route beside it warrants care.
 
+## R5b. Streaming does not rescue the latency, and the reason is upstream
+
+Measured 2026-09-17 by streaming `astream_events` from the compiled graph and
+grouping by `run_id`. Six model calls run before and during one answer:
+
+| at | tokens | node | what it is |
+|---|---|---|---|
+| 5.4s | 17 | preprocess | rephrase |
+| 9.0s | 12 | preprocess | safety check |
+| 12.6s | 1 | preprocess | language detection |
+| 16.1s | 6 | preprocess | intent classifier |
+| 19.8s | 80 | model | query expansion |
+| **36.1s** | **1,189** | model | **the answer** |
+
+**The answer's first token is at 36 seconds.** FR-005 asks for two. Streaming was the
+plan's answer to a slow completion, and it does not help with this, because nothing
+of the answer exists until four sequential preprocessing calls and a retrieval have
+finished. A panel would show an empty box for half a minute and then fill quickly.
+
+This reframes the latency work, which the spec had aimed at retrieval:
+
+- **four preprocessing calls run in sequence before retrieval starts**, costing about
+  16s between them for 36 tokens of output in total. Whether they must be sequential,
+  or must all run for a search-page question, is now the biggest single question
+- **query expansion** adds 80 tokens and its own call, then multiplies retrieval
+- **retrieval** is what spec 009 addresses, and is no longer the obvious first target
+
+A first-token budget cannot be met by making the answer stream. It needs fewer things
+to happen before the answer starts.
+
+## R5c. Which stream events are the answer?
+
+Not separable by tags or metadata: the query expander and the answer both run at
+`langgraph_node == "model"` with identical metadata keys, and non-`seq:` tags are
+empty for both. The expander's first token is "Which" -- an expanded query, which
+would render into the panel as though it were an answer.
+
+**Decision**: treat `on_retriever_end` as the boundary. The expander runs *inside*
+retrieval; the answer runs after it. So tokens from `node == "model"` count as answer
+tokens only once a retriever has completed.
+
+**Why not "the last model run"**: it is only knowable in hindsight, and a panel
+cannot buffer until the end -- that would discard the streaming this is for.
+
 ## R6. What is the first increment?
 
 An endpoint that answers correctly and slowly, streaming, with verification. Not fast.
