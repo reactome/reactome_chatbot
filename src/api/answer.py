@@ -17,7 +17,10 @@ failure answering one question is quiet, while *misconfiguration* -- a missing
 verifying key -- stops the process at startup.
 """
 
+import asyncio
 import json
+import time
+import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -26,6 +29,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from agent.registry import get_graph
+from util.anchor_strip import AnchorStripper
 from util.human_token import TokenRejectedError, verify
 from util.logging import logging
 
@@ -34,6 +38,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 PROFILE = "react-to-me"
+
+# FR-006 names timeout alongside error, and nothing here implemented it. The only
+# bound was the LLM client's `request_timeout=360.0` -- six minutes per model call,
+# and six calls run around one answer, so a pathological request could hold a
+# connection for over half an hour and never send `done`.
+#
+# 120s is about twice the worst complete answer measured (max 31.5s, with the first
+# answer token near 36s on a heavy question), so it does not cut off answers that
+# were going to arrive; it converts an unbounded hang into a bounded one.
+ANSWER_TIMEOUT_SECONDS = 120.0
 
 
 class AnswerRequest(BaseModel):
@@ -54,7 +68,9 @@ def _refusal(reason: str) -> StreamingResponse:
     """
 
     async def body() -> AsyncIterator[str]:
-        yield _sse("done", {"state": "refused"})
+        # `seconds` too: a refusal is a `done` like any other, and the caller
+        # parses one shape. It is ~0 because refusal precedes the graph.
+        yield _sse("done", {"state": "refused", "seconds": 0.0})
 
     logger.info("answer request refused: %s", reason)
     return StreamingResponse(body(), media_type="text/event-stream")
@@ -75,28 +91,66 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
 
     graph = get_graph()
 
+    # A fresh thread per request, never `id(body)`. `chat_history` is checkpointed
+    # state annotated with `add_messages`, and the rephraser injects it through a
+    # MessagesPlaceholder, so two requests sharing a thread means one stranger's
+    # question and answer rephrase the next stranger's question. CPython reuses the
+    # address of a freed object immediately: measured over 200 requests, `id(body)`
+    # produced 38 distinct threads and put 192 of them on a shared one.
+
+    # Resolved at startup, not per request: the graph is built from the same
+    # bundles, so startup is what is actually being served. None if unknown --
+    # a missing release costs the caller cache invalidation, not an answer.
+    release = getattr(request.app.state, "release", None)
+
     async def stream() -> AsyncIterator[str]:
-        yield _sse("start", {"answered": True})
+        yield _sse("start", {"release": release, "answered": True})
+        started = time.monotonic()
         state = "failed"
+        # The `react-to-me` prompt is the chat UI's and asks for inline anchors.
+        # The contract promises this caller prose without them, citations being
+        # separate events, so they come out here -- across fragment boundaries,
+        # because one anchor arrives as twenty-odd fragments.
+        stripper = AnchorStripper()
         try:
-            async for event in graph.astream_answer(
-                body.question, PROFILE, thread_id=f"search-{id(body)}"
-            ):
-                if event.kind == "token":
-                    yield _sse("token", {"text": event.text})
-                elif event.kind == "citation":
-                    yield _sse(
-                        "citation",
-                        {"st_id": event.st_id, "display_name": event.display_name},
-                    )
-                elif event.kind == "done":
-                    state = event.state or "failed"
+            async with asyncio.timeout(ANSWER_TIMEOUT_SECONDS):
+                async for event in graph.astream_answer(
+                    body.question, PROFILE, thread_id=f"search-{uuid.uuid4()}"
+                ):
+                    if event.kind == "token":
+                        text = stripper.feed(event.text)
+                        if text:
+                            yield _sse("token", {"text": text})
+                    elif event.kind == "citation":
+                        yield _sse(
+                            "citation",
+                            {
+                                "st_id": event.st_id,
+                                "display_name": event.display_name,
+                            },
+                        )
+                    elif event.kind == "done":
+                        state = event.state or "failed"
+        except TimeoutError:
+            # Distinct from the crash below so an operator can tell a slow
+            # upstream from a broken one.
+            logger.warning(
+                "answering %r exceeded %.0fs",
+                body.question[:80],
+                ANSWER_TIMEOUT_SECONDS,
+            )
+            state = "failed"
         except Exception:
             # Deliberately broad, and deliberately not re-raised: a half-written
             # SSE stream cannot become an HTTP error code, and the caller needs a
             # terminal event to stop waiting.
             logger.exception("answering %r failed", body.question[:80])
             state = "failed"
-        yield _sse("done", {"state": state})
+        held = stripper.flush()
+        if held:
+            yield _sse("token", {"text": held})
+        yield _sse(
+            "done", {"state": state, "seconds": round(time.monotonic() - started, 1)}
+        )
 
     return StreamingResponse(stream(), media_type="text/event-stream")

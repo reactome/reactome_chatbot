@@ -64,6 +64,27 @@ class EmbeddingEnvironment:
         return directory
 
     @classmethod
+    def get_release(cls, key: str) -> int | None:
+        """The Reactome release a bundle was built from, e.g. 97.
+
+        Read from the bundle directory name (`.../reactome/Release97`), which is
+        the only place it is recorded -- nothing writes a manifest. Returns None
+        rather than raising: a missing release must not stop the service, it only
+        costs a caller the ability to invalidate a cached answer (FR-007).
+
+        Bundles can sit at different releases -- reactome at 97 while userguide is
+        at 95 -- so this is per-bundle and the caller says which one it means.
+        """
+        path = cls._get().embeddings.get(key)
+        if path is None:
+            return None
+        name = path.name
+        if not name.startswith("Release"):
+            return None
+        suffix = name[len("Release") :]
+        return int(suffix) if suffix.isdigit() else None
+
+    @classmethod
     def get_model(cls, key: str) -> str:
         return str(cls._get().embeddings[key].parent.parent)
 

@@ -10,6 +10,8 @@ only on refusal happening before any model call, on the stream's shape, and on
 a failure ending with a terminal event rather than a hang.
 """
 
+import asyncio
+import json
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -126,7 +128,9 @@ def test_no_token_means_no_model_call(keys: tuple[str, str], stub: _StubGraph) -
         f"{PREFIX}/answer", json={"question": "anything", "human_token": ""}
     )
     assert response.status_code == 200
-    assert _events(response.text) == [("done", '{"state": "refused"}')]
+    events = _events(response.text)
+    assert [name for name, _ in events] == ["done"]
+    assert json.loads(events[0][1])["state"] == "refused"
     assert stub.calls == 0, "the graph must not be touched for a refused request"
 
 
@@ -167,3 +171,140 @@ def test_an_empty_question_is_rejected_by_validation(
     )
     assert response.status_code == 422
     assert stub.calls == 0
+
+
+class _ThreadRecordingGraph(_StubGraph):
+    """Records the thread_id each request runs under."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.thread_ids: list[str] = []
+
+    async def astream_answer(
+        self, *_a: Any, **kwargs: Any
+    ) -> AsyncIterator[AnswerEvent]:
+        self.thread_ids.append(kwargs["thread_id"])
+        for event in self._events:
+            yield event
+
+
+def test_separate_requests_do_not_share_a_thread(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two askers must not land on one checkpointer thread.
+
+    `chat_history` is checkpointed state annotated with `add_messages`, and the
+    rephraser injects it via a MessagesPlaceholder. Sharing a thread_id means one
+    stranger's question and answer become the context that rephrases the next
+    stranger's question.
+
+    Why 50 requests and not 2: the original bug keyed the thread on `id(body)`,
+    and two sequential requests usually get distinct addresses, so a two-request
+    version of this test passed against the broken code. At 50 it fails every
+    time -- measured over 200 requests, the broken version produced 38 distinct
+    threads and put 192 of them on a shared one.
+    """
+    private, public = keys
+    graph = _ThreadRecordingGraph()
+    monkeypatch.setattr("api.answer.get_graph", lambda: graph)
+    client = _client(public)
+
+    requests = 50
+    for index in range(requests):
+        response = client.post(
+            f"{PREFIX}/answer",
+            json={"question": f"question {index}", "human_token": _token(private)},
+        )
+        assert response.status_code == 200
+
+    assert len(graph.thread_ids) == requests
+    assert (
+        len(set(graph.thread_ids)) == requests
+    ), f"{requests} requests shared {requests - len(set(graph.thread_ids))} threads"
+
+
+def test_start_carries_the_release_and_done_carries_seconds(
+    keys: tuple[str, str], stub: _StubGraph
+) -> None:
+    """The contract's fields, pinned.
+
+    Both were specified in contracts/answer_endpoint.md and both were missing
+    from the first implementation. The website codes against that document, so a
+    field it promises and we never send is a defect on their side, not ours.
+    `release` is what makes FR-007 cache invalidation possible at all.
+    """
+    private, public = keys
+    app = FastAPI()
+    app.include_router(router, prefix=PREFIX)
+    app.state.human_token_key = public
+    app.state.release = 97
+    client = TestClient(app)
+
+    response = client.post(
+        f"{PREFIX}/answer",
+        json={"question": "what is CDK5", "human_token": _token(private)},
+    )
+    events = dict(_events(response.text))
+
+    assert json.loads(events["start"])["release"] == 97
+    done = json.loads(events["done"])
+    assert done["state"] == "answered"
+    assert isinstance(done["seconds"], float)
+
+
+def test_a_refusal_has_the_same_done_shape_as_an_answer(
+    keys: tuple[str, str], stub: _StubGraph
+) -> None:
+    """One shape, so the caller parses `done` one way."""
+    _, public = keys
+    client = _client(public)
+
+    response = client.post(f"{PREFIX}/answer", json={"question": "what is CDK5"})
+    done = json.loads(dict(_events(response.text))["done"])
+
+    assert done["state"] == "refused"
+    assert set(done) == {"state", "seconds"}
+    assert stub.calls == 0
+
+
+class _HangingGraph(_StubGraph):
+    """Never yields its second event, like an upstream that stopped responding."""
+
+    async def astream_answer(self, *_a: Any, **_k: Any) -> AsyncIterator[AnswerEvent]:
+        self.calls += 1
+        yield AnswerEvent(kind="token", text="partial ")
+        await asyncio.sleep(
+            5
+        )  # finite, so a regression fails fast instead of hanging CI
+
+
+def test_a_hanging_upstream_still_ends_the_stream(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FR-006 names timeout alongside error, and nothing implemented it.
+
+    The only bound was the LLM client's 360s request_timeout, once per model call
+    and six calls per answer, so a stuck upstream could hold the connection for
+    over half an hour and never send `done`. The search page must not depend on
+    this service being up.
+
+    The timeout is patched to 0.25s so the test is quick, and the stand-in hangs
+    for a finite 5s so that a regression fails in five seconds rather than hanging
+    the suite for an hour.
+    """
+    private, public = keys
+    graph = _HangingGraph()
+    monkeypatch.setattr("api.answer.get_graph", lambda: graph)
+    monkeypatch.setattr("api.answer.ANSWER_TIMEOUT_SECONDS", 0.25)
+    client = _client(public)
+
+    started = time.monotonic()
+    response = client.post(
+        f"{PREFIX}/answer",
+        json={"question": "what is CDK5", "human_token": _token(private)},
+    )
+    elapsed = time.monotonic() - started
+
+    events = dict(_events(response.text))
+    assert json.loads(events["done"])["state"] == "failed"
+    assert elapsed < 2, f"stream ran {elapsed:.1f}s; the timeout did not fire"

@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from agent.registry import build_graph, set_graph
 from api.answer import router as answer_router
 from util.captcha_scope import is_captcha_exempt
+from util.embedding_environment import EmbeddingEnvironment
 from util.human_token import load_verifying_key
 from util.logging import logging
 from util.secrets import SECRET_NAMES, get_secret, load_secrets_to_environ
@@ -43,6 +44,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # Before the graph: a missing verifying key must stop the process, and
     # spending 52 seconds building a graph first only delays the failure.
     _app.state.human_token_key = load_verifying_key()
+    # The release the served answers are built from, for FR-007 cache
+    # invalidation. Read here rather than per request because the graph below is
+    # built from these same bundles, so this value describes what is served even
+    # if the pointer file changes underneath a running process.
+    _app.state.release = EmbeddingEnvironment.get_release("reactome")
     graph = build_graph()
     set_graph(graph)
     logging.info("Agent graph ready in %.1fs", time.monotonic() - started)

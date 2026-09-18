@@ -27,21 +27,26 @@ website repo entirely. Speed is Phase 5 and does not gate the handover.
 arrives, tokens stream, citations resolve to real stable IDs, and `done` carries a
 state.
 
-- [ ] T007 [P] [US1] Add src/util/human_token.py: verify signature and expiry only, stateless, no consumption tracking
-- [ ] T008 [P] [US1] Test human_token in tests/util/test_human_token.py: valid, expired, wrong key, tampered payload, absent — every failure refuses
-- [ ] T009 [US1] Refuse at startup in src/util/human_token.py when the verifying key is missing or unreadable, rather than accepting everything (Principle IV)
-- [ ] T010 [US1] Add the SSE endpoint in src/api/answer.py implementing contracts/answer_endpoint.md: start, token, citation, done
-- [ ] T011 [US1] Emit citations from retrieved documents' `st_id` metadata, deduplicated — never by parsing anchors out of the model's prose
-- [ ] T012 [US1] Mount the router in bin/chat-fastapi.py and let the captcha middleware pass /chat/api/ through, since the endpoint verifies its own caller
-- [ ] T013 [US1] Test over HTTP with a real client in tests/api/test_answer_endpoint.py, not by calling the handler — mounting order and middleware only interact in the served path (Principle I)
+- [x] T007 [P] [US1] Add src/util/human_token.py: verify signature and expiry only, stateless, no consumption tracking
+- [x] T008 [P] [US1] Test human_token in tests/util/test_human_token.py: valid, expired, wrong key, tampered payload, absent — every failure refuses
+- [x] T009 [US1] Refuse at startup in src/util/human_token.py when the verifying key is missing or unreadable, rather than accepting everything (Principle IV)
+- [x] T010 [US1] Add the SSE endpoint in src/api/answer.py implementing contracts/answer_endpoint.md: start, token, citation, done
+- [x] T011 [US1] Emit citations from retrieved documents' `st_id` metadata, deduplicated — never by parsing anchors out of the model's prose
+- [x] T012 [US1] Mount the router in bin/chat-fastapi.py and let the captcha middleware pass /chat/api/ through, since the endpoint verifies its own caller
+- [x] T013 [US1] Test over HTTP with a real client in tests/api/test_answer_endpoint.py, not by calling the handler — mounting order and middleware only interact in the served path (Principle I)
 - [ ] T014 [US1] Assert the answer matches the chat UI's for the same question (SC-003); two surfaces that can disagree is a defect
+- [x] T014a [US1] Give each request its own checkpointer thread in src/api/answer.py; `id(body)` put 192 of 200 requests on a shared thread, and `chat_history` is checkpointed state the rephraser reads (PR #236)
+- [x] T014b [US1] Send `release` on start and `seconds` on done per contracts/answer_endpoint.md; both were promised to the website and neither was implemented (PR #236)
 
 ## Phase 4: User Story 2 — no answer without a verified person (P1)
 
-- [ ] T015 [US2] Refuse missing, expired, malformed and wrongly-signed tokens before any model call, in src/api/answer.py
-- [ ] T016 [US2] Test that no model call happens for a refused request in tests/api/test_answer_endpoint.py, by asserting on a patched graph rather than on timing (SC-002)
+- [x] T015 [US2] Refuse missing, expired, malformed and wrongly-signed tokens before any model call, in src/api/answer.py
+- [x] T016 [US2] Test that no model call happens for a refused request in tests/api/test_answer_endpoint.py, by asserting on a patched graph rather than on timing (SC-002)
 - [ ] T017 [P] [US2] Rate limit per token as a backstop; the budget is the website's, enforced before the call reaches here (FR-008)
-- [ ] T018 [US2] Return `state: failed` with no partial answer on any internal error, so the page renders no panel (FR-006)
+- [x] T018 [US2] Return `state: failed` with no partial answer on any internal error, so the page renders no panel (FR-006)
+- [x] T011a [US1] Strip inline HTML anchors from the token stream in src/util/anchor_strip.py; the contract promises prose without them and the chat prompt emits them, split across ~20 fragments (PR #236)
+- [x] T013a [US1] Run the endpoint end to end against a real graph: release 97, answered in 19.5-44.2s, 12 citations, anchors 0 (PR #236)
+- [x] T018a [US2] Bound the answer at 120s in src/api/answer.py; FR-006 names timeout and only the LLM client's 360s-per-call limit existed, so a stuck upstream could hold a connection for over half an hour (PR #236)
 
 ## Phase 5: Latency (does NOT gate the handover)
 
