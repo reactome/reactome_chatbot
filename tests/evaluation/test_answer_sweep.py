@@ -198,3 +198,25 @@ def test_it_runs_once_the_collection_is_installed(
     assert not result.skipped
     assert not result.ok
     assert len(graph.asked) == 1
+
+
+def test_the_sweep_does_not_pay_for_a_web_search() -> None:
+    """The sweep reads `answer` and nothing else.
+
+    With postprocess left at its default it ran a Tavily search per question,
+    discarded the result, and slowed each question by the length of that search
+    -- fifteen of them, after every beta deploy. Pinned here rather than trusted,
+    because the cost is invisible: nothing fails when it happens.
+    """
+    import inspect
+
+    from evaluation import answer_sweep
+
+    source = inspect.getsource(answer_sweep)
+    assert (
+        "enable_postprocess=False" in source
+    ), "the sweep is running the postprocess web search again"
+    assert "additional_content" not in source, (
+        "the sweep now reads additional_content, so the assertion above is no "
+        "longer the right guard"
+    )
