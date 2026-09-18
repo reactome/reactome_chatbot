@@ -25,6 +25,7 @@ from fastapi.testclient import TestClient
 
 from agent.graph import AnswerEvent
 from api.answer import router
+from util.rate_limit import SlidingWindowLimiter
 
 PREFIX = "/chat/guest/api"
 
@@ -69,6 +70,19 @@ def keys() -> tuple[str, str]:
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
         )
         .decode(),
+    )
+
+
+@pytest.fixture(autouse=True)
+def _fresh_limiter(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A private limiter per test.
+
+    `_limiter` is module state shared by the whole process, so without this the
+    fifty requests below would exhaust the real limit and refuse later tests --
+    and which tests failed would depend on the order they ran in.
+    """
+    monkeypatch.setattr(
+        "api.answer._limiter", SlidingWindowLimiter(limit=10_000, window=600.0)
     )
 
 
@@ -308,3 +322,85 @@ def test_a_hanging_upstream_still_ends_the_stream(
     events = dict(_events(response.text))
     assert json.loads(events["done"])["state"] == "failed"
     assert elapsed < 2, f"stream ran {elapsed:.1f}s; the timeout did not fire"
+
+
+def test_a_caller_over_the_limit_is_refused_before_the_model(
+    keys: tuple[str, str], stub: _StubGraph, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FR-008. A backstop: the website enforces the real budget upstream.
+
+    Refused like any other refusal -- one `done` shape, no HTTP error -- so the
+    page renders no panel rather than a broken one.
+    """
+    private, public = keys
+    monkeypatch.setattr(
+        "api.answer._limiter", SlidingWindowLimiter(limit=2, window=600.0)
+    )
+    client = _client(public)
+    token = _token(private)
+
+    states = []
+    for _ in range(4):
+        response = client.post(
+            f"{PREFIX}/answer", json={"question": "what is CDK5", "human_token": token}
+        )
+        assert response.status_code == 200
+        states.append(json.loads(dict(_events(response.text))["done"])["state"])
+
+    assert states == ["answered", "answered", "refused", "refused"]
+    assert stub.calls == 2, "a refused request still reached the model"
+
+
+def test_the_limit_is_per_caller(
+    keys: tuple[str, str], stub: _StubGraph, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One visitor exhausting their budget must not silence the page for others."""
+    private, public = keys
+    monkeypatch.setattr(
+        "api.answer._limiter", SlidingWindowLimiter(limit=1, window=600.0)
+    )
+    client = _client(public)
+
+    first = _token(private)
+    second = _token(private, seconds=301)  # A different token, so a different key.
+
+    def ask(token: str) -> str:
+        response = client.post(
+            f"{PREFIX}/answer", json={"question": "what is CDK5", "human_token": token}
+        )
+        return str(json.loads(dict(_events(response.text))["done"])["state"])
+
+    assert ask(first) == "answered"
+    assert ask(first) == "refused"
+    assert ask(second) == "answered"
+
+
+def test_the_search_page_does_not_pay_for_a_web_search(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The postprocess node runs a Tavily search whose result this path drops.
+
+    `astream_answer` has no event carrying `additional_content`, so with the
+    default the endpoint paid for a web search, discarded it, and delayed `done`
+    by its duration. The chat UI renders those results; the search page has no
+    place for them.
+    """
+    private, public = keys
+    seen: dict[str, object] = {}
+
+    class _RecordingGraph(_StubGraph):
+        async def astream_answer(
+            self, *_a: Any, **kwargs: Any
+        ) -> AsyncIterator[AnswerEvent]:
+            seen.update(kwargs)
+            for event in self._events:
+                yield event
+
+    monkeypatch.setattr("api.answer.get_graph", lambda: _RecordingGraph())
+    client = _client(public)
+    client.post(
+        f"{PREFIX}/answer",
+        json={"question": "what is CDK5", "human_token": _token(private)},
+    )
+
+    assert seen["enable_postprocess"] is False

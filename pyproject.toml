@@ -202,6 +202,7 @@ addopts = "-q --strict-markers --strict-config"
 markers = [
     "requires_embeddings: needs an installed embeddings bundle (see ./bin/embeddings_manager)",
     "requires_retrieval_stack: needs the full langchain/chromadb dependency set installed",
+    "requires_live_model: calls a real LLM and needs OPENAI_API_KEY plus embeddings",
 ]
 
 [tool.mypy]
