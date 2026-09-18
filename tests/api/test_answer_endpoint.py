@@ -13,8 +13,8 @@ a failure ending with a terminal event rather than a hang.
 import asyncio
 import json
 import time
-from collections.abc import AsyncIterator
-from typing import Any
+from collections.abc import AsyncGenerator, AsyncIterator
+from typing import Any, cast
 
 import jwt
 import pytest
@@ -469,7 +469,10 @@ def test_an_abandoned_stream_is_recorded_and_not_swallowed(
             request,  # type: ignore[arg-type]
             AnswerRequest(question="what is CDK5", caller_token=_token(private)),
         )
-        iterator = response.body_iterator
+        # body_iterator is typed as a bare AsyncIterable, which has no aclose;
+        # the object Starlette puts there is an async generator, and closing it
+        # is the whole point of this test.
+        iterator = cast("AsyncGenerator[str, None]", response.body_iterator)
         seen = 0
         async for _chunk in iterator:
             seen += 1
