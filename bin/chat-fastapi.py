@@ -15,9 +15,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from agent.registry import build_graph, set_graph
 from api.answer import router as answer_router
+from util.caller_token import load_verifying_key
 from util.captcha_scope import is_captcha_exempt
 from util.embedding_environment import EmbeddingEnvironment
-from util.human_token import load_verifying_key
 from util.logging import logging
 from util.secrets import SECRET_NAMES, get_secret, load_secrets_to_environ
 
@@ -43,7 +43,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     started = time.monotonic()
     # Before the graph: a missing verifying key must stop the process, and
     # spending 52 seconds building a graph first only delays the failure.
-    _app.state.human_token_key = load_verifying_key()
+    _app.state.caller_token_key = load_verifying_key()
     # The release the served answers are built from, for FR-007 cache
     # invalidation. Read here rather than per request because the graph below is
     # built from these same bundles, so this value describes what is served even

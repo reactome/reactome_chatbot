@@ -25,6 +25,7 @@ from fastapi.testclient import TestClient
 
 from agent.graph import AnswerEvent
 from api.answer import router
+from util.caller_token import DEFAULT_AUDIENCE
 from util.rate_limit import SlidingWindowLimiter
 
 PREFIX = "/chat/guest/api"
@@ -96,14 +97,20 @@ def stub(monkeypatch: pytest.MonkeyPatch) -> _StubGraph:
 def _client(public_pem: str) -> TestClient:
     app = FastAPI()
     app.include_router(router, prefix=PREFIX)
-    app.state.human_token_key = public_pem
+    app.state.caller_token_key = public_pem
     return TestClient(app)
 
 
-def _token(private_pem: str, seconds: int = 300) -> str:
-    return jwt.encode(
-        {"exp": int(time.time()) + seconds}, private_pem, algorithm="EdDSA"
-    )
+def _token(private_pem: str, seconds: int = 300, **claims: object) -> str:
+    """A token shaped like the website's: iss, aud, exp, and a per-visit sub."""
+    payload: dict[str, object] = {
+        "iss": "reactome-website",
+        "aud": DEFAULT_AUDIENCE,
+        "exp": int(time.time()) + seconds,
+        "sub": "visit-1",
+    }
+    payload.update(claims)
+    return jwt.encode(payload, private_pem, algorithm="EdDSA")
 
 
 def _events(text: str) -> list[tuple[str, str]]:
@@ -123,7 +130,7 @@ def test_a_verified_request_streams_tokens_and_citations(
         f"{PREFIX}/answer",
         json={
             "question": "what does CDK5 phosphorylate?",
-            "human_token": _token(private_pem),
+            "caller_token": _token(private_pem),
         },
     )
     assert response.status_code == 200
@@ -139,7 +146,7 @@ def test_no_token_means_no_model_call(keys: tuple[str, str], stub: _StubGraph) -
     """Search pages are crawled; every crawled search reaching the model is a bill."""
     _, public_pem = keys
     response = _client(public_pem).post(
-        f"{PREFIX}/answer", json={"question": "anything", "human_token": ""}
+        f"{PREFIX}/answer", json={"question": "anything", "caller_token": ""}
     )
     assert response.status_code == 200
     events = _events(response.text)
@@ -154,7 +161,7 @@ def test_an_expired_token_makes_no_model_call(
     private_pem, public_pem = keys
     response = _client(public_pem).post(
         f"{PREFIX}/answer",
-        json={"question": "anything", "human_token": _token(private_pem, seconds=-10)},
+        json={"question": "anything", "caller_token": _token(private_pem, seconds=-10)},
     )
     assert '"state": "refused"' in response.text
     assert stub.calls == 0
@@ -168,7 +175,7 @@ def test_a_failure_mid_stream_still_ends_with_done(
     monkeypatch.setattr("api.answer.get_graph", lambda: _ExplodingGraph())
     response = _client(public_pem).post(
         f"{PREFIX}/answer",
-        json={"question": "boom", "human_token": _token(private_pem)},
+        json={"question": "boom", "caller_token": _token(private_pem)},
     )
     assert response.status_code == 200
     kinds = [kind for kind, _ in _events(response.text)]
@@ -181,7 +188,7 @@ def test_an_empty_question_is_rejected_by_validation(
 ) -> None:
     private_pem, public_pem = keys
     response = _client(public_pem).post(
-        f"{PREFIX}/answer", json={"question": "", "human_token": _token(private_pem)}
+        f"{PREFIX}/answer", json={"question": "", "caller_token": _token(private_pem)}
     )
     assert response.status_code == 422
     assert stub.calls == 0
@@ -227,7 +234,7 @@ def test_separate_requests_do_not_share_a_thread(
     for index in range(requests):
         response = client.post(
             f"{PREFIX}/answer",
-            json={"question": f"question {index}", "human_token": _token(private)},
+            json={"question": f"question {index}", "caller_token": _token(private)},
         )
         assert response.status_code == 200
 
@@ -250,13 +257,13 @@ def test_start_carries_the_release_and_done_carries_seconds(
     private, public = keys
     app = FastAPI()
     app.include_router(router, prefix=PREFIX)
-    app.state.human_token_key = public
+    app.state.caller_token_key = public
     app.state.release = 97
     client = TestClient(app)
 
     response = client.post(
         f"{PREFIX}/answer",
-        json={"question": "what is CDK5", "human_token": _token(private)},
+        json={"question": "what is CDK5", "caller_token": _token(private)},
     )
     events = dict(_events(response.text))
 
@@ -315,7 +322,7 @@ def test_a_hanging_upstream_still_ends_the_stream(
     started = time.monotonic()
     response = client.post(
         f"{PREFIX}/answer",
-        json={"question": "what is CDK5", "human_token": _token(private)},
+        json={"question": "what is CDK5", "caller_token": _token(private)},
     )
     elapsed = time.monotonic() - started
 
@@ -342,7 +349,7 @@ def test_a_caller_over_the_limit_is_refused_before_the_model(
     states = []
     for _ in range(4):
         response = client.post(
-            f"{PREFIX}/answer", json={"question": "what is CDK5", "human_token": token}
+            f"{PREFIX}/answer", json={"question": "what is CDK5", "caller_token": token}
         )
         assert response.status_code == 200
         states.append(json.loads(dict(_events(response.text))["done"])["state"])
@@ -361,18 +368,31 @@ def test_the_limit_is_per_caller(
     )
     client = _client(public)
 
-    first = _token(private)
-    second = _token(private, seconds=301)  # A different token, so a different key.
+    # Two visits, not two tokens. The limiter keys on `sub` -- an opaque
+    # per-visit id from the website -- so a second token for the SAME visit is
+    # the same caller, which is the point of keying on it rather than on the
+    # token. An earlier version of this test used two tokens differing only in
+    # expiry and expected them to count separately; once `sub` arrived that
+    # became wrong.
+    first = _token(private, sub="visit-1")
+    second = _token(private, sub="visit-2")
 
     def ask(token: str) -> str:
         response = client.post(
-            f"{PREFIX}/answer", json={"question": "what is CDK5", "human_token": token}
+            f"{PREFIX}/answer", json={"question": "what is CDK5", "caller_token": token}
         )
         return str(json.loads(dict(_events(response.text))["done"])["state"])
 
     assert ask(first) == "answered"
     assert ask(first) == "refused"
-    assert ask(second) == "answered"
+    assert (
+        ask(second) == "answered"
+    ), "a different visit was refused someone else's budget"
+
+    # A newly minted token for the first visit must not buy a fresh allowance --
+    # they mint one per request, so keying on the token would make the limit
+    # meaningless.
+    assert ask(_token(private, sub="visit-1", seconds=301)) == "refused"
 
 
 def test_the_search_page_does_not_pay_for_a_web_search(
@@ -400,7 +420,7 @@ def test_the_search_page_does_not_pay_for_a_web_search(
     client = _client(public)
     client.post(
         f"{PREFIX}/answer",
-        json={"question": "what is CDK5", "human_token": _token(private)},
+        json={"question": "what is CDK5", "caller_token": _token(private)},
     )
 
     assert seen["enable_postprocess"] is False

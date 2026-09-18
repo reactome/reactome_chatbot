@@ -234,20 +234,31 @@ or dropping it for this path -- is open, and is not a blocker for the handover.
 
 ## Decisions
 
-### D1 -- what proves a person is human?
+### D1 -- what does the caller present? **Decided 2026-09-18**
 
-Turnstile already exists here, and a bug in it was fixed on 2026-09-17: a deployment
-mounting `CLOUDFLARE_SECRET_KEY` as a Docker secret had the captcha silently
-disabled, because the middleware read `os.environ` directly while the value came from
-`get_secret`.
+This was "what proves a person is human?", and the question had a false premise.
+The website session checked before answering: there is **no human gate on the
+search path**, and there is not going to be one -- nobody solves a captcha to run
+a search. Their only hCaptcha belongs to the contact form, gating that form and
+spent on submit. Every search is anonymous and ungated by design.
 
-What is missing is the handoff. The website needs something to present to this
-service. Options: a signed cookie on the shared parent domain (what the chat uses
-now); a short-lived token the website mints after its own Turnstile check; or the
-website proxying the call and vouching server-side.
+So the token cannot honestly assert humanity, and asking it to would have meant
+inventing a claim. **It asserts caller identity instead**: minted server-side by
+the website, per request, EdDSA, with `iss`, `aud: reactome-chatbot`, `iat`,
+`exp` at +120s, and `sub` -- an opaque per-visit id of 128 random bits, not
+derived from anything about the reader, held in an HttpOnly cookie. No address,
+no IP hash; neither side holds personal data.
 
-**Open.** It is a security boundary and belongs with whoever owns the website's
-session model, not with this repo alone.
+This service verifies signature, expiry and **audience**, and keys its backstop
+limit on `sub`. The request field is `caller_token`, and the misleading
+`caller_token` name is gone from the code as well as this document.
+
+Abuse control moved with the premise. The panel is opt-in behind a click (D5), so
+a crawled search never reaches a model, and the website's proxy rate limits by
+address. That is a real deterrent rather than a claim we would be inventing.
+
+Turnstile stays where it is, guarding the chat UI. It was never part of this
+path, and the two must not be "unified".
 
 ### D2 -- which searches get an answer?
 

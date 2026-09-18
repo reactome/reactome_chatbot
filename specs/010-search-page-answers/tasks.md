@@ -27,9 +27,9 @@ website repo entirely. Speed is Phase 5 and does not gate the handover.
 arrives, tokens stream, citations resolve to real stable IDs, and `done` carries a
 state.
 
-- [x] T007 [P] [US1] Add src/util/human_token.py: verify signature and expiry only, stateless, no consumption tracking
-- [x] T008 [P] [US1] Test human_token in tests/util/test_human_token.py: valid, expired, wrong key, tampered payload, absent — every failure refuses
-- [x] T009 [US1] Refuse at startup in src/util/human_token.py when the verifying key is missing or unreadable, rather than accepting everything (Principle IV)
+- [x] T007 [P] [US1] Add src/util/caller_token.py: verify signature and expiry only, stateless, no consumption tracking
+- [x] T008 [P] [US1] Test caller_token in tests/util/test_caller_token.py: valid, expired, wrong key, tampered payload, absent — every failure refuses
+- [x] T009 [US1] Refuse at startup in src/util/caller_token.py when the verifying key is missing or unreadable, rather than accepting everything (Principle IV)
 - [x] T010 [US1] Add the SSE endpoint in src/api/answer.py implementing contracts/answer_endpoint.md: start, token, citation, done
 - [x] T011 [US1] Emit citations from retrieved documents' `st_id` metadata, deduplicated — never by parsing anchors out of the model's prose
 - [x] T012 [US1] Mount the router in bin/chat-fastapi.py and let the captcha middleware pass /chat/api/ through, since the endpoint verifies its own caller
@@ -44,6 +44,9 @@ state.
 - [x] T016 [US2] Test that no model call happens for a refused request in tests/api/test_answer_endpoint.py, by asserting on a patched graph rather than on timing (SC-002)
 - [x] T017 [P] [US2] Rate limit per token as a backstop in src/util/rate_limit.py; the budget is the website's, enforced before the call reaches here (FR-008). 30 per 10 minutes, keyed on `sub`/`jti` when D1 provides one and a token hash until then (PR #237)
 - [x] T017a [US2] Stop paying for a discarded web search: the endpoint took `enable_postprocess` at its default, so every answer ran a Tavily search that `astream_answer` has no event to return (PR #237)
+- [x] T021 [US2] Enforce `aud` on the caller token (asked for by the website, D1); the code refused every token carrying one, since PyJWT rejects `aud` when no audience is expected (PR #240)
+- [x] T022 Rename human_token -> caller_token everywhere; D1 established the token asserts caller identity, not humanity (PR #240)
+- [x] T023 Answer the website's cancellation question: a client hang-up raises CancelledError inside the answer generator and produces nothing further, so they need not cancel upstream (PR #240)
 - [ ] T020a Decide what to do about non-reproducible retrieval: three runs of one question shared only 4 of 19 citations (Jaccard 0.26) because query expansion is itself a model call. Affects what FR-007 can cache
 - [x] T018 [US2] Return `state: failed` with no partial answer on any internal error, so the page renders no panel (FR-006)
 - [x] T011a [US1] Strip inline HTML anchors from the token stream in src/util/anchor_strip.py; the contract promises prose without them and the chat prompt emits them, split across ~20 fragments (PR #236)

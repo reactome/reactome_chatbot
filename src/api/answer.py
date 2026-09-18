@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field
 
 from agent.registry import get_graph
 from util.anchor_strip import AnchorStripper
-from util.human_token import TokenRejectedError, verify
+from util.caller_token import TokenRejectedError, verify
 from util.logging import logging
 from util.rate_limit import identity_of, limiter_from_env
 
@@ -57,7 +57,7 @@ ANSWER_TIMEOUT_SECONDS = 120.0
 
 class AnswerRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
-    human_token: str = ""
+    caller_token: str = ""
 
 
 def _sse(event: str, payload: dict[str, Any]) -> str:
@@ -83,21 +83,21 @@ def _refusal(reason: str) -> StreamingResponse:
 
 @router.post("/answer")
 async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
-    verifying_key = getattr(request.app.state, "human_token_key", None)
+    verifying_key = getattr(request.app.state, "caller_token_key", None)
     if not verifying_key:
         # Should be unreachable: startup refuses without a key. If it happens,
         # refuse rather than answer.
         return _refusal("no verifying key on the app")
 
     try:
-        claims = verify(body.human_token, verifying_key)
+        claims = verify(body.caller_token, verifying_key)
     except TokenRejectedError as rejected:
         return _refusal(rejected.reason)
 
     # After verification, so an unsigned token cannot consume someone else's
     # budget by claiming their `sub`, and before the graph, so a caller over the
     # limit costs nothing.
-    if not _limiter.allow(identity_of(claims, body.human_token)):
+    if not _limiter.allow(identity_of(claims, body.caller_token)):
         return _refusal("rate limited")
 
     graph = get_graph()
