@@ -11,15 +11,15 @@ website repo entirely. Speed is Phase 5 and does not gate the handover.
 
 ## Phase 1: Setup
 
-- [ ] T001 Create branch `010-search-page-answers`; confirm `.specify/feature.json` points at specs/010-search-page-answers
-- [ ] T002 [P] Record today's baseline in specs/010-search-page-answers/quickstart.md: p50 15.2s, p90 22.4s over the 15 sweep questions, so Phase 5 has a before
+- [x] T001 Create branch `010-search-page-answers`; confirm `.specify/feature.json` points at specs/010-search-page-answers
+- [x] T002 [P] Record today's baseline in specs/010-search-page-answers/quickstart.md: p50 15.2s, p90 22.4s over the 15 sweep questions, so Phase 5 has a before
 
 ## Phase 2: Foundational (blocks the endpoint)
 
-- [ ] T003 Pin the captcha middleware's current behaviour in tests/api/test_middleware_scope.py: every path under CHAINLIT_URI redirects to the captcha page except the existing allowlist
-- [ ] T004 Give `AgentGraph` one home the FastAPI app can reach, in bin/chat-fastapi.py via lifespan, so the endpoint and Chainlit share one instance (SC-003) rather than paying 51.5s of startup twice
-- [ ] T005 Add a streaming surface to src/agent/graph.py using the compiled graph's `astream_events`, yielding answer tokens and retrieved documents
-- [ ] T006 Test that T005 yields more than one token for a real question — not that it returns 200. A surface that completes without streaming is the failure this must catch
+- [x] T003 Pin the captcha middleware's current behaviour — done in tests/util/test_captcha_scope.py (6 tests) rather than the tests/api/test_middleware_scope.py named here, because the decision moved into src/util/captcha_scope.py where it can be tested without an app
+- [x] T004 Give `AgentGraph` one home the FastAPI app can reach, in bin/chat-fastapi.py via lifespan, so the endpoint and Chainlit share one instance (SC-003) rather than paying 51.5s of startup twice
+- [x] T005 Add a streaming surface to src/agent/graph.py using the compiled graph's `astream_events`, yielding answer tokens and retrieved documents
+- [x] T006 Test that T005 yields more than one token for a real question — not that it returns 200. A surface that completes without streaming is the failure this must catch
 
 ## Phase 3: User Story 1 — a verified person sees an answer forming (P1)
 
@@ -44,10 +44,10 @@ state.
 - [x] T016 [US2] Test that no model call happens for a refused request in tests/api/test_answer_endpoint.py, by asserting on a patched graph rather than on timing (SC-002)
 - [x] T017 [P] [US2] Rate limit per token as a backstop in src/util/rate_limit.py; the budget is the website's, enforced before the call reaches here (FR-008). 30 per 10 minutes, keyed on `sub`/`jti` when D1 provides one and a token hash until then (PR #237)
 - [x] T017a [US2] Stop paying for a discarded web search: the endpoint took `enable_postprocess` at its default, so every answer ran a Tavily search that `astream_answer` has no event to return (PR #237)
-- [x] T021 [US2] Enforce `aud` on the caller token (asked for by the website, D1); the code refused every token carrying one, since PyJWT rejects `aud` when no audience is expected (PR #240)
-- [x] T022 Rename human_token -> caller_token everywhere; D1 established the token asserts caller identity, not humanity (PR #240)
-- [x] T023 Answer the website's cancellation question: a client hang-up raises CancelledError inside the answer generator and produces nothing further, so they need not cancel upstream (PR #240)
-- [ ] T020b Decide whether userguide answers cite their pages. Needs an optional `url` sibling to `st_id` in the citation event -- agreed in shape with the website, not scheduled. A fabricated stable id is not an option
+- [x] T025 [US2] Enforce `aud` on the caller token (asked for by the website, D1); the code refused every token carrying one, since PyJWT rejects `aud` when no audience is expected (PR #240)
+- [x] T026 Rename human_token -> caller_token everywhere; D1 established the token asserts caller identity, not humanity (PR #240)
+- [x] T027 Answer the website's cancellation question: a client hang-up raises CancelledError inside the answer generator and produces nothing further, so they need not cancel upstream (PR #240)
+- [ ] T028 Decide whether userguide answers cite their pages. Needs an optional `url` sibling to `st_id` in the citation event -- agreed in shape with the website, not scheduled. A fabricated stable id is not an option
 - [ ] T020a Decide what to do about non-reproducible retrieval: three runs of one question shared only 4 of 19 citations (Jaccard 0.26) because query expansion is itself a model call. Affects what FR-007 can cache
 - [x] T018 [US2] Return `state: failed` with no partial answer on any internal error, so the page renders no panel (FR-006)
 - [x] T011a [US1] Strip inline HTML anchors from the token stream in src/util/anchor_strip.py; the contract promises prose without them and the chat prompt emits them, split across ~20 fragments (PR #236)
@@ -59,14 +59,14 @@ state.
 - [x] T019 Measure first-token and completion separately across the tracked questions; publish the distribution, not one question. Measured 2026-09-18, two runs each: first token p50 9.6s / p90 12.2s (n=26), completion p50 10.4s / p90 18.1s (n=30). The earlier "36.1s to first token" came from one question and does not reproduce (PR #238)
 - [x] T019a Run preprocessing in two rounds instead of four sequential calls in src/agent/profiles/react_to_me.py; the base class already overlapped, and this override discarded it (PR #238)
 - [ ] T020 Reduce query expansion from 5 variants, measuring recall with bin/retrieval_baseline — its own call plus a 5x retrieval fan-out
-- [ ] T020b Establish whether the four preprocessing calls must be sequential, and whether a search-page question needs all of them. They cost ~16s before retrieval starts and produce 36 tokens between them — the largest block in front of the first answer token
-- [ ] T021 Land spec 009 collection routing and re-measure
+- [ ] T020c Establish whether a search-page question needs all four preprocessing calls. The sequential half of this is answered and done (T019a): they run in two rounds and cost 2.6s at the median, not the ~16s recorded here, which never reproduced
+- [x] T021 Land spec 009 collection routing and re-measure — landed and live (`state["active_sources"][0]` selects at retrieval time), and re-measured 2026-09-18: it is the main reason first-token fell from the ~36s once recorded to 9.6s
 - [ ] T022 Re-assess FR-005 against the result and say plainly whether 2s/10s is reachable
 
 ## Phase 6: Handover
 
-- [ ] T023 Tell the website session the endpoint exists, with a curl that streams, and what it does not yet do
-- [ ] T024 [P] Update specs/010-search-page-answers/spec.md status and record the measured first-token and completion times
+- [x] T023 Tell the website session the endpoint exists, with a curl that streams, and what it does not yet do — done 2026-09-18, including the nginx user-agent 403 and the measured latency; they have built against it and a token they minted verified
+- [x] T024 [P] Update specs/010-search-page-answers/spec.md status and record the measured first-token and completion times — first token p50 9.6s / p90 12.2s, completion p50 10.4s / p90 18.1s
 
 ## Dependencies
 
