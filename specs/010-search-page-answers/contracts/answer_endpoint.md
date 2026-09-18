@@ -99,23 +99,41 @@ are gated on that same event, because retrieval completing is how the answer's
 tokens are told apart from the query expander's. So sources are complete at the
 moment the first token arrives, and a panel may render them before any prose.
 
-#### Open: citing userguide pages (not scheduled)
+#### Userguide pages are cited by `url` (implemented 2026-09-18)
 
-Proposed by the website session 2026-09-18 and agreed in shape, not scheduled.
-A documentation URL does not fit `{st_id, display_name}`, and **a fabricated
-`R-` identifier is not an option** -- it would resolve to nothing, or worse to
-the wrong entity. The shape that works is an optional sibling, exactly one of the
-two present:
+A citation carries **exactly one** identifier, and the other key is absent rather
+than empty:
 
 ```
-{"st_id": "R-HSA-8862803", "display_name": "..."}             # unchanged
-{"url": "/userguide/pathway-browser", "display_name": "..."}  # new
+event: citation
+data: {"st_id": "R-HSA-8862803", "display_name": "Deregulated CDK5 triggers..."}
+
+event: citation
+data: {"url": "https://reactome.org/userguide/pathway-browser",
+       "display_name": "The Pathway Browser"}
 ```
 
-A consumer that understands only `st_id` keeps working by skipping what it does
-not recognise. Worth doing when this contract is next opened; an answer that is
-honest about having no sources is much better than an invented one, so this is
-not a blocker.
+`st_id` resolves at `reactome.org/content/detail/<st_id>`; `url` is absolute and
+used verbatim. A consumer that understands only `st_id` keeps working by skipping
+what it does not recognise.
+
+**No fabricated stable ids.** A made-up `R-` identifier would resolve to nothing
+or, worse, to a real but wrong entity, and a reader cannot tell from the link
+text. A userguide page is cited as what it is.
+
+Measured after the change: "How do I use the pathway browser?" went from 0
+citations to 4, and "How do I run a GSEA in Reactome?" to 2. Reactome questions
+are unchanged.
+
+Deduplicated by page, not by chunk -- the userguide bundle is 98 chunks across 10
+pages, so chunk-level citations would repeat one page up to 27 times. The label is
+the page title.
+
+**Only `https://` and `http://` sources are cited.** `source` is a generic
+LangChain metadata field and the CSV loaders set it to the file they read, so
+without that check a Reactome document lacking an `st_id` cited a local
+filesystem path. That was caught by running a real question, not by the unit
+tests, which used fixtures too clean to contain one.
 
 ### What `token` text contains
 

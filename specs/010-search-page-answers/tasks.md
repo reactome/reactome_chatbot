@@ -47,7 +47,7 @@ state.
 - [x] T025 [US2] Enforce `aud` on the caller token (asked for by the website, D1); the code refused every token carrying one, since PyJWT rejects `aud` when no audience is expected (PR #240)
 - [x] T026 Rename human_token -> caller_token everywhere; D1 established the token asserts caller identity, not humanity (PR #240)
 - [x] T027 Answer the website's cancellation question: a client hang-up raises CancelledError inside the answer generator and produces nothing further, so they need not cancel upstream (PR #240)
-- [ ] T028 Decide whether userguide answers cite their pages. Needs an optional `url` sibling to `st_id` in the citation event -- agreed in shape with the website, not scheduled. A fabricated stable id is not an option
+- [x] T028 Cite userguide answers by `url` (Adam decided yes, 2026-09-18). Optional `url` sibling to `st_id`, exactly one present; no fabricated stable ids; http(s) only, after a local filesystem path leaked through the first version.
 - [ ] T020a Decide what to do about non-reproducible retrieval: three runs of one question shared only 4 of 19 citations (Jaccard 0.26) because query expansion is itself a model call. Affects what FR-007 can cache
 - [x] T018 [US2] Return `state: failed` with no partial answer on any internal error, so the page renders no panel (FR-006)
 - [x] T011a [US1] Strip inline HTML anchors from the token stream in src/util/anchor_strip.py; the contract promises prose without them and the chat prompt emits them, split across ~20 fragments (PR #236)

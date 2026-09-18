@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, cast
 
 from langchain_core.callbacks.base import Callbacks
+from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import RunnableConfig
@@ -195,6 +196,50 @@ def resolve_llm_model(llm_config: "LLMConfig | None") -> tuple[str, str, str | N
 
 
 MAX_CITATIONS = 12
+
+
+def _citation_for(document: "Document") -> "AnswerEvent | None":
+    """One source, from whichever identifier the collection actually carries.
+
+    Reactome and disease-variant documents have `st_id`, a stable identifier the
+    caller resolves to a detail page. Userguide documents do not and never will:
+    they are documentation pages, and their identity is the page URL.
+
+    Until 2026-09-18 that meant a userguide-routed question returned **no
+    citations at all** -- a good answer with no sources, and the fastest answers
+    at that. Rather than mint a fake `R-` id, which would resolve to nothing or
+    to the wrong entity, a userguide source is cited by `url`.
+
+    Exactly one of `st_id` and `url` is set, so a caller that understands only
+    `st_id` keeps working by skipping what it does not recognise.
+    """
+    metadata = document.metadata
+    stable_id = metadata.get("st_id")
+    if stable_id:
+        return AnswerEvent(
+            kind="citation",
+            st_id=str(stable_id),
+            display_name=str(metadata.get("display_name") or ""),
+        )
+    source = str(metadata.get("source") or "")
+    # Only a real web URL. `source` is a generic LangChain field, and the CSV
+    # loaders set it to the file they read -- so without this guard a Reactome
+    # document without an `st_id` cited
+    # "/home/awright/git/reactome_chatbot/embeddings/openai/...", leaking a server
+    # path to the website. Caught by running a real question; the unit tests used
+    # clean fixtures and never saw it.
+    if source.startswith(("https://", "http://")):
+        # Deduplicated by URL rather than by chunk: the userguide bundle is 98
+        # chunks across 10 pages, so chunk-level citations would repeat the same
+        # page up to 27 times. The page title is the right label for a page URL.
+        return AnswerEvent(
+            kind="citation",
+            url=str(source),
+            display_name=str(metadata.get("page_title") or ""),
+        )
+    return None
+
+
 """How many sources one answer may cite.
 
 Without a cap this emitted **315** for one question. `HybridRetriever` queries
@@ -224,6 +269,7 @@ class AnswerEvent:
     kind: Literal["token", "citation", "done"]
     text: str = ""
     st_id: str = ""
+    url: str = ""
     display_name: str = ""
     state: Literal["answered", "nothing_found", "refused", "failed"] | None = None
 
@@ -385,15 +431,14 @@ class AgentGraph:
                 for document in event["data"].get("output") or []:
                     if len(seen_citations) >= MAX_CITATIONS:
                         break
-                    stable_id = document.metadata.get("st_id")
-                    if not stable_id or stable_id in seen_citations:
+                    citation = _citation_for(document)
+                    if citation is None:
                         continue
-                    seen_citations.add(stable_id)
-                    yield AnswerEvent(
-                        kind="citation",
-                        st_id=str(stable_id),
-                        display_name=str(document.metadata.get("display_name") or ""),
-                    )
+                    key = citation.st_id or citation.url
+                    if key in seen_citations:
+                        continue
+                    seen_citations.add(key)
+                    yield citation
                 continue
 
             if kind != "on_chat_model_stream" or not retrieval_done:
