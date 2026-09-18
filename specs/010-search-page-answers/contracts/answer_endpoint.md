@@ -221,9 +221,20 @@ A naive measurement reports 3.0s to first token. That token is the rephraser's.
 | retrieval finishing to the answer's first token | 6.1 |
 
 The largest block is no longer retrieval or preprocessing: it is the answer model's
-own time to first token with a retrieved context. Collection routing
-([009](../../009-collection-routing/spec.md)) already did most of the work on
-retrieval -- the 12.5s figure recorded here before it landed no longer reproduces.
+own time to first token with a retrieved context.
+
+**A correction to an earlier version of this file**, which said collection routing
+had landed and explained the improvement. It has not. What landed is *source*
+routing -- a question goes to the Reactome bundle, the user guide, or a live
+lookup -- while [009](../../009-collection-routing/spec.md), selecting among the
+collections *within* the Reactome bundle, is still unimplemented; retrieval
+searches all five.
+
+So the honest position on why the earlier 12.5s and ~36s figures no longer
+reproduce is that we do not fully know. Source routing accounts for the fast
+user-guide answers (3.3s to first token). Running preprocessing in two rounds
+accounts for about 2.5s. The rest may simply be that those figures came from one
+question and were never representative.
 
 One measurement worth keeping in view for anyone optimising this: the async
 retrieval path is **not faster than the sync one** here -- 12.5s against 10.9s on the
