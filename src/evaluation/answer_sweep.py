@@ -287,6 +287,13 @@ async def run(expectations: tuple[Expectation, ...], retries: int = 1) -> list[R
                         # independent, and a shared history would make each a
                         # follow-up of the last.
                         thread_id=f"sweep-{index}-{attempt}",
+                        # No web search. The sweep reads `answer` and nothing
+                        # else, so the postprocess node's Tavily call was paid
+                        # for and thrown away -- fifteen of them per run, and
+                        # this runs after every beta deploy. It also slowed each
+                        # question by the length of a web search, for a result
+                        # no expectation has ever looked at.
+                        enable_postprocess=False,
                     )
                     result.answer = " ".join(str(out.get("answer") or "").split())
                 except Exception as exc:
