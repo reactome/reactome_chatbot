@@ -89,3 +89,28 @@ on 2026-09-17 (PR #227), so measuring the sync path is currently valid.
 **Decision**: the equivalence test is a prerequisite of this work, not a nice-to-have.
 Both paths must filter by the same selection, and the existing test must be extended
 to assert that -- otherwise the measurement stops describing what users get.
+
+## The config route the data model describes does not exist
+
+**Measured 2026-09-18** against langchain-core 0.2.14, the version pinned here.
+
+data-model.md routes the selection as
+`RunnableConfig["configurable"]["collections"]` into
+`HybridRetriever.retrieve_documents`. That is not reachable:
+
+- config is **not** passed to `_get_relevant_documents` as a kwarg — a retriever
+  defined with `**kwargs` receives an empty dict
+- `var_child_runnable_config` is **unset** inside a retriever run, so the ambient
+  config cannot be read either
+
+Two alternatives were rejected. A per-request attribute on the retriever races,
+because it is built once at startup and shared by every request. Rebuilding a
+filtered retriever per request throws away the constructed BM25 indexes.
+
+**Decision: a module-level `ContextVar`**, set around the retrieval call. Under
+asyncio each task gets a copy of the context, so one request's narrowing cannot
+narrow another's — pinned by a test that runs a narrow and a wide request
+concurrently and asserts neither sees the other.
+
+The data model's diagram is left as the intent; this is how it is carried.
+

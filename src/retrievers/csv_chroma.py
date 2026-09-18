@@ -1,6 +1,7 @@
 import asyncio
 import csv
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Iterable
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -22,6 +23,9 @@ from nltk.tokenize import word_tokenize
 from pydantic import ConfigDict
 
 from data_generation.metadata_csv_loader import MetaDataCSVLoader
+from util.logging import logging
+
+logger = logging.getLogger(__name__)
 
 
 def chroma_settings() -> chromadb.config.Settings:
@@ -222,6 +226,62 @@ def list_chroma_subdirectories(directory: Path) -> list[str]:
     ]
 
 
+selected_collections: ContextVar[list[str] | None] = ContextVar(
+    "selected_collections", default=None
+)
+"""The collections the current request may search, or None for all.
+
+A ContextVar rather than the `RunnableConfig` the data model describes, because
+that route does not exist in langchain-core 0.2.14. Measured: config is not
+passed to `_get_relevant_documents` as a kwarg, and
+`var_child_runnable_config` is unset inside a retriever run. The retriever is
+built once at startup and shared, so a per-request attribute would race.
+
+ContextVars are per-task under asyncio -- each task gets a copy of the context --
+so concurrent requests cannot see each other's selection. Set it around the
+retrieval call, never globally.
+"""
+
+
+def resolve_collections(
+    selected: Iterable[str] | None, available: Iterable[str]
+) -> list[str]:
+    """Which collections to search. Every failure widens; none narrows.
+
+    The rules, from specs/009-collection-routing/data-model.md:
+
+    | selection            | result                                  |
+    |----------------------|-----------------------------------------|
+    | empty or absent      | all available                           |
+    | every name known     | just those                              |
+    | any name unknown     | all available, and a WARNING naming them|
+
+    The asymmetry is deliberate and is Principle IV. A selection this code does
+    not recognise means the classifier's prompt and the installed bundle disagree
+    about what exists -- and searching everything because we are unsure costs
+    latency, while searching a subset chosen on a misunderstanding costs the
+    answer. An empty list is therefore the safe value, which is why it is the
+    default for an omitted field, an older prompt and a parse failure alike.
+    """
+    all_available = list(available)
+    chosen = list(selected or [])
+    if not chosen:
+        return all_available
+    unknown = sorted(set(chosen) - set(all_available))
+    if unknown:
+        logger.warning(
+            "Collection selection names %s, which the installed bundle does not "
+            "have (it has %s). Searching all collections rather than narrowing on "
+            "a disagreement.",
+            ", ".join(unknown),
+            ", ".join(sorted(all_available)),
+        )
+        return all_available
+    # Preserve the bundle's order rather than the selection's, so the retrieval
+    # order does not depend on how a model happened to list them.
+    return [name for name in all_available if name in set(chosen)]
+
+
 def _csv_column_names(csv_path: Path) -> list[str]:
     """Every column in the file, so BM25 metadata matches what was embedded."""
     with csv_path.open(newline="", encoding="utf-8") as handle:
@@ -386,7 +446,11 @@ class HybridRetriever(BaseRetriever):
         self, queries: list[str], run_manager: CallbackManagerForRetrieverRun
     ) -> list[Document]:
         subdirectory_docs: list[Document] = []
-        for subdirectory, retrievers in self.collection_retrievers.items():
+        chosen = resolve_collections(
+            selected_collections.get(), self.collection_retrievers
+        )
+        for subdirectory in chosen:
+            retrievers = self.collection_retrievers[subdirectory]
             bm25_retriever = retrievers["bm25"]
             vector_retriever = retrievers["vector"]
             doc_lists: list[list[Document]] = []
@@ -427,7 +491,11 @@ class HybridRetriever(BaseRetriever):
         run_manager: AsyncCallbackManagerForRetrieverRun,
     ) -> list[Document]:
         subdirectory_results: dict[str, list[Coroutine[Any, Any, list[Document]]]] = {}
-        for subdirectory, retrievers in self.collection_retrievers.items():
+        chosen = resolve_collections(
+            selected_collections.get(), self.collection_retrievers
+        )
+        for subdirectory in chosen:
+            retrievers = self.collection_retrievers[subdirectory]
             bm25_retriever = retrievers["bm25"]
             vector_retriever = retrievers["vector"]
             subdirectory_results[subdirectory] = []
