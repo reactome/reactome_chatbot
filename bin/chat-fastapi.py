@@ -69,6 +69,27 @@ app.include_router(answer_router, prefix=API_PREFIX)
 CHAINLIT_URL = os.getenv("CHAINLIT_URL")
 
 CLOUDFLARE_SECRET_KEY = get_secret("CLOUDFLARE_SECRET_KEY")
+
+# A human check on the chat is required unless a deployment says otherwise, and
+# saying otherwise is explicit. Absence used to mean "no captcha to enforce", so
+# a deployment that simply had no key served an ungated chat and reported
+# nothing -- satisfied on paper, off in practice.
+#
+# Refusing to start rather than serving ungated is the same trade the answer
+# endpoint's verifying key already makes: losing the feature is the correct
+# failure, serving it unprotected is not.
+CHAT_REQUIRES_HUMAN = os.getenv("CHAT_REQUIRES_HUMAN", "1").strip() not in {
+    "0",
+    "false",
+    "no",
+}
+if CHAT_REQUIRES_HUMAN and not CLOUDFLARE_SECRET_KEY:
+    raise RuntimeError(
+        "CHAT_REQUIRES_HUMAN is on and no CLOUDFLARE_SECRET_KEY is configured, "
+        "so the chat would be served with no human check at all. Provide the "
+        "Turnstile keys, or set CHAT_REQUIRES_HUMAN=0 to say deliberately that "
+        "this deployment does not want one."
+    )
 CLOUDFLARE_SITE_KEY = os.getenv("CLOUDFLARE_SITE_KEY")
 
 ERROR_PAGE_TEMPLATE = Template(
