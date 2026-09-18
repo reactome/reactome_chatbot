@@ -19,10 +19,13 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from util.human_token import (
+from util.caller_token import (
     ALGORITHMS,
+    AUDIENCE_ENV,
+    DEFAULT_AUDIENCE,
     KEY_PATH_ENV,
     TokenRejectedError,
+    expected_audience,
     load_verifying_key,
     verify,
 )
@@ -48,8 +51,13 @@ def keys() -> tuple[str, str]:
 
 
 def _mint(private_pem: str, **claims: object) -> str:
-    payload: dict[str, object] = {"exp": int(time.time()) + 300}
+    """The shape the website mints: aud included unless a test overrides it."""
+    payload: dict[str, object] = {
+        "exp": int(time.time()) + 300,
+        "aud": DEFAULT_AUDIENCE,
+    }
     payload.update(claims)
+    payload = {k: v for k, v in payload.items() if v is not None}
     return jwt.encode(payload, private_pem, algorithm="EdDSA")
 
 
@@ -61,7 +69,7 @@ def test_a_validly_signed_token_is_accepted(keys: tuple[str, str]) -> None:
 
 def test_an_expired_token_is_refused(keys: tuple[str, str]) -> None:
     private_pem, public_pem = keys
-    token = jwt.encode({"exp": int(time.time()) - 1}, private_pem, algorithm="EdDSA")
+    token = _mint(private_pem, exp=int(time.time()) - 1)
     with pytest.raises(TokenRejectedError, match="expired"):
         verify(token, public_pem)
 
@@ -69,9 +77,48 @@ def test_an_expired_token_is_refused(keys: tuple[str, str]) -> None:
 def test_a_token_with_no_expiry_is_refused(keys: tuple[str, str]) -> None:
     """A token without one is a permanent credential."""
     private_pem, public_pem = keys
-    token = jwt.encode({"sub": "forever"}, private_pem, algorithm="EdDSA")
-    with pytest.raises(TokenRejectedError, match="no expiry"):
+    token = _mint(private_pem, sub="forever", exp=None)
+    with pytest.raises(TokenRejectedError, match="missing a required claim: exp"):
         verify(token, public_pem)
+
+
+def test_a_token_for_another_audience_is_refused(keys: tuple[str, str]) -> None:
+    """Enforcing `aud` is what stops a token minted for this service being
+    replayed at a different consumer, and one minted elsewhere being presented
+    here. The website asked for it explicitly."""
+    private_pem, public_pem = keys
+    token = _mint(private_pem, aud="some-other-service")
+    with pytest.raises(TokenRejectedError, match="different audience"):
+        verify(token, public_pem)
+
+
+def test_a_token_with_no_audience_is_refused(keys: tuple[str, str]) -> None:
+    """Refused by name, rather than being waved through as "nothing to check"."""
+    private_pem, public_pem = keys
+    token = _mint(private_pem, aud=None)
+    with pytest.raises(TokenRejectedError, match="missing a required claim: aud"):
+        verify(token, public_pem)
+
+
+def test_the_expected_audience_is_configurable_but_never_empty(
+    monkeypatch: pytest.MonkeyPatch, keys: tuple[str, str]
+) -> None:
+    """An empty setting must not mean "accept anything".
+
+    PyJWT rejects a token carrying `aud` when none is expected, so a blank value
+    would refuse every real token rather than loosening the check -- a
+    misconfiguration that would look like a signing problem. It falls back to the
+    agreed audience instead.
+    """
+    private_pem, public_pem = keys
+    monkeypatch.setenv(AUDIENCE_ENV, "   ")
+    assert expected_audience() == DEFAULT_AUDIENCE
+    verify(_mint(private_pem), public_pem)  # still accepted
+
+    monkeypatch.setenv(AUDIENCE_ENV, "someone-else")
+    assert expected_audience() == "someone-else"
+    with pytest.raises(TokenRejectedError, match="different audience"):
+        verify(_mint(private_pem), public_pem)
 
 
 def test_a_token_signed_by_someone_else_is_refused(keys: tuple[str, str]) -> None:

@@ -11,12 +11,36 @@ POST /chat/api/answer
 Content-Type: application/json
 
 { "question": "what does CDK5 phosphorylate in Alzheimer disease?",
-  "human_token": "<evidence the caller verified a person>" }
+  "caller_token": "<a token the website minted for this call>" }
 ```
 
-`human_token` is D1 and **not yet decided** -- a signed cookie on the shared parent
-domain, a short-lived minted token, or a server-side vouch. This repo verifies
-evidence; it does not perform the check.
+**`caller_token` is settled (D1, 2026-09-18), and it does not assert humanity.**
+The field was `human_token` and the premise was wrong: there is no human gate on
+the search path and there will not be one -- nobody solves a captcha to run a
+search. What the token asserts is *caller identity*.
+
+The website mints it server-side, per request, and verification here is:
+
+| claim | required | checked against |
+|---|---|---|
+| signature | yes | the public key, EdDSA or RS256 -- never an HS* algorithm |
+| `exp` | yes | now; they mint at +120s |
+| `aud` | yes | `reactome-chatbot`, overridable with `CALLER_TOKEN_AUDIENCE` |
+| `sub` | no, but expected | not validated; used as the rate-limit key |
+| `iss` | no | not currently checked -- the signature already identifies the minter |
+
+`sub` is an opaque per-visit id, 128 random bits, not derived from anything about
+the reader. The backstop limit keys on it, so repeat questions in one reading
+session count as one caller and a freshly minted token does not buy a fresh
+allowance.
+
+**A token with no `aud`, or one minted for a different audience, is refused.**
+Worth stating because the earlier code refused *every* token carrying an `aud`
+claim -- PyJWT rejects one when no audience is expected -- so this had to change
+before the first real token could ever have been accepted.
+
+Abuse control is the website's: the panel is opt-in behind a click, so a crawled
+search never reaches a model, and their proxy rate limits by address.
 
 ## Response: Server-Sent Events
 
@@ -71,6 +95,12 @@ that leaves the pathway title as a bare clause -- cosmetic, and the structured
 produces a `done` with a non-`answered` state. The website renders no panel. The
 search page must never be slower or broken because this service is down (FR-006,
 SC-004).
+
+**Hanging up cancels the work.** Measured: when the caller closes the connection
+mid-stream, `CancelledError` is raised inside the answer generator and nothing
+further is produced -- 3 tokens read, 3 produced, then cancelled. So a reader who
+navigates away does not cost a full model call, and there is nothing for the
+proxy to cancel upstream beyond closing the connection.
 
 **The stream is bounded.** The server gives up after 120 seconds and sends `done`
 with `state: failed`. A caller still needs its own timeout -- a dropped connection

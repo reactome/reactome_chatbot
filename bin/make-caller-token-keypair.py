@@ -29,8 +29,8 @@ def main() -> int:
     directory = Path(sys.argv[1])
     directory.mkdir(parents=True, exist_ok=True)
 
-    public_path = directory / "human_token_public.pem"
-    private_path = directory / "human_token_private.pem"
+    public_path = directory / "caller_token_public.pem"
+    private_path = directory / "caller_token_private.pem"
 
     # Refuse rather than overwrite: silently replacing a private key would
     # invalidate every token in flight with no way back.
@@ -61,7 +61,7 @@ def main() -> int:
     print(f"private {private_path}  (0600, for whoever mints tokens -- D1)")
     print()
     print("Point the service at the public half:")
-    print(f"    HUMAN_TOKEN_PUBLIC_KEY_PATH=/run/secrets/{public_path.name}")
+    print(f"    CALLER_TOKEN_PUBLIC_KEY_PATH=/run/secrets/{public_path.name}")
     return 0
 
 

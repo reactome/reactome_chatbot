@@ -89,7 +89,7 @@ specs/010-search-page-answers/
 src/
 ├── api/                      # new: the endpoint, its models, SSE framing
 ├── agent/graph.py            # gains a streaming surface
-└── util/human_token.py       # new: signature verification only
+└── util/caller_token.py       # new: signature verification only
 
 bin/chat-fastapi.py           # mounts the router; middleware ordering matters
 tests/api/                    # new

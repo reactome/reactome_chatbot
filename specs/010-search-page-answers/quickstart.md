@@ -13,7 +13,7 @@ Measured 2026-09-17 across the 15 tracked sweep questions, so Phase 5 has a befo
 curl -N -X POST https://beta.reactome.org/chat/api/answer \
   -H 'Content-Type: application/json' \
   -d '{"question":"what does CDK5 phosphorylate in Alzheimer disease?",
-       "human_token":"<token>"}'
+       "caller_token":"<token>"}'
 ```
 
 `-N` matters. Without it curl buffers and the stream looks like a single slow
