@@ -33,8 +33,22 @@ analysis was run against an earlier release and has been discarded — run it
 again". Collapsing them into one message wastes information the service went to
 the trouble of giving us.
 
+**And a third code the API does not document.** Measured against beta:
+
+| token | response |
+|---|---|
+| well-formed but unknown (`MjAyNjA5MTgxMjM0NTY`) | 404, as documented |
+| malformed (`x`, `%20`) | **500** — not in the OpenAPI at all |
+
+So the client must treat 500 as a negative outcome too, not as a service fault to
+retry or surface. FR-009 says an unknown, expired *or malformed* token is a normal
+negative outcome; without this measurement the implementation would have handled
+the two documented codes and let a malformed token become a `failed` state, or
+worse a retry loop against a service that will answer the same way every time.
+
 **Alternatives considered**: treating any non-200 as "no summary" — simpler, but
-it would leave a user re-pasting a token that will never work again.
+it would leave a user re-pasting a token that will never work again, which is why
+410 stays distinct even though 500 does not.
 
 ## D3 — Stability comes from storing the summary, keyed by token *and release*
 
