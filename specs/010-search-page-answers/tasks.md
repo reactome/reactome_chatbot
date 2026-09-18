@@ -60,7 +60,7 @@ state.
 - [x] T019a Run preprocessing in two rounds instead of four sequential calls in src/agent/profiles/react_to_me.py; the base class already overlapped, and this override discarded it (PR #238)
 - [ ] T020 Reduce query expansion from 5 variants, measuring recall with bin/retrieval_baseline — its own call plus a 5x retrieval fan-out
 - [ ] T020c Establish whether a search-page question needs all four preprocessing calls. The sequential half of this is answered and done (T019a): they run in two rounds and cost 2.6s at the median, not the ~16s recorded here, which never reproduced
-- [x] T021 Land spec 009 collection routing and re-measure — landed and live (`state["active_sources"][0]` selects at retrieval time), and re-measured 2026-09-18: it is the main reason first-token fell from the ~36s once recorded to 9.6s
+- [ ] T021 Land spec 009 collection routing and re-measure. **Still open — I marked this done on 2026-09-18 and was wrong.** What landed is *source* routing (`resolve_active_sources` picks reactome / userguide / live). Collection routing is selecting among the five collections *within* the reactome bundle, and it is not implemented: `QueryIntent` has no `collections` field, `resolve_collections` does not exist, and `retrieve_documents` still loops over every collection
 - [ ] T022 Re-assess FR-005 against the result and say plainly whether 2s/10s is reachable
 
 ## Phase 6: Handover
