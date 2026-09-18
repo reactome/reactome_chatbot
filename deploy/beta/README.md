@@ -5,8 +5,16 @@ are registered for `reactome.org`, not beta) and no Postgres — the LangGraph
 checkpointer falls back to `MemorySaver`, so conversations live in memory and are
 lost on restart. Chat history and the `/chat/personal` route come later.
 
-Leaving `CLOUDFLARE_SECRET_KEY` unset makes the captcha middleware bypass itself,
-which is what we want: the Turnstile site key is bound to `reactome.org`.
+**Turnstile is enforced on `/chat/guest/`** since 2026-09-18, using production's
+keys -- the site key now lists `beta.reactome.org` as well as `reactome.org`, so
+beta no longer needs to run without one. Rotating the key in production means
+rotating it here too, or beta breaks.
+
+Leaving `CLOUDFLARE_SECRET_KEY` unset used to make the middleware bypass itself
+silently. It now refuses to start instead, unless `CHAT_REQUIRES_HUMAN=0` says
+deliberately that a deployment wants no human check. "There is captcha
+middleware" and "the chat is gated" were previously different statements with
+nothing to tell them apart.
 
 ## 1. Embeddings
 
