@@ -35,7 +35,7 @@ def _run(env: dict[str, str]) -> str:
     key, so the guard's logic is exercised rather than the module. The test for
     the two staying in step is below.
     """
-    result = subprocess.run(
+    result = subprocess.run(  # noqa: S603 - fixed argv, no shell, no user input
         [sys.executable, "-c", SNIPPET],
         capture_output=True,
         text=True,
@@ -70,5 +70,6 @@ def test_the_guard_in_the_app_matches_the_one_tested_here() -> None:
     """The snippet above is a copy, so pin that it has not drifted."""
     source = (REPO / "bin" / "chat-fastapi.py").read_text()
     assert 'os.getenv("CHAT_REQUIRES_HUMAN", "1").strip() not in {' in source
-    assert '"0",' in source and '"false",' in source and '"no",' in source
+    for off in ('"0",', '"false",', '"no",'):
+        assert off in source
     assert "if CHAT_REQUIRES_HUMAN and not CLOUDFLARE_SECRET_KEY:" in source
