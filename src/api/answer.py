@@ -123,6 +123,7 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
         # separate events, so they come out here -- across fragment boundaries,
         # because one anchor arrives as twenty-odd fragments.
         stripper = AnchorStripper()
+        tokens_sent = 0
         try:
             async with asyncio.timeout(ANSWER_TIMEOUT_SECONDS):
                 async for event in graph.astream_answer(
@@ -140,6 +141,7 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
                     if event.kind == "token":
                         text = stripper.feed(event.text)
                         if text:
+                            tokens_sent += 1
                             yield _sse("token", {"text": text})
                     elif event.kind == "citation":
                         yield _sse(
@@ -151,6 +153,33 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
                         )
                     elif event.kind == "done":
                         state = event.state or "failed"
+        except (asyncio.CancelledError, GeneratorExit):
+            # The caller hung up. Both forms are caught because a hang-up
+            # arrives as either, depending on who notices first: Starlette
+            # cancelling the task raises CancelledError, while closing the
+            # generator raises GeneratorExit. A test that only closed the
+            # generator passed against a handler catching only CancelledError,
+            # which is how this was found.
+            #
+            # Either way the graph is cancelled and the model call stops -- that
+            # part already worked and is measured. What was missing was a record.
+            #
+            # Worth a log line because an abandoned stream is indistinguishable
+            # from a healthy one in every other signal: the request 200s, tokens
+            # flow, and then nothing. The website found a bug on their side where
+            # a keystroke unmounted the panel mid-answer, and from here it would
+            # have looked like ordinary traffic. A rate of these is the symptom
+            # of a caller that starts answers it does not want.
+            #
+            # Re-raised, never swallowed: cancellation is not an error to report
+            # to a caller who has already gone, and suppressing it would leave
+            # the task pretending to still be running.
+            logger.info(
+                "answer abandoned by the caller after %.1fs and %d token events",
+                time.monotonic() - started,
+                tokens_sent,
+            )
+            raise
         except TimeoutError:
             # Distinct from the crash below so an operator can tell a slow
             # upstream from a broken one.
