@@ -18,22 +18,30 @@ Measured on 2026-09-17, beta, Release97 bundle, `gpt-4o-mini`, warm process:
 
 Across all fifteen tracked questions, not one question twice:
 
+Re-measured 2026-09-18, two runs of each tracked question:
+
 | | |
 |---|---|
-| Whole answer | min **6.7s**, p50 **15.2s**, p90 **22.4s**, max **31.5s** |
-| Retrieval step, heavy reactome question | ~12.5s of a 27s answer |
-| Retrieval step, userguide question | a fraction of a 12.8s answer |
-| Query expansion | 2.4s, one LLM call, producing 4 variants + the original |
-| Graph construction | 51.5s, once at startup |
+| First answer token | min **2.8s**, p50 **9.6s**, p90 **12.2s**, max **14.0s** (n=26) |
+| Whole answer | min **3.4s**, p50 **10.4s**, p90 **18.1s**, max **21.8s** (n=30) |
+| Preprocessing | 2.6s, in two rounds of two calls |
+| Query expansion and retrieval | 2.3s |
+| Retrieval end to first answer token | 6.1s -- now the largest single block |
+| Graph construction | ~70s, once at startup |
 
-*An earlier draft of this spec quoted "25.4s and 32.2s" as the headline. That was two
-runs of one question, and that question is near the maximum -- roughly twice the p50.
-Corrected on 2026-09-17 after measuring the distribution.*
+*This table has been wrong twice. It first quoted "25.4s and 32.2s", which was two
+runs of one question near the maximum. It then quoted p50 15.2s for the whole answer
+and ~36s to the first token; neither reproduces now, because collection routing
+(spec 009) narrowed retrieval and preprocessing went from four sequential calls to
+two rounds. Re-measure after any retrieval or preprocessing change rather than
+quoting these.*
 
 A Google AI overview is generally reported to arrive in one to two seconds -- an
-assumption here, not a measurement of ours. At a p50 of fifteen seconds, a panel on
-the search results page is still spinning long after a person has read the ordinary
-results, so the conclusion survives the correction even though the number did not.
+assumption here, not a measurement of ours. At a p50 of just under ten seconds to the
+first token, a panel on the search results page is still empty long after a person
+has read the ordinary results. The gap has closed by more than half since this spec
+was written and the conclusion still holds, which is the point worth keeping: the
+requirement was never about a specific number.
 
 This is not a polish problem. It decides whether the feature works, so it is stated
 here as a requirement rather than discovered during implementation.
@@ -65,18 +73,18 @@ disproved that, and the requirement changed rather than the measurement.
 
 Measured 2026-09-17 by streaming `astream_events` and grouping by `run_id`:
 
-| at | tokens | what it is |
-|---|---|---|
-| 5.4s | 17 | rephrase |
-| 9.0s | 12 | safety check |
-| 12.6s | 1 | language detection |
-| 16.1s | 6 | intent classifier |
-| 19.8s | 80 | query expansion |
-| **36.1s** | **1,189** | **the answer** |
+| phase | seconds at the median |
+|---|---|
+| preprocessing -- rephrase \| language, then safety \| intent | 2.6 |
+| query expansion and retrieval | 2.3 |
+| retrieval end to the answer's first token | **6.1** |
+| first answer token | **9.6** |
 
-**Nothing of the answer exists until four sequential preprocessing calls and a
-retrieval have finished.** Streaming makes the last 16 seconds pleasant and does
-nothing about the first 36. A panel would show an empty box and then fill quickly.
+**Nothing of the answer exists until preprocessing and a retrieval have finished**,
+but that is now under five seconds rather than the twenty this spec previously
+recorded. The largest remaining block is the answer model's own time to first token
+against a retrieved context, which streaming does not help and nothing here
+addresses.
 
 A naive measurement reports 3.0s, because the first streamed token of any kind
 belongs to the rephraser. That number is wrong in the most flattering direction, and
@@ -88,12 +96,13 @@ handshake and every failure path against it, none of which depend on how fast it
 
 What would have to change for FR-005a, in the order the measurement suggests:
 
-1. **The four preprocessing calls**, ~16s for 36 tokens between them, all before
-   retrieval starts. Whether they must be sequential, and whether a search-page
-   question needs all four, is the largest open question
-2. **Query expansion**, its own call plus a 5x retrieval fan-out
-3. **Retrieval**, which [spec 009](../009-collection-routing/spec.md) addresses and
-   which is no longer the obvious first target
+1. **The answer model's time to first token**, 6.1s against a retrieved context and
+   the largest block left. Nothing in these specs addresses it; a smaller or faster
+   model, or a shorter context, are the obvious handles
+2. **Preprocessing**, now 2.6s in two rounds. Whether a search-page question needs
+   all four calls at all is still open -- the rounds only removed the waiting
+3. **Query expansion and retrieval**, 2.3s together, after
+   [spec 009](../009-collection-routing/spec.md) narrowed the collections
 
 Stating a budget the code cannot meet would bake it into a contract another repo
 builds against. This is what we are doing instead.

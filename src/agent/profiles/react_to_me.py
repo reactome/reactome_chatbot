@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Any, cast
 
@@ -120,21 +121,32 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
     async def preprocess(
         self, state: ReactToMeState, config: RunnableConfig
     ) -> ReactToMeState:
-        rephrased_input: str = await self.rephrase_chain.ainvoke(
-            {
-                "user_input": state["user_input"],
-                "chat_history": state.get("chat_history", []),
-            },
-            config,
+        # Two rounds, not four. This override used to run all four calls back to
+        # back, discarding the overlap the base class documents. Only the
+        # dependencies force an order: language detection reads the raw
+        # `user_input` and so needs nothing from the rephraser, while safety and
+        # intent both read `rephrased_input` and so must follow it -- but not
+        # each other. Both always run regardless of the safety verdict, here and
+        # before, so overlapping them changes no behaviour.
+        rephrased_input: str
+        detected_language: str
+        rephrased_input, detected_language = await asyncio.gather(
+            self.rephrase_chain.ainvoke(
+                {
+                    "user_input": state["user_input"],
+                    "chat_history": state.get("chat_history", []),
+                },
+                config,
+            ),
+            self.language_detector.ainvoke({"user_input": state["user_input"]}, config),
         )
-        safety_check: SafetyCheck = await self.safety_checker.ainvoke(
-            {"rephrased_input": rephrased_input}, config
-        )
-        detected_language: str = await self.language_detector.ainvoke(
-            {"user_input": state["user_input"]}, config
-        )
-        intent: QueryIntent = await self.intent_classifier.ainvoke(
-            {"rephrased_input": rephrased_input}, config
+        safety_check: SafetyCheck
+        intent: QueryIntent
+        safety_check, intent = await asyncio.gather(
+            self.safety_checker.ainvoke({"rephrased_input": rephrased_input}, config),
+            self.intent_classifier.ainvoke(
+                {"rephrased_input": rephrased_input}, config
+            ),
         )
         active_sources = resolve_active_sources(intent.source, self._available_sources)
         if intent.source not in self._available_sources:
