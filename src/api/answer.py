@@ -32,12 +32,17 @@ from agent.registry import get_graph
 from util.anchor_strip import AnchorStripper
 from util.human_token import TokenRejectedError, verify
 from util.logging import logging
+from util.rate_limit import identity_of, limiter_from_env
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 PROFILE = "react-to-me"
+
+# One limiter for the process, built at import so the window is not reset by a
+# request. FR-008: a backstop behind the website's own budget.
+_limiter = limiter_from_env()
 
 # FR-006 names timeout alongside error, and nothing here implemented it. The only
 # bound was the LLM client's `request_timeout=360.0` -- six minutes per model call,
@@ -85,9 +90,15 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
         return _refusal("no verifying key on the app")
 
     try:
-        verify(body.human_token, verifying_key)
+        claims = verify(body.human_token, verifying_key)
     except TokenRejectedError as rejected:
         return _refusal(rejected.reason)
+
+    # After verification, so an unsigned token cannot consume someone else's
+    # budget by claiming their `sub`, and before the graph, so a caller over the
+    # limit costs nothing.
+    if not _limiter.allow(identity_of(claims, body.human_token)):
+        return _refusal("rate limited")
 
     graph = get_graph()
 
@@ -115,7 +126,16 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
         try:
             async with asyncio.timeout(ANSWER_TIMEOUT_SECONDS):
                 async for event in graph.astream_answer(
-                    body.question, PROFILE, thread_id=f"search-{uuid.uuid4()}"
+                    body.question,
+                    PROFILE,
+                    thread_id=f"search-{uuid.uuid4()}",
+                    # The postprocess node runs a Tavily web search after the
+                    # answer, and `astream_answer` has no event to carry the
+                    # result -- so on this path it was paid for and discarded,
+                    # delaying `done` by the length of a web search. The chat UI
+                    # renders those results; the search page has no place for
+                    # them.
+                    enable_postprocess=False,
                 ):
                     if event.kind == "token":
                         text = stripper.feed(event.text)

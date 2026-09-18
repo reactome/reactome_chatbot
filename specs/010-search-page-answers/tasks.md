@@ -34,7 +34,7 @@ state.
 - [x] T011 [US1] Emit citations from retrieved documents' `st_id` metadata, deduplicated — never by parsing anchors out of the model's prose
 - [x] T012 [US1] Mount the router in bin/chat-fastapi.py and let the captcha middleware pass /chat/api/ through, since the endpoint verifies its own caller
 - [x] T013 [US1] Test over HTTP with a real client in tests/api/test_answer_endpoint.py, not by calling the handler — mounting order and middleware only interact in the served path (Principle I)
-- [ ] T014 [US1] Assert the answer matches the chat UI's for the same question (SC-003); two surfaces that can disagree is a defect
+- [x] T014 [US1] SC-003, restated against the measurement: pin that the two surfaces are *configured* the same in tests/api/test_answer_matches_chat.py. Answer equality is not assertable -- the same surface asked twice scores 0.331 similarity, endpoint-vs-chat 0.356 -- so the spec's criterion was corrected rather than the test weakened (PR #237)
 - [x] T014a [US1] Give each request its own checkpointer thread in src/api/answer.py; `id(body)` put 192 of 200 requests on a shared thread, and `chat_history` is checkpointed state the rephraser reads (PR #236)
 - [x] T014b [US1] Send `release` on start and `seconds` on done per contracts/answer_endpoint.md; both were promised to the website and neither was implemented (PR #236)
 
@@ -42,7 +42,9 @@ state.
 
 - [x] T015 [US2] Refuse missing, expired, malformed and wrongly-signed tokens before any model call, in src/api/answer.py
 - [x] T016 [US2] Test that no model call happens for a refused request in tests/api/test_answer_endpoint.py, by asserting on a patched graph rather than on timing (SC-002)
-- [ ] T017 [P] [US2] Rate limit per token as a backstop; the budget is the website's, enforced before the call reaches here (FR-008)
+- [x] T017 [P] [US2] Rate limit per token as a backstop in src/util/rate_limit.py; the budget is the website's, enforced before the call reaches here (FR-008). 30 per 10 minutes, keyed on `sub`/`jti` when D1 provides one and a token hash until then (PR #237)
+- [x] T017a [US2] Stop paying for a discarded web search: the endpoint took `enable_postprocess` at its default, so every answer ran a Tavily search that `astream_answer` has no event to return (PR #237)
+- [ ] T020a Decide what to do about non-reproducible retrieval: three runs of one question shared only 4 of 19 citations (Jaccard 0.26) because query expansion is itself a model call. Affects what FR-007 can cache
 - [x] T018 [US2] Return `state: failed` with no partial answer on any internal error, so the page renders no panel (FR-006)
 - [x] T011a [US1] Strip inline HTML anchors from the token stream in src/util/anchor_strip.py; the contract promises prose without them and the chat prompt emits them, split across ~20 fragments (PR #236)
 - [x] T013a [US1] Run the endpoint end to end against a real graph: release 97, answered in 19.5-44.2s, 12 citations, anchors 0 (PR #236)

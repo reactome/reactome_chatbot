@@ -200,10 +200,28 @@ classifier's decision matches, and that no LLM answer call happens for the latte
   is the goal; a number being met is not, until FR-005a's blocker is removed
 - **SC-002**: Zero model calls for requests without a valid token, measured by
   counting calls under a load of unauthenticated requests
-- **SC-003**: The answer sweep stays green: the endpoint and the chat UI give the
-  same answer to the same question, because they share a graph
+- **SC-003**: The answer sweep stays green, and the two surfaces stay
+  *configured* the same -- same profile, same shared graph, no difference that can
+  reach the answer. Textual equality is explicitly **not** the criterion, because
+  it is not achievable: measured 2026-09-18 on one graph at temperature 0, the
+  same question asked twice through the *same* surface produced answers 0.331
+  similar, while endpoint-versus-chat scored 0.356. The surfaces differ from each
+  other no more than either differs from itself. The sweep is the right mechanism
+  precisely because it matches patterns rather than literals
 - **SC-004**: No search-page request can make the search page itself slower or fail;
   verified by taking the service down and confirming the page still renders
+
+## Known: retrieval is not reproducible
+
+Measured 2026-09-18, the same question asked three times returned **12 citations
+each time but only 4 pathways common to all three**, a union of 19 and a Jaccard
+of 0.26 between two runs. Query expansion is itself a model call, so each run
+expands the question differently and retrieves different documents.
+
+This matters beyond wording. A reader who reloads the panel sees different
+sources, and FR-007's cache invalidation assumes an answer is a stable artifact
+of a release. Deciding what to do about it -- seeding or caching the expansion,
+or dropping it for this path -- is open, and is not a blocker for the handover.
 
 ## Decisions
 
