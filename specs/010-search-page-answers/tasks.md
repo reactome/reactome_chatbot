@@ -52,7 +52,8 @@ state.
 
 ## Phase 5: Latency (does NOT gate the handover)
 
-- [ ] T019 Measure first-token and completion separately across the tracked questions; publish the distribution, not one question. Baseline for one question, 2026-09-17: first ANSWER token at 36.1s, not the 3.0s a naive stream-the-first-token measurement reports
+- [x] T019 Measure first-token and completion separately across the tracked questions; publish the distribution, not one question. Measured 2026-09-18, two runs each: first token p50 9.6s / p90 12.2s (n=26), completion p50 10.4s / p90 18.1s (n=30). The earlier "36.1s to first token" came from one question and does not reproduce (PR #238)
+- [x] T019a Run preprocessing in two rounds instead of four sequential calls in src/agent/profiles/react_to_me.py; the base class already overlapped, and this override discarded it (PR #238)
 - [ ] T020 Reduce query expansion from 5 variants, measuring recall with bin/retrieval_baseline — its own call plus a 5x retrieval fan-out
 - [ ] T020b Establish whether the four preprocessing calls must be sequential, and whether a search-page question needs all of them. They cost ~16s before retrieval starts and produce 36 tokens between them — the largest block in front of the first answer token
 - [ ] T021 Land spec 009 collection routing and re-measure

@@ -92,30 +92,48 @@ the same question, that is a defect.
 
 ## Budget
 
-| | first increment promises | measured today |
+Measured 2026-09-18 over the fifteen tracked sweep questions, two runs each, warm
+process, `gpt-4o-mini` at temperature 0.
+
+| | first increment promises | measured |
 |---|---|---|
-| first token | **nothing** | ~20-36s: the answer starts only after four preprocessing calls and a retrieval |
-| complete | **nothing** | p50 15.2s, p90 22.4s, max 31.5s end to end |
-| streaming | **yes** | 1,168 token events for one answer |
+| first token | **nothing** | p50 **9.6s**, p90 12.2s, max 14.0s (n=26) |
+| complete | **nothing** | p50 **10.4s**, p90 18.1s, max 21.8s (n=30) |
+| streaming | **yes** | ~700-1,200 token events for one answer |
 
-**The first increment makes no latency promise, deliberately.** Two seconds was in an
-earlier draft of this contract; building the streaming surface showed the answer's
-first token arrives around 36 seconds, because nothing of it exists until the
-rephrase, safety, language and intent calls and a retrieval have all finished.
-Streaming improves the last part and does nothing about the first.
+Through the served HTTP endpoint rather than the graph, on a four-question subset:
+first token p50 10.8s, p90 12.2s.
 
-Design the panel for that: it must be able to show nothing for a long time, and to be
-absent entirely. Do not build a spinner that implies an imminent answer, and do not
-let the search results wait on it (FR-009).
+**An earlier version of this contract said the first token arrives "around 36
+seconds". That was wrong** -- it came from a single question, and it has not been
+reproducible since. Two things changed underneath it: collection routing narrowed
+retrieval to the sources a question actually needs, and the four preprocessing
+calls now run in two rounds instead of four. Preprocessing is 2.6s of the total,
+not the ~16s previously recorded.
+
+**The first increment still makes no latency promise**, and ten seconds is still
+far from the two an AI overview is reported to take. But design the panel for ten
+seconds, not thirty: the gap between those is the difference between a brief wait
+and an abandoned page.
+
+Four of the thirty runs produce no answer token at all. Those are the two
+deliberately unsafe questions, which return `nothing_found` in about 4.5s with an
+empty body. A panel must handle "nothing, quickly" as a normal outcome.
 
 A naive measurement reports 3.0s to first token. That token is the rephraser's.
 
-Retrieval is one part and no longer the obvious first target. It dominates the heavy
-questions -- about 12.5s of a 27s answer -- and scales with *queries x collections*. Query expansion turns one question into five
-queries (2.4s, one LLM call) and each runs against every collection, so cutting
-queries is a lever of the same size as cutting collections. Only the latter has a
-spec. See [009](../../009-collection-routing/spec.md), and note that it is one lever
-rather than the whole of it.
+**Where the time goes now**, at the median of a four-question repeated measure:
+
+| phase | seconds |
+|---|---|
+| preprocessing (rephrase \| language, then safety \| intent) | 2.6 |
+| query expansion and retrieval | 2.3 |
+| retrieval finishing to the answer's first token | 6.1 |
+
+The largest block is no longer retrieval or preprocessing: it is the answer model's
+own time to first token with a retrieved context. Collection routing
+([009](../../009-collection-routing/spec.md)) already did most of the work on
+retrieval -- the 12.5s figure recorded here before it landed no longer reproduces.
 
 One measurement worth keeping in view for anyone optimising this: the async
 retrieval path is **not faster than the sync one** here -- 12.5s against 10.9s on the
