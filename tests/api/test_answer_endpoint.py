@@ -13,8 +13,8 @@ a failure ending with a terminal event rather than a hang.
 import asyncio
 import json
 import time
-from collections.abc import AsyncIterator
-from typing import Any
+from collections.abc import AsyncGenerator, AsyncIterator
+from typing import Any, cast
 
 import jwt
 import pytest
@@ -24,7 +24,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from agent.graph import AnswerEvent
-from api.answer import router
+from api.answer import AnswerRequest, router
+from api.answer import answer as answer_handler
 from util.caller_token import DEFAULT_AUDIENCE
 from util.rate_limit import SlidingWindowLimiter
 
@@ -424,3 +425,66 @@ def test_the_search_page_does_not_pay_for_a_web_search(
     )
 
     assert seen["enable_postprocess"] is False
+
+
+def test_an_abandoned_stream_is_recorded_and_not_swallowed(
+    keys: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A caller that hangs up mid-answer should leave a trace.
+
+    Cancellation already stopped the work -- that was measured against a live
+    server, and it is why the website's proxy does not need to cancel upstream.
+    What was missing was any record: an abandoned stream looks exactly like a
+    healthy one in every other signal, because the request 200s, tokens flow, and
+    then nothing more happens.
+
+    It matters because the website found a bug where a keystroke unmounted their
+    panel mid-answer and left our stream running. From here that was ordinary
+    traffic. A rate of these is the symptom.
+
+    Driven through the response's iterator rather than a client, because the
+    point is to close it mid-stream, which a TestClient will not do.
+    """
+    from types import SimpleNamespace
+
+    private, public = keys
+
+    class _SlowGraph(_StubGraph):
+        async def astream_answer(
+            self, *_a: Any, **_k: Any
+        ) -> AsyncIterator[AnswerEvent]:
+            for index in range(50):
+                await asyncio.sleep(0.01)
+                yield AnswerEvent(kind="token", text=f"t{index} ")
+
+    monkeypatch.setattr("api.answer.get_graph", lambda: _SlowGraph())
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(caller_token_key=public, release=97))
+    )
+
+    async def drive() -> None:
+        response = await answer_handler(
+            request,  # type: ignore[arg-type]
+            AnswerRequest(question="what is CDK5", caller_token=_token(private)),
+        )
+        # body_iterator is typed as a bare AsyncIterable, which has no aclose;
+        # the object Starlette puts there is an async generator, and closing it
+        # is the whole point of this test.
+        iterator = cast("AsyncGenerator[str, None]", response.body_iterator)
+        seen = 0
+        async for _chunk in iterator:
+            seen += 1
+            if seen == 4:
+                break
+        # Closing is what a hung-up caller causes Starlette to do.
+        await iterator.aclose()
+
+    with caplog.at_level("INFO", logger="api.answer"):
+        asyncio.run(drive())
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any(
+        "abandoned by the caller" in message for message in messages
+    ), f"no record of the abandoned stream; logged: {messages}"
