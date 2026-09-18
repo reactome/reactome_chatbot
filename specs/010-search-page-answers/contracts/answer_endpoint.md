@@ -75,6 +75,48 @@ At most **12** citations are sent. Measured against the live endpoint this cap i
 binding on ordinary questions, so treat it as the most relevant few rather than
 the complete set.
 
+### Some answers have no citations at all, by construction
+
+A `citation` carries `st_id`, a Reactome stable identifier, and only the Reactome
+and disease-variant collections have them. The userguide collection indexes
+documentation pages whose metadata is a page URL, so a userguide-routed question
+produces **zero citations** -- measured 2026-09-18: "How do I use the pathway
+browser?" returned 0 citations and 452 tokens.
+
+That is a good answer with no sources, not a failure. Two things follow for a
+caller:
+
+- Render nothing rather than an empty heading. The website's panel keeps its
+  heading and list inside one conditional for this reason.
+- It correlates with the **fastest** answers -- the userguide question is also
+  the 3.3s-to-first-token one -- so it is common rather than exotic, and it is
+  precisely what the four questions anyone would naturally test with fail to
+  produce.
+
+**Citations always precede prose**, and that is structural rather than
+incidental: citations are emitted only on `on_retriever_end`, and token events
+are gated on that same event, because retrieval completing is how the answer's
+tokens are told apart from the query expander's. So sources are complete at the
+moment the first token arrives, and a panel may render them before any prose.
+
+#### Open: citing userguide pages (not scheduled)
+
+Proposed by the website session 2026-09-18 and agreed in shape, not scheduled.
+A documentation URL does not fit `{st_id, display_name}`, and **a fabricated
+`R-` identifier is not an option** -- it would resolve to nothing, or worse to
+the wrong entity. The shape that works is an optional sibling, exactly one of the
+two present:
+
+```
+{"st_id": "R-HSA-8862803", "display_name": "..."}             # unchanged
+{"url": "/userguide/pathway-browser", "display_name": "..."}  # new
+```
+
+A consumer that understands only `st_id` keeps working by skipping what it does
+not recognise. Worth doing when this contract is next opened; an answer that is
+honest about having no sources is much better than an invented one, so this is
+not a blocker.
+
 ### What `token` text contains
 
 **Markdown, never HTML.** Headings and lists appear; anchors do not. The answer
