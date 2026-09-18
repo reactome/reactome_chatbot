@@ -1,11 +1,11 @@
 import asyncio
+import csv
 from collections.abc import Coroutine
 from pathlib import Path
 from typing import Any, TypedDict
 
 import chromadb.config
 from langchain_chroma.vectorstores import Chroma
-from langchain_community.document_loaders.csv_loader import CSVLoader
 from langchain_community.retrievers import BM25Retriever
 from langchain_core.callbacks import (
     AsyncCallbackManagerForRetrieverRun,
@@ -20,6 +20,8 @@ from langchain_core.retrievers import BaseRetriever
 from langchain_core.runnables import Runnable
 from nltk.tokenize import word_tokenize
 from pydantic import ConfigDict
+
+from data_generation.metadata_csv_loader import MetaDataCSVLoader
 
 
 def chroma_settings() -> chromadb.config.Settings:
@@ -220,6 +222,13 @@ def list_chroma_subdirectories(directory: Path) -> list[str]:
     ]
 
 
+def _csv_column_names(csv_path: Path) -> list[str]:
+    """Every column in the file, so BM25 metadata matches what was embedded."""
+    with csv_path.open(newline="", encoding="utf-8") as handle:
+        header = csv.reader(handle)
+        return next(header, [])
+
+
 def create_bm25_chroma_ensemble_retriever(
     llm: BaseChatModel,
     embedding: Embeddings,
@@ -282,7 +291,28 @@ class HybridRetriever(BaseRetriever):
             # set up BM25 retriever
             csv_file_name = subdirectory + ".csv"
             reactome_csvs_dir: Path = embeddings_directory / "csv_files"
-            loader = CSVLoader(file_path=reactome_csvs_dir / csv_file_name)
+            csv_path = reactome_csvs_dir / csv_file_name
+            # MetaDataCSVLoader, not CSVLoader: the plain loader gives every
+            # document metadata of only {row, source}, so the BM25 half of this
+            # ensemble returned documents with no `st_id` while the Chroma half
+            # -- built from the same CSV, by this same loader at embedding time
+            # -- had one.
+            #
+            # Two things followed. Those documents could not be cited, so for one
+            # measured question 50 of 62 retrieved documents were unattributable
+            # while their stable id sat in the text as "st_id: R-HSA-...". And
+            # `unique_documents` keys on `st_id or page_content`, so a BM25 copy
+            # and its Chroma twin deduplicated to different keys and both
+            # survived -- 11 of those 50 were exact duplicates of a citable
+            # document, taking context space and contributing twice to the RRF
+            # fusion.
+            #
+            # Every column is promoted, from the header, so this cannot drift
+            # from whatever the CSV holds. Content is unchanged: the loader only
+            # trims content when `content_columns` is given, which it is not.
+            loader = MetaDataCSVLoader(
+                file_path=str(csv_path), metadata_columns=_csv_column_names(csv_path)
+            )
             data = loader.load()
             bm25_retriever = BM25Retriever.from_documents(
                 data,
