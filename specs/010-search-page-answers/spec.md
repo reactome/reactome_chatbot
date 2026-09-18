@@ -173,7 +173,7 @@ classifier's decision matches, and that no LLM answer call happens for the latte
   serves only the captcha pages and a landing page, and Chainlit owns the conversation
   over websockets
 - **FR-002**: The response MUST stream, so partial text can render before completion
-- **FR-003**: The endpoint MUST refuse any request without a valid proof-of-human
+- **FR-003**: The endpoint MUST refuse any request without a valid caller
   token, before any model call
 - **FR-004**: Citations MUST be Reactome stable IDs, so the website can render links
   in its own style rather than parsing prose

@@ -178,7 +178,7 @@ records/
 config.yml
 data/
 
-# Key material. The answer endpoint verifies a proof-of-human token against a
+# Key material. The answer endpoint verifies the website's caller token against a
 # public key, and whoever mints those tokens holds the private half. Neither
 # belongs in the repository.
 *.pem

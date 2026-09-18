@@ -159,7 +159,7 @@ secrets:
   # The public half of the answer endpoint's token-verifying keypair.
   # External like the rest, so no key material lives in the repository:
   #   docker secret create CALLER_TOKEN_PUBLIC_KEY deploy/beta/caller_token_public.pem
-  # Generate the pair with ./bin/make-human-token-keypair.py deploy/beta
+  # Generate the pair with ./bin/make-caller-token-keypair.py deploy/beta
   CALLER_TOKEN_PUBLIC_KEY:
     external: true
   CHAINLIT_AUTH_SECRET:

@@ -15,13 +15,13 @@ packages = [
 [tool.poetry.dependencies]
 python = ">=3.12, <4"
 langchain = "^1.4.0"
-# Declared, not inherited. The answer endpoint verifies a signed proof-of-human
+# Declared, not inherited. The answer endpoint verifies a signed caller
 # token, so this repository imports PyJWT directly. It arrives transitively today
 # via chainlit and mcp, which is not a dependency -- it is a coincidence that a
 # chainlit upgrade could end, and the symptom would be an endpoint that cannot
 # verify anyone.
 pyjwt = {version = "^2.10", extras = ["crypto"]}
-# Imported directly by bin/make-human-token-keypair.py and the token tests,
+# Imported directly by bin/make-caller-token-keypair.py and the token tests,
 # not just pulled in by pyjwt's crypto extra. Declared so it does not vanish
 # if that extra or the JWT library ever changes.
 cryptography = ">=42,<51"

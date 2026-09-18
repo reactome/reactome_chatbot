@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Generate the keypair the answer endpoint verifies proof-of-human tokens with.
+"""Generate the keypair the answer endpoint verifies the website's caller tokens with.
 
 The endpoint holds only the **public** half, and verifies EdDSA or RS256 -- never
 an HMAC algorithm, so a stolen public key cannot be turned into a signing key.
-Whoever mints tokens holds the private half; who that is is D1 in
-specs/010-search-page-answers, still open.
+The website mints and holds the private half (D1, decided 2026-09-18). The token
+asserts caller identity for one visit, not that a human is present -- there is no
+human gate on the search path.
 
 Rotation is this script plus a restart: generate, replace the public key the
 service reads, hand the private half to the minter. Tokens signed by the old key
 stop verifying immediately, which is the point.
 
 Usage:
-    ./bin/make-human-token-keypair.py deploy/beta
+    ./bin/make-caller-token-keypair.py deploy/beta
 """
 
 import stat
