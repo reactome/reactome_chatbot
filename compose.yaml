@@ -28,9 +28,11 @@ services:
       OAUTH_GOOGLE_CLIENT_SECRET: ${OAUTH_GOOGLE_CLIENT_SECRET}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       TAVILY_API_KEY: ${TAVILY_API_KEY}
+      HUMAN_TOKEN_PUBLIC_KEY_PATH: /run/secrets/HUMAN_TOKEN_PUBLIC_KEY
       # Postgres access when not using Vault (for development)
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     secrets:
+      - HUMAN_TOKEN_PUBLIC_KEY
       - CHAINLIT_AUTH_SECRET
       - CLOUDFLARE_SECRET_KEY
       - OAUTH_AUTH0_CLIENT_SECRET
@@ -70,9 +72,11 @@ services:
       CLOUDFLARE_SECRET_KEY: ${CLOUDFLARE_SECRET_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       TAVILY_API_KEY: ${TAVILY_API_KEY}
+      HUMAN_TOKEN_PUBLIC_KEY_PATH: /run/secrets/HUMAN_TOKEN_PUBLIC_KEY
       # Postgres access when not using Vault (for development)
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     secrets:
+      - HUMAN_TOKEN_PUBLIC_KEY
       - CLOUDFLARE_SECRET_KEY
       - OPENAI_API_KEY
       - TAVILY_API_KEY
@@ -152,6 +156,12 @@ services:
 
 
 secrets:
+  # The public half of the answer endpoint's token-verifying keypair.
+  # External like the rest, so no key material lives in the repository:
+  #   docker secret create HUMAN_TOKEN_PUBLIC_KEY deploy/beta/human_token_public.pem
+  # Generate the pair with ./bin/make-human-token-keypair.py deploy/beta
+  HUMAN_TOKEN_PUBLIC_KEY:
+    external: true
   CHAINLIT_AUTH_SECRET:
     external: true
   CLOUDFLARE_SECRET_KEY:

@@ -21,6 +21,10 @@ langchain = "^1.4.0"
 # chainlit upgrade could end, and the symptom would be an endpoint that cannot
 # verify anyone.
 pyjwt = {version = "^2.10", extras = ["crypto"]}
+# Imported directly by bin/make-human-token-keypair.py and the token tests,
+# not just pulled in by pyjwt's crypto extra. Declared so it does not vanish
+# if that extra or the JWT library ever changes.
+cryptography = ">=42,<51"
 # Declared, not inherited. LangChain 1.0 moved the pre-LCEL chain builders here
 # (retrievers/rag_chain.py, the metadata_info modules), so this repository
 # imports langchain_classic directly and must depend on it directly. It arrived

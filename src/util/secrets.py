@@ -127,6 +127,14 @@ def load_secrets_to_environ(names: Iterable[str]) -> None:
 #
 # That had already happened: compose.yaml declared the two OAuth secrets and
 # this tuple did not list them.
+# Secrets the app consumes as a FILE at /run/secrets/<name>, not by loading the
+# value into the environment. The answer endpoint's verifying key is one: it is
+# read through HUMAN_TOKEN_PUBLIC_KEY_PATH, and putting PEM text in an
+# environment variable would buy nothing. Listed so the compose tripwire can tell
+# "read as a file" apart from "mounted and silently never read", which is the
+# drift it exists to catch.
+FILE_SECRET_NAMES = ("HUMAN_TOKEN_PUBLIC_KEY",)
+
 SECRET_NAMES = (
     "CHAINLIT_AUTH_SECRET",
     "CLOUDFLARE_SECRET_KEY",
