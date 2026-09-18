@@ -42,7 +42,35 @@ Copy `env.beta.template` to `.env.beta` and fill in the two keys. Do not reuse
 prod's `CHAINLIT_URL`, `CHAINLIT_ROOT_PATH` or OAuth values — they point at
 `reactome.org` and will break asset URLs and logins on beta.
 
-## 4. Run
+## 4. The caller-token verifying key
+
+The answer endpoint (`/chat/guest/api/answer`) verifies a token the website mints
+for each call. This host holds **only the public half** and can therefore verify
+but never mint -- which is the point of choosing an asymmetric algorithm, and why
+no private key for this path should exist here.
+
+The app **refuses to start** without the key. That is deliberate: an endpoint that
+accepts everything because its key is missing is the worst outcome available, and
+it would test clean. But Chainlit is mounted on the same app, so a missing key
+takes `/chat` down with it -- which is why `update-beta-chat.sh` checks the key is
+readable *before* it stops the running container.
+
+The public half comes from the website team. Ask them for it, write it to
+`deploy/beta/caller_token_public.pem` (mode 644 -- the image runs as `appuser` and
+must read it), and restart. Tokens signed by the previous key stop verifying the
+moment you do, which is what makes rotation a file write plus a restart.
+
+If you need a keypair for local testing rather than the real exchange:
+
+```bash
+./bin/make-caller-token-keypair.py deploy/beta
+```
+
+It refuses to overwrite an existing key, because silently replacing one would
+invalidate every token in flight with no way back. **Delete the private half once
+a real key is installed**: on the verifying side it is pure liability.
+
+## 5. Run
 
 Bound to loopback: Apache is the only thing that should reach it.
 
@@ -64,7 +92,7 @@ Note: the landing page shows both a **Guest Access** and a **Log In** button. On
 Guest Access works in this setup; wiring Log In needs a second container on :8001
 with `CHAINLIT_URI=/chat/personal`, plus Postgres and OAuth.
 
-## 5. Apache
+## 6. Apache
 
 See `../../../WebsiteAngular/deploy/apache/install-beta-chat-proxy.sh`.
 
