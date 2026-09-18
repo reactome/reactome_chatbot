@@ -6,6 +6,7 @@ import pytest
 
 import util.secrets as secrets
 from util.secrets import (
+    FILE_SECRET_NAMES,
     SECRET_NAMES,
     get_secret,
     load_secrets_to_environ,
@@ -140,10 +141,13 @@ def test_every_secret_compose_declares_is_one_the_app_loads() -> None:
         (Path(__file__).parent.parent.parent / "compose.yaml").read_text()
     )
     declared = set(compose.get("secrets") or {})
-    missing = sorted(declared - set(SECRET_NAMES))
+    # FILE_SECRET_NAMES are read from /run/secrets/<name> directly rather than
+    # loaded into the environment, so they are accounted for, not unread.
+    missing = sorted(declared - set(SECRET_NAMES) - set(FILE_SECRET_NAMES))
     assert not missing, (
         f"compose.yaml mounts these but nothing loads them: {missing}. "
-        "Add them to SECRET_NAMES in src/util/secrets.py."
+        "Add them to SECRET_NAMES in src/util/secrets.py, or to "
+        "FILE_SECRET_NAMES if the app reads the file instead of the value."
     )
 
 
@@ -229,3 +233,28 @@ def test_no_password_anywhere_returns_none(
     monkeypatch.setattr(secrets, "VAULT_TOKEN_FILE", Path("/nonexistent"))
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     assert secrets.get_db_uri("chainlit") is None
+
+
+def test_file_secrets_are_actually_read_as_files() -> None:
+    """FILE_SECRET_NAMES excuses a secret from the tripwire above, so it must not
+    become a way to silence it.
+
+    A name listed there has to be consumed somewhere as a path under
+    /run/secrets/. If it is not, it is exactly the drift the tripwire exists to
+    catch, wearing a label that says otherwise.
+    """
+    root = Path(__file__).parent.parent.parent
+    haystack = "\n".join(
+        path.read_text()
+        for path in (
+            root / "compose.yaml",
+            root / "docker-compose.yml",
+            *(root / "src").rglob("*.py"),
+            *(root / "bin").glob("*.py"),
+        )
+    )
+    for name in FILE_SECRET_NAMES:
+        assert f"/run/secrets/{name}" in haystack, (
+            f"{name} is in FILE_SECRET_NAMES but nothing reads "
+            f"/run/secrets/{name}. Either wire it up or drop it from the list."
+        )

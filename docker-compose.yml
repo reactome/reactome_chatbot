@@ -37,7 +37,8 @@ services:
       - ./embeddings:/app/embeddings
       - ./records:/app/records
       - ./config.yml:/app/config.yml
-      - ./deploy/beta/human_token_public.pem:/run/secrets/human_token_public.pem:ro
+    secrets:
+      - human_token_public.pem
 
   chainlit-no-login:
     image: ${CHAINLIT_IMAGE}
@@ -66,7 +67,8 @@ services:
     volumes:
       - ./embeddings:/app/embeddings
       - ./config.yml:/app/config.yml
-      - ./deploy/beta/human_token_public.pem:/run/secrets/human_token_public.pem:ro
+    secrets:
+      - human_token_public.pem
 
 
   postgres:
@@ -98,3 +100,18 @@ services:
 
 volumes:
   postgres_data:
+
+secrets:
+  # NOTE: compose.yaml is the file Docker Compose actually uses when both
+  # exist, and it declares this as an external secret like every other.
+  # This file-based form keeps THIS compose file working standalone.
+  #
+  # Delivered at /run/secrets/human_token_public.pem, which is what
+  # HUMAN_TOKEN_PUBLIC_KEY_PATH points at. A secret rather than a bind mount on
+  # purpose: a bind mount whose source is missing makes Docker create a
+  # root-owned directory at that path, which then needs sudo to clear and which
+  # the key generator would refuse to overwrite. A missing secret just errors.
+  #
+  # Generate it with ./bin/make-human-token-keypair.py deploy/beta
+  human_token_public.pem:
+    file: ./deploy/beta/human_token_public.pem
