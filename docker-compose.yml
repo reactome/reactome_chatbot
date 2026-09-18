@@ -22,6 +22,7 @@ services:
       - OAUTH_GOOGLE_CLIENT_SECRET=${OAUTH_GOOGLE_CLIENT_SECRET}
       - CHAINLIT_AUTH_SECRET=${CHAINLIT_AUTH_SECRET}
       - CHAINLIT_URI=${CHAINLIT_URI}
+      - HUMAN_TOKEN_PUBLIC_KEY_PATH=${HUMAN_TOKEN_PUBLIC_KEY_PATH}
       - CHAINLIT_URL=${CHAINLIT_URL}
       - CHAINLIT_ROOT_PATH=${CHAINLIT_ROOT_PATH}
       - TAVILY_API_KEY=${TAVILY_API_KEY}
@@ -36,6 +37,7 @@ services:
       - ./embeddings:/app/embeddings
       - ./records:/app/records
       - ./config.yml:/app/config.yml
+      - ./deploy/beta/human_token_public.pem:/run/secrets/human_token_public.pem:ro
 
   chainlit-no-login:
     image: ${CHAINLIT_IMAGE}
@@ -52,6 +54,7 @@ services:
       - CLOUDFLARE_SECRET_KEY=${CLOUDFLARE_SECRET_KEY}
       - CLOUDFLARE_SITE_KEY=${CLOUDFLARE_SITE_KEY}
       - CHAINLIT_URI=${CHAINLIT_URI_NO_LOGIN}
+      - HUMAN_TOKEN_PUBLIC_KEY_PATH=${HUMAN_TOKEN_PUBLIC_KEY_PATH}
       - CHAINLIT_URI_LOGIN=${CHAINLIT_URI}
       - CHAINLIT_URL=${CHAINLIT_URL}
       - TAVILY_API_KEY=${TAVILY_API_KEY}
@@ -63,6 +66,7 @@ services:
     volumes:
       - ./embeddings:/app/embeddings
       - ./config.yml:/app/config.yml
+      - ./deploy/beta/human_token_public.pem:/run/secrets/human_token_public.pem:ro
 
 
   postgres:
