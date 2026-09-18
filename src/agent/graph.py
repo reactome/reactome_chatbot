@@ -254,6 +254,7 @@ see research.md R3: these are what retrieval found, not what the prose cited.
 """
 
 ANSWER_NODE = "model"
+PREPROCESS_NODE = "preprocess"
 """The graph node the final answer streams from.
 
 `preprocess` carries the rephrase, safety, language and intent calls. `model`
@@ -425,6 +426,30 @@ class AgentGraph:
             version="v2",
         ):
             kind = event["event"]
+
+            if kind == "on_chain_end" and event.get("name") == PREPROCESS_NODE:
+                # A question routed to the live MCP lookup is answered from tools,
+                # with no retriever anywhere on the path -- so `on_retriever_end`
+                # never arrives and the boundary below never opens. Every token
+                # was discarded and the caller was told `nothing_found`, for
+                # questions the chat answers correctly.
+                #
+                # It only happened where MCP is configured, which is beta and not
+                # a developer's machine: without it these questions fall back to
+                # the vector store and retrieve normally. The chat UI and the
+                # answer sweep both use `ainvoke`, which takes the final answer
+                # and never looks at this stream, so nothing else could see it.
+                #
+                # Opening the boundary here is safe precisely because there is no
+                # retrieval on this path: the query expander lives inside the
+                # retriever, so nothing else is streaming at the answer node and
+                # there is nothing to tell apart.
+                output = event["data"].get("output")
+                if isinstance(output, dict) and "live" in (
+                    output.get("active_sources") or []
+                ):
+                    retrieval_done = True
+                continue
 
             if kind == "on_retriever_end":
                 retrieval_done = True
