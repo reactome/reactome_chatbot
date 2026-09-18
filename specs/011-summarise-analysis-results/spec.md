@@ -159,6 +159,7 @@ describes the other's.
   summarising, and MUST NOT make claims specific to a type the result is not.
 - **FR-007**: The system MUST refuse a request that does not carry a verified
   caller, before any model call, on the same terms as the existing answer endpoint.
+  That is the floor, not the bar — see FR-013.
 - **FR-008**: The system MUST fail invisibly to the caller: any error, timeout or
   refusal yields a terminal state the caller can render as "no summary", never a
   broken panel or an HTTP error.
@@ -166,16 +167,29 @@ describes the other's.
   normal negative outcome, not an error condition.
 - **FR-010**: The system MUST read analysis results from the beta Analysis Service
   for now, never from production.
-- **FR-011**: The system MUST be able to summarise a result without transmitting the
-  user's full identifier list, if [NEEDS CLARIFICATION: is it acceptable to send
-  analysis result contents — which include the user's submitted identifiers — to a
-  third-party model provider, or must summaries be derived from aggregate
-  statistics only?] forbids sending it.
-- **FR-012**: Summaries MUST be stable for a given analysis token, or the
-  instability MUST be visible to the caller, because an analysis result is a fixed
-  artefact a user may cite. [NEEDS CLARIFICATION: must a summary of the same token
-  be identical on every request, given that answers are measured to be
-  non-reproducible?]
+- **FR-011**: Summarising MUST be opt-in. The system MUST NOT send any part of an
+  analysis result to a model provider until the user has actively asked for a
+  summary. A result being viewed is not consent; nothing is summarised in the
+  background or in anticipation.
+- **FR-012**: The user MUST be offered a choice of what is shared, and the choice
+  MUST be meaningful — at least one option MUST produce a useful summary without
+  transmitting their submitted identifiers. The user is choosing between summaries
+  of different quality at different disclosure, and MUST be told which is which
+  before choosing, not after.
+- **FR-013**: The system MUST require evidence that a person is present, not merely
+  that a known service is calling. This is a stricter bar than the answer
+  endpoint's, which verifies caller identity and deliberately asserts nothing about
+  humanity, and it exists because this feature discloses a user's own uploaded data
+  rather than public pathway text.
+- **FR-014**: A summary MUST be stable for a given analysis token: the same token
+  MUST yield the same summary on request after request, so that a reader who
+  reloads, or who cites it, sees what they saw before. An analysis result is a
+  fixed artefact and its summary must behave like one.
+- **FR-015**: The system MUST be transparent about what a summary is: that it was
+  generated rather than curated, which analysis it describes, and that regenerating
+  it may produce different wording. Stability under FR-014 is achieved by reuse,
+  not by the generator being deterministic, and the interface MUST NOT imply
+  otherwise.
 
 ### Key Entities
 

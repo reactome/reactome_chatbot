@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
+- [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -31,19 +31,21 @@
 
 ## Notes
 
-Two [NEEDS CLARIFICATION] markers remain, both deliberate and both decisions
-that belong to Adam rather than defaults I should pick:
+Both clarifications were answered by Adam on 2026-09-18 and are now requirements,
+not assumptions:
 
-- **FR-011** — whether analysis result contents, which include the user's own
-  submitted identifiers, may be sent to a third-party model provider. This is a
-  privacy decision about someone else's unpublished research data.
-- **FR-012** — whether a summary of a fixed analysis result must be stable across
-  requests. Answers are measured non-reproducible (same surface, same question:
-  0.33 similarity), so this cannot be assumed away.
+- **Privacy** — summarising is **opt-in** (FR-011), the user **chooses what is
+  shared** with at least one useful option that discloses no identifiers (FR-012),
+  and a **person must be shown to be present** (FR-013). That last is a stricter
+  bar than the answer endpoint's caller token, which asserts service identity and
+  deliberately says nothing about humanity — so this feature cannot ride the
+  ungated search path.
+- **Stability** — "do our best and be transparent" became FR-014 (the same token
+  yields the same summary, by reuse) and FR-015 (say it is generated, and that
+  regenerating may differ). Stability comes from storing the summary against a
+  fixed artefact, not from pretending the generator is deterministic.
 
-A third candidate — which analysis types the first increment covers — was
-resolved in Assumptions rather than asked: ReactomeGSA is deferred because it is
-a separate service with its own result shape.
+ReactomeGSA remains deferred in Assumptions: separate service, separate result
+shape.
 
-The two remaining are scope- and privacy-affecting, which is why they are asked
-rather than guessed.
+All checklist items pass. Ready for planning.
