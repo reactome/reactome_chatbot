@@ -112,6 +112,6 @@ secrets:
   # root-owned directory at that path, which then needs sudo to clear and which
   # the key generator would refuse to overwrite. A missing secret just errors.
   #
-  # Generate it with ./bin/make-human-token-keypair.py deploy/beta
+  # Generate it with ./bin/make-caller-token-keypair.py deploy/beta
   caller_token_public.pem:
     file: ./deploy/beta/caller_token_public.pem

@@ -57,7 +57,7 @@ def load_verifying_key(path: str | None = None) -> str:
     if not configured:
         raise RuntimeError(
             f"{KEY_PATH_ENV} is not set. The answer endpoint verifies a signed "
-            "proof-of-human token and cannot run without a verifying key; starting "
+            "caller token and cannot run without a verifying key; starting "
             "without one would accept every request."
         )
     key_file = Path(configured)
@@ -107,6 +107,12 @@ def verify(token: str, verifying_key: str, *, audience: str | None = None) -> di
                 verifying_key,
                 algorithms=ALGORITHMS,
                 audience=expected,
+                # "aud" here is belt-and-braces, and deliberately kept despite
+                # being redundant today: PyJWT already raises
+                # MissingRequiredClaimError for an absent `aud` when an audience
+                # is expected, so removing it fails no test. It is here so that
+                # behaviour changing in a future PyJWT cannot quietly turn "no
+                # audience" into "nothing to check".
                 options={"require": ["exp", "aud"]},
             )
         )
