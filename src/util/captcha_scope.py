@@ -49,8 +49,16 @@ def is_captcha_exempt(
         return True
     if any(path.startswith(prefix) for prefix in extra_prefixes):
         return True
-    # No captcha configured means no captcha to enforce. Deliberate: beta runs
-    # without one because the Turnstile site key is bound to reactome.org.
+    # A missing key is NOT a reason to skip the check. It used to be, and that
+    # is the failure this exists to prevent: "there is captcha middleware" and
+    # "the chat is gated" were different statements, and nothing said which one
+    # was true of a given deployment.
+    #
+    # `captcha_configured` is still taken, because a deployment that has
+    # deliberately opted out (CHAT_REQUIRES_HUMAN=0) passes False and expects to
+    # be let through. What changed is where that decision is made: in
+    # configuration someone wrote, rather than inferred from a value being
+    # absent.
     if not captcha_configured:
         return True
     # Anything outside the Chainlit app is not ours to guard.
