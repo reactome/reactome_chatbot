@@ -445,7 +445,7 @@ class HybridRetriever(BaseRetriever):
     def retrieve_documents(
         self, queries: list[str], run_manager: CallbackManagerForRetrieverRun
     ) -> list[Document]:
-        subdirectory_docs: list[Document] = []
+        collection_lists: list[list[Document]] = []
         chosen = resolve_collections(
             selected_collections.get(), self.collection_retrievers
         )
@@ -478,12 +478,28 @@ class HybridRetriever(BaseRetriever):
                 # only across query variants. See issue #170.
                 doc_lists.append(dedupe_by_entity(bm25_docs, RESULTS_PER_RETRIEVER))
                 doc_lists.append(dedupe_by_entity(vector_docs, RESULTS_PER_RETRIEVER))
-            subdirectory_docs.extend(
+            collection_lists.append(
                 self.weighted_reciprocal_rank(doc_lists)[
                     : self.max_documents_per_collection
                 ]
             )
-        return subdirectory_docs
+        # Fused across collections, not concatenated. This is issue #170 one
+        # level up: there, bm25 and vector results were joined end to end so the
+        # two were never scored against each other. Here the per-collection lists
+        # were joined the same way, so the output was grouped by collection
+        # rather than ranked -- ten reactions, then ten complexes, and so on.
+        #
+        # That made the citation cap arbitrary. Measured before this change: 97
+        # of 97 cited documents came from reactions.csv, including for "which
+        # diseases involve variants of the PTEN gene", where the disease_variants
+        # documents were retrieved but sat at positions 41-50 and could never be
+        # cited. The contract tells the website to treat citations as "the most
+        # relevant few", which was not true of a list ordered by iteration.
+        #
+        # The count is unchanged, so this reorders rather than re-scopes.
+        return self.weighted_reciprocal_rank(collection_lists)[
+            : self.max_documents_per_collection * len(collection_lists)
+        ]
 
     async def aretrieve_documents(
         self,
@@ -521,7 +537,7 @@ class HybridRetriever(BaseRetriever):
                 subdirectory_results[subdirectory].extend(
                     (bm25_results, vector_results)
                 )
-        subdirectory_docs: list[Document] = []
+        collection_lists: list[list[Document]] = []
         for subdir_results in subdirectory_results.values():
             # Separate lists, de-duplicated per entity, matching the synchronous
             # path above. See issues #169 and #170.
@@ -529,9 +545,13 @@ class HybridRetriever(BaseRetriever):
                 dedupe_by_entity(docs, RESULTS_PER_RETRIEVER)
                 for docs in await asyncio.gather(*subdir_results)
             ]
-            subdirectory_docs.extend(
+            collection_lists.append(
                 self.weighted_reciprocal_rank(doc_lists)[
                     : self.max_documents_per_collection
                 ]
             )
-        return subdirectory_docs
+        # Fused across collections, matching the synchronous path. The two must
+        # agree document for document, which is what tests/retrievers pins.
+        return self.weighted_reciprocal_rank(collection_lists)[
+            : self.max_documents_per_collection * len(collection_lists)
+        ]
