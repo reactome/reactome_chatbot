@@ -144,12 +144,19 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
                             tokens_sent += 1
                             yield _sse("token", {"text": text})
                     elif event.kind == "citation":
+                        # Exactly one identifier, never both and never an empty
+                        # one: a Reactome source carries `st_id`, a userguide
+                        # page carries `url`. A caller that understands only
+                        # `st_id` skips what it does not recognise, which is why
+                        # the absent key is omitted rather than sent as "".
+                        identifier = (
+                            {"st_id": event.st_id}
+                            if event.st_id
+                            else {"url": event.url}
+                        )
                         yield _sse(
                             "citation",
-                            {
-                                "st_id": event.st_id,
-                                "display_name": event.display_name,
-                            },
+                            {**identifier, "display_name": event.display_name},
                         )
                     elif event.kind == "done":
                         state = event.state or "failed"
