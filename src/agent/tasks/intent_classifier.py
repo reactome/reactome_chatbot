@@ -5,6 +5,8 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field
 
+from retrievers.reactome.metadata_info import reactome_descriptions_info
+
 SourceName = Literal["reactome", "userguide", "live"]
 
 _REACTOME_SOURCE = """- **reactome**: Questions about biology, molecular mechanisms, pathways, reactions, proteins, genes,
@@ -49,6 +51,55 @@ _LIVE_RULE = """- If the user asks what the database *contains* or *covers*, rat
   including listing it. A question naming a specific gene or disease is almost always
   **reactome**."""
 
+
+def _collections_block() -> str:
+    """The selectable collections, described by the bundle's own metadata.
+
+    Sourced from `reactome_descriptions_info` rather than a literal list so a
+    collection added to the bundle cannot be missing from the prompt that is
+    supposed to offer it -- the failure mode would be silent, since an
+    unmentioned collection is simply never chosen.
+    """
+    lines = [
+        f"  - **{name}**: {description.strip()}"
+        for name, description in reactome_descriptions_info.items()
+    ]
+    return chr(10).join(lines)
+
+
+# Narrowing is measured, not assumed. On 2026-09-19, forcing every tracked
+# question to `reactions` + `summations` took the sweep from 13/13 to 10/13,
+# and the questions that failed were the ones whose answers live only in the
+# collections that were dropped: the UniProt accession needs `ewas`, PTEN's
+# variants need `disease_variants`. A wrong narrow does not degrade an answer,
+# it removes it -- so the instruction below leans hard on leaving the list
+# empty, because widening costs latency and narrowing wrongly costs the answer.
+_COLLECTIONS_RULE = """
+Collections (only when source is **reactome**):
+
+The Reactome content is split into collections holding different kinds of record:
+
+{collections}
+
+Set `collections` ONLY when the question plainly needs one or two specific kinds
+of record. Leave it EMPTY otherwise, and an empty list searches all of them.
+An empty list is the right answer for most questions.
+
+- Naming or listing variants of a gene, or which disease a variant causes: `disease_variants`.
+- A UniProt accession, a gene synonym, or which protein a gene maps to: `ewas`.
+- What a pathway or reaction's curated description says: `summations`.
+- What a complex is made of: `complexes`.
+- The inputs, outputs or catalyst of a reaction: `reactions`.
+
+Two things to respect:
+- Include `summations` alongside any other choice unless the question is purely
+  about identifiers. The curated prose supports most biological answers.
+- If the question is broad, mechanistic, or you are at all unsure, leave
+  `collections` empty. Searching everything is slower; searching the wrong
+  subset means the answer is not there at all.
+"""
+
+
 _SOURCE_BLOCKS: dict[SourceName, str] = {
     "reactome": _REACTOME_SOURCE,
     "userguide": _USERGUIDE_SOURCE,
@@ -69,6 +120,11 @@ def build_classifier_message(sources: frozenset[SourceName]) -> str:
         _SOURCE_BLOCKS[s] for s in ("reactome", "userguide", "live") if s in sources
     ]
     rules = _RULES + (f"\n{_LIVE_RULE}" if "live" in sources else "")
+    collections = (
+        _COLLECTIONS_RULE.format(collections=_collections_block())
+        if "reactome" in sources
+        else ""
+    )
     return f"""
 You route user questions for the React-to-Me assistant to the correct knowledge source.
 
@@ -77,7 +133,7 @@ Choose exactly one source:
 {chr(10).join(blocks)}
 
 {rules}
-"""
+{collections}"""
 
 
 intent_classifier_message = build_classifier_message(
@@ -95,6 +151,15 @@ intent_classifier_prompt = ChatPromptTemplate.from_messages(
 class QueryIntent(BaseModel):
     source: SourceName = Field(
         description="The knowledge source that should answer this question."
+    )
+    collections: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Which Reactome collections to search, when the question plainly "
+            "needs only some of them. Empty means search all of them, which is "
+            "the right answer for most questions. Ignored unless source is "
+            "'reactome'."
+        ),
     )
 
 

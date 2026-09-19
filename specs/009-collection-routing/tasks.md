@@ -34,16 +34,22 @@ collection, with no extra LLM call.
 **Independent test**: `./bin/answer-sweep` stays green while the measured context
 tokens for a question needing one collection fall relative to `before.json`.
 
-- [ ] T011 [US1] Add `collections: list[str] = []` to `QueryIntent` in src/agent/tasks/intent_classifier.py, defaulting to empty so an omitted field means "all"
-- [ ] T012 [US1] Extend the classifier prompt in src/agent/tasks/intent_classifier.py to name selectable collections, sourced from `reactome_descriptions_info` rather than a literal list
+**The second half of that test was the wrong measurement, and it failed.**
+Context does not fall: the chain caps the fused list at ten documents however
+many collections fed it, so narrowing changes which documents arrive, not how
+many (research.md, 2026-09-19). What falls is retrieval time, 1.82s to 1.43s.
+The sweep half stands: 13/13 with the classifier choosing.
+
+- [x] T011 [US1] Add `collections: list[str] = []` to `QueryIntent` in src/agent/tasks/intent_classifier.py, defaulting to empty so an omitted field means "all"
+- [x] T012 [US1] Extend the classifier prompt in src/agent/tasks/intent_classifier.py to name selectable collections, sourced from `reactome_descriptions_info` rather than a literal list
 - [x] T013 [P] [US1] Add `resolve_collections(selected, available)` to src/retrievers/csv_chroma.py implementing data-model.md: empty means all, unknown names log WARNING and return all
 - [x] T014 [P] [US1] Unit-test `resolve_collections` in tests/retrievers/test_collection_selection.py for empty, all-valid, some-unknown and all-unknown, asserting every failure widens rather than narrows
 - [x] T015 [US1] Filter `self.collection_retrievers` by the selection in `retrieve_documents` in src/retrievers/csv_chroma.py, reading it from `RunnableConfig["configurable"]["collections"]`
-- [ ] T016 [US1] Apply the identical filter in `aretrieve_documents` in src/retrievers/csv_chroma.py — this is the served path
-- [ ] T017 [US1] Extend tests/retrievers/test_sync_async_equivalence.py to assert both paths honour the same selection, and confirm it fails when only one is filtered
-- [ ] T018 [US1] Carry `collections` on `ReactToMeState` in src/agent/profiles/react_to_me.py, set in `preprocess` beside `active_sources`
-- [ ] T019 [US1] Pass the selection into the RAG call via `config["configurable"]` in `generate_answer` in src/agent/profiles/react_to_me.py
-- [ ] T020 [US1] Verify through the agent, not the retriever: a test that a variant question routes to `disease_variants` and a userguide question does not, per Principle I
+- [x] T016 [US1] Apply the identical filter in `aretrieve_documents` in src/retrievers/csv_chroma.py — this is the served path
+- [x] T017 [US1] Extend tests/retrievers/test_sync_async_equivalence.py to assert both paths honour the same selection, and confirm it fails when only one is filtered
+- [x] T018 [US1] Carry `collections` on `ReactToMeState` in src/agent/profiles/react_to_me.py, set in `preprocess` beside `active_sources`
+- [x] T019 [US1] Pass the selection into retrieval in `generate_answer` in src/agent/profiles/react_to_me.py — **via the `selected_collections` ContextVar, not `config["configurable"]`**: `create_retrieval_chain` gives the retriever no path for extra arguments. LangGraph copies the context into the tasks it spawns, so a value set around the call reaches the retriever inside them. Reset in `finally`, because the graph reuses one task across turns
+- [x] T020 [US1] Verify through the agent, not the retriever: a test that a variant question routes to `disease_variants` and a userguide question does not, per Principle I
 
 ## Phase 4: Measurement and acceptance
 
