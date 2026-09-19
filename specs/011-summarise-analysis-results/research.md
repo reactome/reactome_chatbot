@@ -139,9 +139,16 @@ on the request:
 |---|---|
 | `human` | `true`, set only when a valid, unexpired identity cookie was presented. **Absent otherwise, never `false`**, so a missing claim and a failed check are indistinguishable to us |
 | `human_iat` | when the challenge was solved, epoch seconds. Derived from the cookie's expiry minus their identity TTL; no cookie format change |
-| `subject` | the cookie's random 16-byte identifier, for per-identity rate limiting. Carries nothing about the person |
+| `human_sub` | the cookie's random 16-byte identifier, for per-identity rate limiting. Carries nothing about the person |
 
-**Freshness is 30 minutes, enforced at both ends.** We refuse a `human_iat`
+**Named `human_sub`, not `sub`.** `sub` is already an opaque *per-visit* id
+that `identity_of` uses for the answer endpoint's backstop limiter. The cookie
+subject is per-*browser* and lives as long as the cookie, so reusing the claim
+would change that limiter's meaning on an endpoint neither repo is touching --
+a behaviour change arriving through a rename. Caught before either side built
+to it.
+
+**Freshness is 30 minutes, inclusive (1800.000s accepted, 1800.001s not), enforced at both ends.** We refuse a `human_iat`
 older than that, and they refuse to mint the claim past it, so neither side is
 a single point of failure. Long enough that reading a result, choosing a
 disclosure tier and requesting a summary is never re-challenged; short enough
