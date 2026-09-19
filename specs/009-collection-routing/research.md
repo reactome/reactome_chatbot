@@ -399,3 +399,15 @@ deploying is not currently realised.
 What that is not: a guarantee. It is a snapshot of one model's judgement on
 one day. The risk was always drift, and the probe is only a guard if it keeps
 being run -- which is why T005c exists and is open.
+
+The probe runs on every deploy from 2026-09-19, wired into
+`~/update-beta-chat.sh` beside the sweep. That is what turns it from a
+snapshot into a guard: the risk was always drift, and a check run once is a
+measurement rather than a control.
+
+It fails the deploy and points at `--rollback` rather than rolling back by
+itself, which is the judgement the sweep already makes -- a rollback is
+disruptive too, the container is already serving, and which is worse depends
+on the failure. An image built before the probe existed skips it with a
+warning instead of failing, so the check cannot block a rollback to an older
+tag.
