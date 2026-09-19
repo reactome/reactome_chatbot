@@ -8,7 +8,7 @@ nothing may narrow a source that has no collections.
 """
 
 import asyncio
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
 
@@ -51,7 +51,8 @@ class _RecordingRag:
 
 def _builder(rag: _RecordingRag, source: str) -> ReactToMeGraphBuilder:
     builder = ReactToMeGraphBuilder.__new__(ReactToMeGraphBuilder)
-    builder.rags = {source: rag}  # type: ignore[attr-defined]
+    # A stand-in for the RAG runnable: only `ainvoke` is reached from here.
+    builder.rags = cast(Any, {source: rag})
     return builder
 
 
@@ -109,6 +110,6 @@ def test_a_state_without_the_field_searches_everything() -> None:
     # missing must mean "all", which is how the graph behaved before routing.
     rag = _RecordingRag()
     state = _state("reactome", [])
-    del state["collections"]  # type: ignore[misc]
+    del state["collections"]
     asyncio.run(_builder(rag, "reactome").generate_answer(state, RunnableConfig()))
     assert rag.seen == [[]], "a pre-routing checkpoint must not crash or narrow"

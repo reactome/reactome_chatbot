@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any, cast
+from typing import Any, NotRequired, cast
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -29,9 +29,16 @@ logger = logging.getLogger(__name__)
 
 class ReactToMeState(BaseState):
     active_sources: list[SourceName]
-    # Empty means every collection, which is what `resolve_collections` does
-    # with it. Only meaningful when the active source is `reactome`.
-    collections: list[str]
+    # NotRequired, and it matters: this subclass is total=True, so declaring
+    # it plainly would make every existing construction of the state invalid
+    # and -- worse -- would claim a guarantee the runtime does not have. A
+    # thread resumed from a checkpoint written before this field existed has
+    # no key, which is why `generate_answer` reads it with `.get`.
+    #
+    # Empty, or absent, means every collection: that is what
+    # `resolve_collections` does with it, and it is how the graph behaved
+    # before routing. Only meaningful when the active source is `reactome`.
+    collections: NotRequired[list[str]]
 
 
 class ReactToMeGraphBuilder(BaseGraphBuilder):
