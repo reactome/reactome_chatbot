@@ -245,8 +245,16 @@ def _contains(haystack: str, needle: str) -> bool:
 # hides regressions: a real failure was retried and could pass on the second
 # attempt, quietly forgiving the thing the gate exists to catch.
 #
-# What is left is one literal this repository emits itself and one phrase a
-# correct answer has no reason to use. Neither is a real signal. The real one
+# The two left were put to the same test, 2026-09-19, rather than assumed safe
+# because they read less like instructions. Neither appears in any prompt, tool
+# description or example in this repository. "could not complete that lookup"
+# is a literal emitted only by `answer_from_live_services`; "service error" has
+# no source here at all, and can only arise from the model paraphrasing the
+# `"This lookup failed: {exc}"` it is handed when a tool actually raised. So
+# both derive from real failure paths rather than from intended output.
+#
+# That is evidence, not proof: the MCP tool descriptions come from the remote
+# server and are not checked here. The real one
 # would be the tool exception in `answer_from_live_services`, which is caught,
 # logged and then paraphrased by the model -- so it cannot be recovered from
 # the text. Propagating it out of the live path is recorded as follow-up work.
