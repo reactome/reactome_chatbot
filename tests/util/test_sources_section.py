@@ -92,3 +92,36 @@ def test_a_bullet_is_not_mistaken_for_the_start_of_a_heading() -> None:
     # "* " is a bullet; only "**" can open the bold form of the heading.
     stripper = SourcesSectionStripper()
     assert stripper.feed("- one\n* two") == "- one\n* two"
+
+
+# Headings a real Reactome answer could plausibly use. Every one of these
+# truncated the answer in the first version of this stripper, which allowed any
+# short heading mentioning sources. The bound was on length, not on meaning.
+BIOLOGY = (
+    "## Sources of reactive oxygen species",
+    "## Sources of oxidative stress",
+    "### Key sources of ROS in mitochondria",
+    "**Sources of variation**",
+    "## Cellular sources",
+    "## Literature references for this pathway",
+    "## Endogenous sources of DNA damage",
+)
+
+
+@pytest.mark.parametrize("heading", BIOLOGY)
+def test_a_heading_about_biology_does_not_eat_the_answer(heading: str) -> None:
+    body = "\n\nMitochondrial complex I is the principal contributor.\n"
+    text = f"Opening line.\n{heading}{body}"
+    stripper = SourcesSectionStripper()
+    out = "".join(stripper.feed(c) for c in text) + stripper.flush()
+    assert out == text
+
+
+def test_the_asymmetry_is_deliberate() -> None:
+    # A heading this misses costs the reader a duplicate list -- cosmetic, and
+    # what the website lives with today. A heading this matches wrongly costs
+    # the rest of the answer. So an unrecognised variant must pass through
+    # rather than be guessed at.
+    text = "Answer.\n\n## Bibliography\n- Apoptosis\n"
+    stripper = SourcesSectionStripper()
+    assert "".join(stripper.feed(c) for c in text) + stripper.flush() == text

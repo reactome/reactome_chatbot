@@ -21,13 +21,29 @@ it is bounded -- a heading or bold-only line, at most five words, naming sources
 
 import re
 
-# A whole line that is a markdown heading or a bold-only line, whose text is
-# short and names sources. Anchored to a line start, so prose that happens to
-# mention a source is untouched.
+# A whole line that is a markdown heading or a bold-only line naming nothing
+# but the source list. Two rules keep it off real content, and the first was
+# learned the hard way: an earlier version allowed any short heading that
+# mentioned sources, and "## Sources of reactive oxygen species" -- an entirely
+# plausible Reactome heading -- truncated the answer there.
+#
+# 1. The noun must be the LAST word. "Sources of oxidative stress" is about
+#    biology; "Most relevant sources" is a source list.
+# 2. Only a closed set of qualifiers may precede it, so "Cellular sources" is
+#    left alone.
+#
+# The asymmetry justifies the strictness. A heading this misses costs the
+# reader a duplicate list at the end -- cosmetic, and exactly what the website
+# lives with today. A heading this matches wrongly costs them the rest of the
+# answer. When in doubt, do not match.
+_QUALIFIER = (
+    r"(?:most|more|relevant|key|top|main|primary|all|further|additional"
+    r"|related|supporting|complete|full|cited|used)"
+)
 _HEADING = re.compile(
     r"^[ \t]*(?:#{1,6}[ \t]+|\*\*[ \t]*)"
-    r"(?=[^\n]{0,60}(?:sources?|references?|citations?)\b)"
-    r"(?:[\w'-]+[ \t]*){1,5}"
+    rf"(?:{_QUALIFIER}[ \t]+){{0,3}}"
+    r"(?:sources?|references?|citations?)"
     r"[ \t]*:?[ \t]*(?:\*\*)?[ \t]*:?[ \t]*$",
     re.IGNORECASE | re.MULTILINE,
 )
@@ -73,7 +89,11 @@ class SourcesSectionStripper:
         if self._done:
             return ""
         self._buffer += text
-        match = self._find_heading()
+        # Terminated only: mid-stream, "## Sources" matches before
+        # " of reactive oxygen species" has arrived, and deciding then drops
+        # the rest of a perfectly good answer. Only the whole-string probe
+        # caught this; the character-by-character one is what found it.
+        match = self._find_heading(terminated_only=True)
         if match:
             out = self._buffer[: match.start()]
             self._buffer = ""
@@ -100,19 +120,26 @@ class SourcesSectionStripper:
         """Whatever is still held, once the stream has ended."""
         if self._done:
             return ""
-        match = self._find_heading()
+        match = self._find_heading(terminated_only=False)
         held = self._buffer[: match.start()] if match else self._buffer
         self._buffer = ""
         self._done = True
         return held
 
-    def _find_heading(self) -> re.Match[str] | None:
-        """The heading, ignoring a match at offset 0 when that is mid-line."""
+    def _find_heading(self, *, terminated_only: bool) -> re.Match[str] | None:
+        """The heading, ignoring a match at offset 0 when that is mid-line.
+
+        `terminated_only` rejects a match that runs to the end of the buffer,
+        because more of that line may still arrive. At `flush` the stream has
+        ended, so there is nothing more to wait for.
+        """
         position = 0
         while True:
             match = _HEADING.search(self._buffer, position)
             if match is None:
                 return None
+            if terminated_only and match.end() >= len(self._buffer):
+                return None  # The line has not ended; it may yet grow.
             if match.start() or self._at_line_start:
                 return match
             newline = self._buffer.find("\n")
