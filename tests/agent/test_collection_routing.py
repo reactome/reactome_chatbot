@@ -82,13 +82,25 @@ def test_the_userguide_is_never_narrowed_by_a_reactome_selection() -> None:
     # collection; a leaked selection names collections it does not have, and
     # `resolve_collections` would widen it back silently -- correct, but only
     # by accident, and with a WARNING for every question.
+    #
+    # The reactome half is here on purpose. Asserting `None` alone passes
+    # against no implementation at all -- nothing set is also nothing seen --
+    # so this first shows the mechanism is live, then shows it does not reach
+    # the userguide. Verified by deleting the implementation: without the
+    # first half, this test stays green.
     rag = _RecordingRag()
+    asyncio.run(
+        _builder(rag, "reactome").generate_answer(
+            _state("reactome", ["disease_variants"]), RunnableConfig()
+        )
+    )
+    assert rag.seen == [["disease_variants"]], "the mechanism is not live"
     asyncio.run(
         _builder(rag, "userguide").generate_answer(
             _state("userguide", ["disease_variants"]), RunnableConfig()
         )
     )
-    assert rag.seen == [None], "a reactome selection leaked into the userguide"
+    assert rag.seen[1] is None, "a reactome selection leaked into the userguide"
 
 
 def test_the_selection_does_not_outlive_the_question() -> None:
@@ -101,6 +113,9 @@ def test_the_selection_does_not_outlive_the_question() -> None:
             _state("reactome", ["ewas"]), RunnableConfig()
         )
     )
+    # Set during, absent after. The second assertion alone would pass against
+    # no implementation, since nothing set is also nothing left behind.
+    assert rag.seen == [["ewas"]], "the mechanism is not live"
     assert selected_collections.get() is None
 
 
