@@ -9,7 +9,7 @@ before it is changed.
 ## Phase 1: Setup
 
 - [ ] T001 Create branch `009-collection-routing` from main and set `.specify/feature.json` to `specs/009-collection-routing`
-- [ ] T002 Capture the retrieval baseline before any code change: `./bin/retrieval_baseline capture --out specs/009-collection-routing/before.json` against the installed Release97 bundle
+- [x] T002 Capture the retrieval baseline before any code change: `./bin/retrieval_baseline capture --out specs/009-collection-routing/before.json` against the installed Release97 bundle
 - [ ] T003 [P] Record the current cost in `specs/009-collection-routing/quickstart.md`: documents, context tokens and retrieval seconds for one question needing no variant data
 
 ## Phase 2: Foundational (blocks every user story)
@@ -23,7 +23,7 @@ acceptance criterion cannot detect the failure the feature can cause.
 - [x] T006 [P] Add an `ewas`-dependent question to `EXPECTATIONS` in src/evaluation/answer_sweep.py (TP53 UniProt P04637; verified by removal)
 - [ ] T007 Assert at retrieval level that `reactions` was searched, in tests/retrievers/test_collection_selection.py -- no answer-level question can guard it, because every reaction name also appears in `summations`
 - [x] T008 Verify each new question FAILS when its collection is removed from the bundle copy, and passes with it present; record the evidence in the PR (method established; two of four candidates survived it)
-- [ ] T009 Pin current behaviour: a characterization test in tests/retrievers/test_collection_selection.py asserting that with no selection every collection in the bundle is searched
+- [x] T009 Pin current behaviour: a characterization test in tests/retrievers/test_collection_selection.py asserting that with no selection every collection in the bundle is searched
 - [ ] T010 Run `./bin/answer-sweep` against Release97 and confirm green before any behaviour change
 
 ## Phase 3: User Story 1 — a question searches only the collections it needs (P1)
@@ -36,9 +36,9 @@ tokens for a question needing one collection fall relative to `before.json`.
 
 - [ ] T011 [US1] Add `collections: list[str] = []` to `QueryIntent` in src/agent/tasks/intent_classifier.py, defaulting to empty so an omitted field means "all"
 - [ ] T012 [US1] Extend the classifier prompt in src/agent/tasks/intent_classifier.py to name selectable collections, sourced from `reactome_descriptions_info` rather than a literal list
-- [ ] T013 [P] [US1] Add `resolve_collections(selected, available)` to src/retrievers/csv_chroma.py implementing data-model.md: empty means all, unknown names log WARNING and return all
-- [ ] T014 [P] [US1] Unit-test `resolve_collections` in tests/retrievers/test_collection_selection.py for empty, all-valid, some-unknown and all-unknown, asserting every failure widens rather than narrows
-- [ ] T015 [US1] Filter `self.collection_retrievers` by the selection in `retrieve_documents` in src/retrievers/csv_chroma.py, reading it from `RunnableConfig["configurable"]["collections"]`
+- [x] T013 [P] [US1] Add `resolve_collections(selected, available)` to src/retrievers/csv_chroma.py implementing data-model.md: empty means all, unknown names log WARNING and return all
+- [x] T014 [P] [US1] Unit-test `resolve_collections` in tests/retrievers/test_collection_selection.py for empty, all-valid, some-unknown and all-unknown, asserting every failure widens rather than narrows
+- [x] T015 [US1] Filter `self.collection_retrievers` by the selection in `retrieve_documents` in src/retrievers/csv_chroma.py, reading it from `RunnableConfig["configurable"]["collections"]`
 - [ ] T016 [US1] Apply the identical filter in `aretrieve_documents` in src/retrievers/csv_chroma.py — this is the served path
 - [ ] T017 [US1] Extend tests/retrievers/test_sync_async_equivalence.py to assert both paths honour the same selection, and confirm it fails when only one is filtered
 - [ ] T018 [US1] Carry `collections` on `ReactToMeState` in src/agent/profiles/react_to_me.py, set in `preprocess` beside `active_sources`

@@ -114,3 +114,48 @@ concurrently and asserts neither sees the other.
 
 The data model's diagram is left as the intent; this is how it is carried.
 
+## What narrowing actually costs, measured 2026-09-19
+
+Two measurements, and only the second means anything.
+
+**Citation overlap is arithmetic, not signal.** Narrowing to two collections
+keeps 5-7 of the full top-12 citations; narrowing to one keeps 2. That looks like
+a large loss, but reciprocal rank fusion interleaves the five per-collection
+lists, so a top-12 draws about 2.4 from each. Keeping two lists predicts ~4.8,
+and 5-7 is what was observed. The number measures the interleave, not whether
+anything useful was lost. Do not use it as a quality measure.
+
+**Whether answers survive is the measurement that counts.** Forcing every tracked
+question to `reactions` + `summations`:
+
+| | |
+|---|---|
+| passed | **12 / 15** |
+| failed | **3** |
+
+And the three are exactly the questions whose answers live in the collections that
+were excluded:
+
+| question | needs |
+|---|---|
+| "What is the UniProt accession for the TP53 protein" (`P04637`) | `ewas` |
+| "List the ABCA1 variants in Reactome" | `disease_variants` |
+| "Which diseases involve variants of the PTEN gene" | `disease_variants` |
+
+### What this settles
+
+**Collections are not interchangeable, and the mapping is legible.** Variant
+questions need `disease_variants`; accession questions need `ewas`. That is
+exactly the signal a classifier can be prompted on, and it is why this feature is
+worth building rather than assuming retrieval will sort itself out.
+
+**It also justifies the fail-wide rule.** A wrong narrow selection does not
+degrade an answer, it removes the answer -- the three failures above are missing
+identifiers, not vaguer prose. Widening on any uncertainty costs latency;
+narrowing wrongly costs the answer. That asymmetry is now measured rather than
+argued.
+
+**And it sets the acceptance bar.** Routing is only worth shipping if the sweep
+stays at 15/15 with the classifier choosing, not 12/15. The three questions above
+are the ones to watch, because they fail loudly and specifically.
+
