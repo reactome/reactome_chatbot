@@ -15,20 +15,20 @@ a deleted one, and that the same token returns the same text.
 
 ## Phase 1: Setup
 
-- [ ] T001 Create `src/analysis/` with an `__init__.py`, separate from `src/agent/` because nothing here touches the graph or retrieval
-- [ ] T002 [P] Create `tests/analysis/` with an `__init__.py` alongside the existing `tests/api/`
-- [ ] T003 Record the beta Analysis Service base URL in configuration rather than a literal, defaulting to beta and never production, in `src/analysis/client.py`
+- [x] T001 Create `src/analysis/` with an `__init__.py`, separate from `src/agent/` because nothing here touches the graph or retrieval
+- [x] T002 [P] Create `tests/analysis/` **without** an `__init__.py`. The task said to add one "alongside the existing `tests/api/`" and that premise was wrong: no test directory in this repository has one. Adding it put `tests/analysis` on `sys.path` as the top-level `analysis` package, shadowing `src/analysis`, and every import failed. Test basenames must also be unique for the same reason: `test_client.py` collided with `tests/reactome_mcp/test_client.py`, so this one is `test_analysis_client.py`
+- [x] T003 Record the beta Analysis Service base URL in configuration rather than a literal, defaulting to beta and never production, in `src/analysis/client.py`
 
 ## Phase 2: Foundational (blocking)
 
 **These block every user story. Nothing below Phase 2 can be built without them.**
 
-- [ ] T004 Write the disclosure allow-list in `src/analysis/disclosure.py`: name every field of an `AnalysisResult` that may be sent under the `aggregate` tier, as an allow-list rather than a denial, so a new field from the Analysis Service is excluded by default
-- [ ] T005 [P] Test the allow-list in `tests/analysis/test_disclosure.py` by **recording the outbound request body** and asserting `summary.fileName`, `summary.sampleName` and `expression.columnNames` never appear — not by reading the summary and seeing nothing alarming. These three are user-supplied free text and are the reason the tier is an allow-list (research D5)
-- [ ] T006 Fetch a result by token in `src/analysis/client.py`, with a browser-like `User-Agent`, because the site's automation blocking returns a 403 with an HTML body to library user-agents and it looks exactly like an auth failure
-- [ ] T007 [P] Test in `tests/analysis/test_client.py` that 404 yields `not_found`, **410 yields `gone`** and **500 also yields `not_found`**, as measured: a malformed token returns 500, which the OpenAPI does not document, and treating it as a service fault would produce a `failed` state or a retry loop against a service that will answer identically every time (research D2)
-- [ ] T008 Read the current release from `GET /database/version` in `src/analysis/client.py`, deriving it rather than hardcoding it, because it is both the reported release and the cache-invalidation key (Principle V)
-- [ ] T009 Detect a ReactomeGSA result from `gsaMethod`/`gsaToken` in `src/analysis/client.py` and return `unsupported`, so a result we do not model is never summarised confidently (research D8)
+- [x] T004 Write the disclosure allow-list in `src/analysis/disclosure.py`: name every field of an `AnalysisResult` that may be sent under the `aggregate` tier, as an allow-list rather than a denial, so a new field from the Analysis Service is excluded by default
+- [x] T005 [P] Test the allow-list in `tests/analysis/test_disclosure.py` by **recording the outbound request body** and asserting `summary.fileName`, `summary.sampleName` and `expression.columnNames` never appear — not by reading the summary and seeing nothing alarming. These three are user-supplied free text and are the reason the tier is an allow-list (research D5)
+- [x] T006 Fetch a result by token in `src/analysis/client.py`, with a browser-like `User-Agent`, because the site's automation blocking returns a 403 with an HTML body to library user-agents and it looks exactly like an auth failure
+- [x] T007 [P] Test in `tests/analysis/test_client.py` that 404 yields `not_found`, **410 yields `gone`** and **500 also yields `not_found`**, as measured: a malformed token returns 500, which the OpenAPI does not document, and treating it as a service fault would produce a `failed` state or a retry loop against a service that will answer identically every time (research D2)
+- [x] T008 Read the current release from `GET /database/version` in `src/analysis/client.py`, deriving it rather than hardcoding it, because it is both the reported release and the cache-invalidation key (Principle V). **That endpoint answers text/plain and rejects `Accept: application/json` with 406** -- found by calling beta, after every mocked test passed
+- [x] T009 Detect a ReactomeGSA result from `gsaMethod`/`gsaToken` in `src/analysis/client.py` and return `unsupported`, so a result we do not model is never summarised confidently (research D8)
 
 ## Phase 3: User Story 1 — What does my result say? (P1)
 
