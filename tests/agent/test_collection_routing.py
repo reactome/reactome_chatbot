@@ -34,8 +34,15 @@ def test_every_collection_in_the_bundle_is_described_to_the_classifier() -> None
 
 
 def test_the_userguide_prompt_alone_offers_no_collections() -> None:
-    message = build_classifier_message(frozenset({"userguide"}))
-    assert "disease_variants" not in message
+    # Both halves, in one test. Asserting only the absence passes when the
+    # collections block never renders for anyone -- verified by deleting it,
+    # after which this stayed green while a different test caught the fault.
+    # A guard that relies on a neighbour to be non-vacuous is one refactor
+    # away from guarding nothing.
+    assert "disease_variants" in build_classifier_message(
+        frozenset({"reactome", "userguide"})
+    ), "the collections block does not render at all"
+    assert "disease_variants" not in build_classifier_message(frozenset({"userguide"}))
 
 
 class _RecordingRag:
