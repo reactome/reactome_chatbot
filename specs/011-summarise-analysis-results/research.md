@@ -131,10 +131,43 @@ the search path. The chat is now Turnstile-gated (2026-09-18), so the website ca
 demonstrate presence there. What it cannot do is let the search-page path silently
 satisfy a requirement that path was never designed to meet.
 
-**Open with the website repo**: the shape of the assertion — most likely an
-additional claim in the caller token, minted only after a Turnstile verification
-they already perform. This needs their agreement and is recorded as a task, not
-decided here.
+**Agreed with the website session, 2026-09-19.** It rides as claims on the
+caller token, minted only when their Turnstile-backed identity cookie validated
+on the request:
+
+| claim | meaning |
+|---|---|
+| `human` | `true`, set only when a valid, unexpired identity cookie was presented. **Absent otherwise, never `false`**, so a missing claim and a failed check are indistinguishable to us |
+| `human_iat` | when the challenge was solved, epoch seconds. Derived from the cookie's expiry minus their identity TTL; no cookie format change |
+| `subject` | the cookie's random 16-byte identifier, for per-identity rate limiting. Carries nothing about the person |
+
+**Freshness is 30 minutes, enforced at both ends.** We refuse a `human_iat`
+older than that, and they refuse to mint the claim past it, so neither side is
+a single point of failure. Long enough that reading a result, choosing a
+disclosure tier and requesting a summary is never re-challenged; short enough
+that a stolen cookie is not a durable pass. The claim's lifetime is deliberately
+shorter than the token's, because an HMAC cookie is itself a bearer credential.
+
+**They proposed gating on the analysis token instead, and withdrew it.** The
+argument was that a token proves real work already happened, so it is decent
+evidence somebody meant it — sound for abuse resistance, but this requirement is
+about consent, not cost. A token proves an analysis happened; it does not prove
+a person is present, nor that the person present is the one who ran it. Analysis
+tokens travel in URLs that people paste into tickets and papers, so
+token-as-authorization lets a forwarded link send someone else's identifier list
+to a model provider. And FR-011/FR-012 make summarising opt-in with a choice of
+disclosure tier — a choice a bot holding a link can make is a consent mechanism
+that consents on the user's behalf, which is worse than no choice because it
+looks like one.
+
+**Their caveat, adopted**: rate limit per token *and* per caller regardless. A
+token asking for twenty summaries of one analysis is not a scientist. That is a
+throttle, not evidence of a person, and it does not substitute for the claim.
+
+**Dependency that remains**: their proxy mints caller tokens for the answer
+route only, so a summary route must be added before any claim can be carried.
+Nothing here assumes the browser calls us directly — it cannot, since the cookie
+is same-site to their origin.
 
 **Alternatives considered**: re-verifying a Turnstile token ourselves — rejected,
 it would put a second captcha secret and a second verification path in this
