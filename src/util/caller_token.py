@@ -9,8 +9,17 @@ does.
 
 What it does assert is **caller identity**: this request came from the Reactome
 website's server, for one visit. They mint server-side per request, EdDSA, with
-`iss`, `aud`, `iat`, `exp` at +120s, and `sub` -- an opaque per-visit id that is
-128 random bits, not derived from anything about the reader. Abuse control is
+`iss`, `aud`, `iat`, `exp` at +120s, and `sub` -- 128 random bits, not derived
+from anything about the reader.
+
+**`sub` is browser-scoped for a gated reader, not per-visit**, and this said
+otherwise until 2026-09-19. Their `callerSubject()` prefers the Turnstile
+identity cookie's subject whenever the reader has passed a challenge, and falls
+back to a per-visit cookie only when they have not. So the backstop limit below
+has been keyed on an identifier lasting as long as that cookie -- the stronger
+throttle, and the behaviour in production since the gate shipped. It is kept
+deliberately; what was wrong was this description of it, which named the
+fallback as though it were the only case. Abuse control is
 theirs: the panel is opt-in behind a click, so a crawled search never reaches a
 model, and their proxy rate limits by address.
 

@@ -1,7 +1,8 @@
 # Contract: the analysis summary endpoint
 
-Draft. Not implemented, and not yet agreed with the website repo. The parts
-marked **open** need their agreement before anything is built against them.
+Not implemented. **Agreed with the website repo on 2026-09-19** -- the request
+shape, the refusal shape and how human presence is asserted are settled, and
+they have the presence claims built on a branch. Nothing here is open.
 
 ## Request
 
@@ -14,15 +15,64 @@ Content-Type: application/json
   "disclosure": "aggregate" }
 ```
 
+**The analysis token is passed straight through, never validated by the
+caller.** This service already distinguishes 404, 410 and the undocumented 500
+a malformed token returns (research D2). A second validator on the website
+would be a second thing that believes it knows what a good token looks like,
+and two validators disagree eventually.
+
 `disclosure` is `aggregate` or `identifiers`, and is **required** — there is no
 default, because a default is not a choice. `aggregate` never transmits the user's
 identifiers, filenames, sample names or expression column labels.
 
-**Open**: how the caller demonstrates a person is present. Spec 010's D1 settled
-that `caller_token` asserts service identity and says nothing about humanity, so
-it cannot carry this on its own. The likely shape is an additional claim minted
-after the Turnstile check the website already performs on the chat, but that is
-theirs to agree.
+### Human presence
+
+`caller_token` carries three additional claims, minted only when the website's
+Turnstile-backed identity cookie validated on that request:
+
+| claim | meaning |
+|---|---|
+| `human` | `true`. **Absent otherwise, never `false`** -- a missing claim and a failed check are indistinguishable here |
+| `human_iat` | epoch seconds, when the challenge was solved |
+| `human_sub` | the cookie's random 16-byte subject, for per-person rate limiting |
+
+**Freshness is 30 minutes and the bound is inclusive**: `now - human_iat <= 1800`,
+so a challenge solved exactly 1800s ago is accepted and 1801s is not.
+
+Stated in whole seconds on purpose. The bound was first agreed as "1800.000
+accepted, 1800.001 refused", which is not a distinction this claim can carry:
+`human_iat` is epoch **seconds**, and it is derived as the cookie's expiry
+minus a constant TTL, so it arrives already rounded to a second. A sub-second
+edge would be a boundary neither side can actually be on, tested against a
+clock finer than the value. Effective precision is one second, and a challenge
+solved 1800.4s ago presents as 1800 and is accepted.
+
+Both sides enforce it --
+the website refuses to mint past it, this service refuses to accept past it --
+so neither is a single point of failure, and if it is ever changed it is
+changed in both places in one change.
+
+**`human_sub`, not `sub`.** `sub` already means something here: an opaque
+*per-visit* id, which `identity_of` uses to key the answer endpoint's backstop
+limiter. The cookie subject is also 16 bytes but is per-*browser* and lives as
+long as the cookie. Putting it in `sub` would silently change that limiter from
+"this visit" to "this browser", on an endpoint neither repo is otherwise
+touching. A separate claim also makes it explicit that a persistent
+pseudonymous identifier is being held -- hashed, in memory only.
+
+**And the model of `sub` above was itself wrong.** The website corrected it on
+2026-09-19: their `callerSubject()` prefers the identity cookie's subject
+whenever the reader has passed a challenge, falling back to the per-visit value
+only when they have not. So `sub` has *already* been browser-scoped for every
+gated reader, and the answer endpoint's backstop limiter has been counting
+across visits since the gate shipped. That is the stronger throttle and it is
+kept; the source comments describing it as per-visit are fixed.
+
+A consequence to write down: while `callerSubject()` prefers the verified
+identity, `sub` and `human_sub` carry the **same value** whenever both are
+present. They are still separate claims, because they mean different things and
+would diverge the moment that preference changed -- and because agreement
+between them is not a signal anything should test.
 
 ## Response: Server-Sent Events
 
@@ -46,6 +96,12 @@ data: {"state": "summarised", "seconds": 6.2}
 `state` is one of `summarised`, `not_found`, `gone`, `unsupported`, `refused`,
 `failed`. Anything but `summarised` means render no summary. Always HTTP 200 —
 never an error code, so the analysis page cannot be broken by this service.
+
+**No prose source list.** Citations arrive as `citation` events, as on
+`/api/answer`, and the summary text must not end with a list of them --
+`SourcesSectionStripper` exists because that duplicate cost the website a
+pattern it could not write correctly. This endpoint's prompt is its own, so
+the right fix here is not to ask for one in the first place.
 
 `cached` on `start` says whether this text was generated now or reused. It exists
 because the interface must not imply determinism it does not have: a reader who

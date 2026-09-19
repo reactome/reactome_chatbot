@@ -30,10 +30,14 @@ def _positive_int(name: str, default: int) -> int:
 def identity_of(claims: dict[str, object], token: str) -> str:
     """Who to count against.
 
-    The token's claims are D1 and not yet settled with the website, so `sub` may
-    never arrive. `sub` then `jti` are used when present, so this starts keying on
-    a real person the moment D1 lands; until then a hash of the token itself is
-    the best available proxy -- one issuance, short lived, one person.
+    `sub` then `jti` when present, else a hash of the token itself.
+
+    D1 is settled now: `sub` does arrive, and for a reader who has passed the
+    Turnstile challenge it is the identity cookie's subject -- browser-scoped
+    for the life of that cookie, not per-visit. So this counts a person across
+    visits rather than within one, which is the stronger backstop and is what
+    has been running since the gate shipped. Worth knowing before reasoning
+    about what a burst here means.
 
     Hashed, never raw: this lands in a dict that lives as long as the process, and
     a bearer token is a credential.
