@@ -141,3 +141,58 @@ def test_the_release_request_does_not_demand_json() -> None:
     asyncio.run(go())
     assert seen["accept"] != "application/json"
     assert "text/plain" in seen["accept"]
+
+
+# Every one of these escapes `/token/{token}` when interpolated into a path.
+# The first is the one that matters: it addresses the endpoint returning the
+# user's unmatched identifiers -- the identifier tier -- for a caller who
+# asked only for an aggregate summary. Demonstrated against beta 2026-09-19.
+ESCAPES = (
+    f"{SAMPLE_TOKEN}%3D/notFound",
+    "../database/version",
+    "a/b/c",
+    "x?pageSize=9999",
+    "..%2f..%2fadmin",
+    "",
+)
+
+
+@pytest.mark.parametrize("token", ESCAPES)
+def test_a_token_that_escapes_the_endpoint_never_reaches_the_network(
+    token: str,
+) -> None:
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        return httpx.Response(200, json=RESULT)
+
+    async def go() -> object:
+        async with _client(handler) as http:
+            return await analysis_client.fetch_result(token, client=http)
+
+    fetched = asyncio.run(go())
+    assert fetched.outcome == "not_found"  # type: ignore[attr-defined]
+    assert requested == [], f"{token!r} was sent to {requested}"
+
+
+def test_a_real_token_is_still_accepted() -> None:
+    # The guard above is worthless if it also rejects valid tokens, and the
+    # issued form carries percent-encoded padding.
+    assert analysis_client.is_well_formed(f"{SAMPLE_TOKEN}%3D")
+    assert analysis_client.is_well_formed(SAMPLE_TOKEN)
+    assert analysis_client.is_well_formed("MjAyNjA5MTkxODIyMTFfMTI=")
+
+
+def test_a_list_body_is_an_outcome_not_an_exception() -> None:
+    # `/token/{t}/notFound` answers with a list. Before this, a body that was
+    # not an object raised AttributeError straight out of a function whose
+    # whole contract is that it never raises.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[{"id": "SMITH_LAB_SECRET_GENE_001"}])
+
+    async def go() -> object:
+        async with _client(handler) as http:
+            return await analysis_client.fetch_result(SAMPLE_TOKEN, client=http)
+
+    assert asyncio.run(go()).outcome == "failed"  # type: ignore[attr-defined]

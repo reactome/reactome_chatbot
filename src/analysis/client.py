@@ -9,6 +9,7 @@ OpenAPI, because the OpenAPI is wrong or silent about all three.
 """
 
 import os
+import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -30,6 +31,29 @@ BROWSER_USER_AGENT = (
 )
 
 TIMEOUT_SECONDS = 20.0
+
+# An analysis token is base64 with percent-encoded padding, as the service
+# issues it: `MjAyNjA5MTkxODExNDJfMTE%3D`. Nothing else is accepted, and the
+# reason is a disclosure bypass rather than tidiness.
+#
+# The token is interpolated into a URL path, so a caller-supplied
+# `<real token>/notFound` addresses `GET /token/{token}/notFound` -- the
+# endpoint that returns the user's *unmatched identifiers*. That is the
+# identifier tier, which the aggregate tier promises never to fetch, reached
+# by a caller who only ever asked for an aggregate summary. Demonstrated
+# against beta on 2026-09-19; it returned the submitted identifiers.
+#
+# Rejecting here rather than escaping: the token arrives already
+# percent-encoded, so quoting it again would break every valid token, and
+# there is nothing to gain by letting an invalid one reach the network. A
+# rejected token yields `not_found`, which is exactly what the service
+# returns for a malformed one anyway (measured: 500, mapped to not_found).
+_TOKEN = re.compile(r"\A[A-Za-z0-9_-]{1,200}(?:%3D|=){0,2}\Z", re.IGNORECASE)
+
+
+def is_well_formed(token: str) -> bool:
+    return bool(_TOKEN.match(token))
+
 
 #: Everything this module can conclude. `gone` is deliberately distinct from
 #: `not_found`: one has an action attached, the other is a dead end.
@@ -83,6 +107,12 @@ async def fetch_result(
       service fault would produce a `failed` state, or a retry loop against a
       service that will answer identically every time.
     """
+    if not is_well_formed(token):
+        # Not an error the caller must special-case: a malformed token is a
+        # normal negative outcome (FR-009), and this is the same answer the
+        # service gives for one.
+        logger.info("rejected a malformed analysis token before any request")
+        return Fetched("not_found")
     url = f"{base_url()}/token/{token}"
     owned = client is None
     client = client or httpx.AsyncClient(timeout=TIMEOUT_SECONDS)
@@ -110,6 +140,14 @@ async def fetch_result(
         logger.warning("analysis service returned a non-JSON 200")
         return Fetched("failed")
 
+    if not isinstance(result, dict):
+        # `/token/{t}/notFound` returns a list, and so would anything else a
+        # path escape reached. Before this check that raised AttributeError
+        # straight out of a function whose contract is to never raise.
+        logger.warning(
+            "analysis service returned %s, not an object", type(result).__name__
+        )
+        return Fetched("failed")
     if is_gsa(result):
         return Fetched("unsupported")
     return Fetched("ok", result)

@@ -54,8 +54,20 @@ RESULT_FIELDS: tuple[str, ...] = (
     "pathwaysFound",
     "resourceSummary",
     "speciesSummary",
-    "warnings",
 )
+
+#: `warnings` is the one allow-listed field whose *content* is not
+#: structurally bounded -- it is free text the Analysis Service composes, and
+#: nothing in its contract stops it quoting what the user submitted. Observed
+#: on beta it is service-level ("Missing header. Using a default one."), and
+#: one observation is not a guarantee.
+#:
+#: This service never sees the user's identifiers, so it cannot filter them
+#: out of a warning. What it can do is bound the exposure: a small number of
+#: short warnings, truncated. Kept rather than dropped because "what the
+#: service itself flagged" is how a summary knows a result is untrustworthy.
+MAX_WARNINGS = 5
+MAX_WARNING_CHARS = 200
 
 #: Never sent under any tier. Listed only so the test can assert on them by
 #: name and so the reason is written down next to the list that excludes them.
@@ -85,6 +97,9 @@ def aggregate(result: dict[str, Any], *, top_pathways: int = 12) -> dict[str, An
         kept.append(entry)
 
     out = _pick(result, RESULT_FIELDS)
+    warnings = result.get("warnings")
+    if isinstance(warnings, list) and warnings:
+        out["warnings"] = [str(w)[:MAX_WARNING_CHARS] for w in warnings[:MAX_WARNINGS]]
     out["summary"] = _pick(result.get("summary"), SUMMARY_FIELDS)
     out["pathways"] = kept
     out["pathways_total"] = len(pathways)

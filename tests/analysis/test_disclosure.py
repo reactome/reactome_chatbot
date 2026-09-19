@@ -118,3 +118,22 @@ def test_missing_statistics_are_normal_not_an_error() -> None:
 def test_an_unknown_tier_is_refused_rather_than_guessed() -> None:
     with pytest.raises(ValueError, match="unknown disclosure tier"):
         for_tier(RESULT, "everything")  # type: ignore[arg-type]
+
+
+def test_warnings_are_bounded_because_their_content_is_not_guaranteed() -> None:
+    # `warnings` is the one allow-listed field whose *content* the service
+    # composes freely. Observed on beta it is service-level ("Missing header.
+    # Using a default one."), and one observation is not a guarantee -- this
+    # service never sees the user's identifiers, so it cannot filter them out
+    # of a warning it is handed. Bounding the exposure is what is available.
+    result = json.loads(json.dumps(RESULT))
+    result["warnings"] = [f"warning {i} " + "x" * 500 for i in range(20)]
+    payload = aggregate(result)
+    assert len(payload["warnings"]) == 5
+    assert all(len(w) <= 200 for w in payload["warnings"])
+
+
+def test_no_warnings_key_when_the_service_sent_none() -> None:
+    result = json.loads(json.dumps(RESULT))
+    result["warnings"] = []
+    assert "warnings" not in aggregate(result)
