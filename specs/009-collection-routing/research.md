@@ -114,3 +114,82 @@ concurrently and asserts neither sees the other.
 
 The data model's diagram is left as the intent; this is how it is carried.
 
+## What narrowing actually costs, measured 2026-09-19
+
+Two measurements, and only the second means anything.
+
+**Citation overlap is arithmetic, not signal.** Narrowing to two collections
+keeps 5-7 of the full top-12 citations; narrowing to one keeps 2. That looks like
+a large loss, but reciprocal rank fusion interleaves the five per-collection
+lists, so a top-12 draws about 2.4 from each. Keeping two lists predicts ~4.8,
+and 5-7 is what was observed. The number measures the interleave, not whether
+anything useful was lost. Do not use it as a quality measure.
+
+**Whether answers survive is the measurement that counts.** Re-measured
+2026-09-19 through `answer_sweep.run()` itself, after the first attempt
+reimplemented the matching and got the number wrong (see the correction below).
+Two skips on this host, both `needs_live`, in both arms.
+
+| | all five collections | narrowed to `reactions` + `summations` |
+|---|---|---|
+| passed | **13 / 13** | **10 / 13** |
+| failed | 0 | 3 |
+| skipped | 2 | 2 |
+
+Two of the three failures are real losses, and they name their collection:
+
+| question | needs | what the narrowed answer said |
+|---|---|---|
+| "What is the UniProt accession for the TP53 protein" (`P04637`) | `ewas` | "not explicitly provided in the context searched" |
+| "Which diseases involve variants of the PTEN gene" | `disease_variants` | pathway-level prose, no variant named |
+
+**The third failure was not a loss -- the check was wrong.** Narrowed, and with
+`disease_variants` excluded, the ABCA1 question named all six curated variants
+(`C1417R`, `Q537R`, `S1446L`, `N935S`, `W590S`, `R587W`) with the OMIM id. The
+expectation failed it because the pattern required `ABCA1 C1417R` adjacency and
+the answer rendered them as a numbered list of `**C1417R**`. The pattern is fixed
+and pinned by a test; the answer was correct all along.
+
+That has a consequence for this feature: **ABCA1's variants are reachable from
+`summations` prose**, so that question does not guard `disease_variants`. Only
+the PTEN question does.
+
+### The correction
+
+The first measurement reported 12/15. It was produced by a throwaway script that
+reimplemented the sweep's matching, and it was wrong twice over: it never read
+the `must` field, which nine of the fifteen expectations carry, and it counted
+the two `needs_live` questions as passes where the sweep skips them. Both errors
+push the number up. The re-run uses `run()` and `report()` from
+`src/evaluation/answer_sweep.py` and records which collections retrieval actually
+searched, so the run proves its own precondition -- the first void re-run
+searched nothing at all and would otherwise have been read as a result.
+
+### What this settles
+
+**Collections are not interchangeable, and the mapping is legible.** Accession
+questions need `ewas`; PTEN variant questions need `disease_variants`. That is
+the signal a classifier can be prompted on.
+
+It is a weaker result than the first measurement suggested, and the weakening is
+the useful part: content is duplicated across `summations` more than the guard
+table assumed. `reactions` was already known to be unguardable by answer because
+`summations` covers `Pathway OR ReactionLikeEvent`; `disease_variants` now joins
+it for at least one question.
+
+**One excluded collection is untested by construction.** Narrowing excluded
+`complexes`, `ewas` and `disease_variants`. No tracked question guards
+`complexes` (T005 is still open), so its exclusion could not have produced a
+failure. The absence of a fourth failure is not evidence.
+
+**It still justifies the fail-wide rule.** Where a narrow selection does lose the
+answer, it removes it rather than degrading it -- the TP53 answer says the
+accession is not there, and the PTEN answer falls back to pathway prose with no
+variant. Widening on uncertainty costs latency; narrowing wrongly costs the
+answer.
+
+**And it sets the acceptance bar.** Routing is worth shipping only if the sweep
+stays at the control's score with the classifier choosing -- 13/13 here, 15/15 in
+the container where MCP is configured. The TP53 and PTEN questions are the ones
+to watch, because they fail loudly and specifically. A classifier that never
+routes to `complexes` would still score full marks, which is why T005 matters.

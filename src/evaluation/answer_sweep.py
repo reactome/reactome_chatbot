@@ -119,14 +119,21 @@ EXPECTATIONS: tuple[Expectation, ...] = (
         must=("Tangier",),
         # A named variant, not a specific one: which of the six come back
         # depends on retrieval order, and pinning one would fail a good answer.
-        must_match=(r"\bABCA1 [A-Z]\d{2,4}[A-Z*]",),
+        # The gene name is deliberately NOT required next to the variant.
+        # Requiring "ABCA1 C1417R" failed an answer that named all six as a
+        # numbered list of "**C1417R**" -- correct, and marked a failure. The
+        # question is already anchored on the topic by `must=("Tangier",)`.
+        must_match=(r"\b[A-Z]\d{2,4}[A-Z*]\b",),
         needs_collection="disease_variants",
     ),
     Expectation(
         question="Which diseases involve variants of the PTEN gene in Reactome?",
         why="Answered with the PTEN Loss of Function pathway. Reactome curates "
         "108 PTEN variants across 86 diseases.",
-        must_match=(r"\bPTEN [A-Z]\d{2,4}[A-Z*]",),
+        # Same shape as the ABCA1 guard above, and for the same reason: the
+        # gene name is not required adjacent to the variant.
+        must=("PTEN",),
+        must_match=(r"\b[A-Z]\d{2,4}[A-Z*]\b",),
         needs_collection="disease_variants",
     ),
     # --- facts about the database, which retrieval cannot answer ------------
