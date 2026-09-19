@@ -13,7 +13,20 @@ model invented one per answer -- `## Sources`, `## Most relevant sources`,
 phrasings of a contract, it is five samples from an unconstrained generator.
 
 The prompts now pin the heading to `## Sources`. This is the second half: strip
-it here so no caller has to pattern-match model output at all. The pattern below
+it here so no caller has to pattern-match model output at all.
+
+**One risk is known, measured, and deliberately not defended against.** This
+stripper is a state machine: once it commits to a heading it drops everything
+after it, and unlike a function that recomputes over accumulated text it cannot
+change its mind. So a *complete* `## Sources` line in the middle of an answer,
+with real prose after it, would cost the reader that prose.
+
+Measured 2026-09-19 over six real answers spanning the reactome and userguide
+prompts: the heading was `## Sources` every time, last every time, with nothing
+but list items after it. Zero mid-answer occurrences. Guarding against it would
+mean holding the text after a heading until a list item confirms the verdict --
+buildable, and more state than an unobserved failure justifies. If a mid-answer
+heading is ever seen, that is the fix; it is recorded here rather than built. The pattern below
 is still tolerant, because the prompt is an instruction and not a guarantee, but
 it is bounded -- a heading or bold-only line, at most five words, naming sources
 -- rather than any line mentioning the word.
