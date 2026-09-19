@@ -260,3 +260,36 @@ on six questions; it does not show that the classifier is right in general.
 
 `complexes` still has no guard question (T005), so a classifier that never
 routes to it would score full marks.
+
+### Adversarial check: nine questions the sweep never asks
+
+Six retrieving questions is a thin base to ship a router on, so the classifier
+was probed with questions chosen to be awkward -- broad ones that must *not*
+narrow, and cross-collection ones where a single choice loses half the answer.
+
+| question | chose |
+|---|---|
+| What is apoptosis? | *all* |
+| Explain the role of TP53 in the cell cycle | *all* |
+| Tell me everything Reactome knows about ferroptosis | *all* |
+| What complexes contain TP53? | `complexes` |
+| Which proteins are in the MCM complex and what do they do? | `complexes`, `summations` |
+| What is the UniProt ID for BRCA1? | `ewas` |
+| Which variants of BRCA1 cause disease, and the mechanisms? | `disease_variants`, `summations` |
+| Inputs and outputs of the CDK1/MCM2 phosphorylation | `reactions` |
+| How does Reactome describe the Wnt signalling pathway? | `summations` |
+
+Nine of nine as intended: every broad question left open, every specific one
+narrowed to the collection that holds the answer, and both cross-collection
+questions took `summations` alongside their primary -- which is what the prompt
+asks for and the reason the mechanism half of those questions survives.
+
+This is nine single classifications, not nine end-to-end answers, so it shows
+the routing decision is sound and not that the answers are.
+
+**A hallucinated collection name is safe by construction**, and deliberately so:
+`collections` is `list[str]` rather than an enum of the five names. A name that
+is not in the bundle is widened to all by `resolve_collections` with a WARNING,
+which is the failure direction this feature requires. Constraining the schema
+would instead make structured output reject the response, turning a harmless
+mistake into a failed answer.

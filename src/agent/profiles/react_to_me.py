@@ -248,8 +248,12 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         # with one, and leaving a stale selection set would narrow it to names
         # it does not have -- which `resolve_collections` widens back, but
         # silently and with a WARNING for every question.
+        # `.get`, not `[...]`: BaseState is total=False, so a state resumed
+        # from a checkpoint written before this field existed has no key at
+        # all. Missing means empty means every collection -- the behaviour
+        # from before routing, which is the right way to fail.
         token = selected_collections.set(
-            state["collections"] if source == "reactome" else None
+            (state.get("collections") or []) if source == "reactome" else None
         )
         try:
             result: dict[str, Any] = await rag.ainvoke(

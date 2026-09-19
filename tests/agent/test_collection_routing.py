@@ -101,3 +101,14 @@ def test_the_selection_does_not_outlive_the_question() -> None:
         )
     )
     assert selected_collections.get() is None
+
+
+def test_a_state_without_the_field_searches_everything() -> None:
+    # BaseState is total=False and this field is new, so a thread checkpointed
+    # before it existed resumes without the key. Subscripting would raise;
+    # missing must mean "all", which is how the graph behaved before routing.
+    rag = _RecordingRag()
+    state = _state("reactome", [])
+    del state["collections"]  # type: ignore[misc]
+    asyncio.run(_builder(rag, "reactome").generate_answer(state, RunnableConfig()))
+    assert rag.seen == [[]], "a pre-routing checkpoint must not crash or narrow"
