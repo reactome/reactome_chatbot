@@ -36,13 +36,13 @@ a deleted one, and that the same token returns the same text.
 
 **Independent test**: Submit a known token; the summary names the pathways the result ranks highest, describes significance the result supports, and cites each by stable id.
 
-- [ ] T010 [US1] Build the prompt input from an aggregate result in `src/analysis/summarise.py`: top pathways with their `found`/`total`/`ratio`/`pValue`/`fdr`, the analysis type, species, and the service's own `warnings`
-- [ ] T011 [P] [US1] Test in `tests/analysis/test_summarise.py` that a result where nothing passes FDR produces prompt input that says so, so the model is never handed a "top pathway" framing for a null result (FR-004)
-- [ ] T012 [US1] Emit pathway citations as `st_id` events reusing the answer endpoint's citation shape, in `src/api/analysis_summary.py`
-- [ ] T013 [US1] Add the SSE endpoint in `src/api/analysis_summary.py` per [contracts/summary_endpoint.md](./contracts/summary_endpoint.md): `start` with release and analysis type, `token`, `citation`, `done`
-- [ ] T014 [US1] Mount the router in `bin/chat-fastapi.py` and add its prefix to the captcha exemption, as the answer endpoint's is
-- [ ] T015 [US1] Test over HTTP on the real mounted app in `tests/api/test_analysis_summary.py`, not by calling the handler — mounting order and middleware interact only on the served path (Principle I), which is where spec 010's route check found what isolated tests could not
-- [ ] T016 [P] [US1] Test that every `st_id` a summary cites appears in that result's `pathways[]`, mechanically rather than by reading, in `tests/api/test_analysis_summary.py`, so an invented or mismatched identifier fails (SC-003)
+- [x] T010 [US1] Build the prompt input from an aggregate result in `src/analysis/summarise.py`: top pathways with their `found`/`total`/`ratio`/`pValue`/`fdr`, the analysis type, species, and the service's own `warnings`
+- [x] T011 [P] [US1] Test in `tests/analysis/test_summarise.py` that a result where nothing passes FDR produces prompt input that says so, so the model is never handed a "top pathway" framing for a null result (FR-004)
+- [x] T012 [US1] Emit pathway citations as `st_id` events reusing the answer endpoint's citation shape, in `src/api/analysis_summary.py`
+- [x] T013 [US1] Add the SSE endpoint in `src/api/analysis_summary.py` per [contracts/summary_endpoint.md](./contracts/summary_endpoint.md): `start` with release and analysis type, `token`, `citation`, `done`
+- [x] T014 [US1] Mount the router in `bin/chat-fastapi.py` and add its prefix to the captcha exemption, as the answer endpoint's is
+- [x] T015 [US1] Test over HTTP on the real mounted app in `tests/api/test_analysis_summary.py`, not by calling the handler — mounting order and middleware interact only on the served path (Principle I), which is where spec 010's route check found what isolated tests could not
+- [x] T016 [P] [US1] Test that every `st_id` a summary cites appears in that result's `pathways[]`, mechanically rather than by reading, in `tests/api/test_analysis_summary.py`, so an invented or mismatched identifier fails (SC-003)
 
 ## Phase 4: User Story 2 — Why were my identifiers not found? (P2)
 
@@ -94,10 +94,10 @@ for the answer route only. A summary route must exist before any claim can be
 carried. Everything in this phase can be built and tested before that lands.
 
 - [x] T031 Agree with the website session how human presence is asserted — `human`, `human_iat` and `subject` claims on the caller token, minted only when their Turnstile-backed identity cookie validated. They proposed gating on the analysis token instead and withdrew it: a token proves an analysis happened, not that a person is present, and tokens travel in pasted URLs
-- [ ] T031a Verify `human_iat` against a **30-minute** freshness bound in `src/util/caller_token.py`, refusing an older one. They refuse to mint past the same bound, so it fails at both ends rather than relying on either alone
-- [ ] T031b Key the rate limiter on `subject` when present, falling back to the caller identity, in `src/api/analysis_summary.py` — per-person throttling rather than per-proxy-address. Also limit per analysis token: twenty summaries of one analysis is not a scientist
-- [ ] T031c Test that a `human` claim with a stale `human_iat` is refused with **zero model calls**, in `tests/api/test_analysis_summary.py` — the freshness bound is the half most likely to be dropped, because the claim being present looks like success
-- [ ] T032 [US1] Verify the assertion in `src/util/caller_token.py` once T031 is agreed, refusing before any model call
+- [x] T031a Verify `human_iat` against a **30-minute** freshness bound in `src/util/caller_token.py`, refusing an older one. They refuse to mint past the same bound, so it fails at both ends rather than relying on either alone. **Compared in whole seconds** (`int(now) - int(issued)`), matching their `nowSeconds - floor(solvedAt/1000)`: with a float clock the inclusive bound is unreachable, because a claim issued exactly 1800s ago is 1800.0003s old when checked. Caught by the test pinning the edge
+- [x] T031b Key the rate limiter on `human_sub` when present, falling back to the caller identity, in `src/api/analysis_summary.py` — per-person throttling rather than per-proxy-address. Also limit per analysis token: twenty summaries of one analysis is not a scientist
+- [x] T031c Test that a `human` claim with a stale `human_iat` is refused with **zero model calls**, in `tests/api/test_analysis_summary.py` — the freshness bound is the half most likely to be dropped, because the claim being present looks like success
+- [x] T032 [US1] Verify the assertion in `src/util/caller_token.py` -- `human_presence_reason` checks `human` and a 30-minute `human_iat`, refusing before any model call
 - [ ] T033 [P] Test that a request without the assertion is refused and makes **zero model calls**, counted on a patched graph rather than inferred from timing, in `tests/api/test_analysis_summary.py` (SC-004)
 
 ## Phase 9: Polish
