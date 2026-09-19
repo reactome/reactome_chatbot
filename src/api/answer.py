@@ -33,6 +33,7 @@ from util.anchor_strip import AnchorStripper
 from util.caller_token import TokenRejectedError, verify
 from util.logging import logging
 from util.rate_limit import identity_of, limiter_from_env
+from util.sources_section import SourcesSectionStripper
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +124,10 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
         # separate events, so they come out here -- across fragment boundaries,
         # because one anchor arrives as twenty-odd fragments.
         stripper = AnchorStripper()
+        # And the trailing source list goes too: this caller renders citations
+        # from the `citation` events, so the prose copy is a duplicate -- and a
+        # worse one, since `AnchorStripper` has just taken its links off.
+        sources = SourcesSectionStripper()
         tokens_sent = 0
         try:
             async with asyncio.timeout(ANSWER_TIMEOUT_SECONDS):
@@ -139,7 +144,7 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
                     enable_postprocess=False,
                 ):
                     if event.kind == "token":
-                        text = stripper.feed(event.text)
+                        text = sources.feed(stripper.feed(event.text))
                         if text:
                             tokens_sent += 1
                             yield _sse("token", {"text": text})
@@ -202,7 +207,7 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
             # terminal event to stop waiting.
             logger.exception("answering %r failed", body.question[:80])
             state = "failed"
-        held = stripper.flush()
+        held = sources.feed(stripper.flush()) + sources.flush()
         if held:
             yield _sse("token", {"text": held})
         yield _sse(

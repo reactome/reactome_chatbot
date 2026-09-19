@@ -28,6 +28,10 @@ Provide an information-rich narrative that explains not only what is happening b
     - Use accessible language while maintaining technical precision.
     - Ensure the narrative flows logically, presenting background, mechanisms, and significance
 5. Source list at the end: After the main narrative, provide a bullet-point list of each unique citation anchor exactly once, in the same <a href="URL">Node Name</a> format.
+    - Head the list with exactly this line and nothing else: `## Sources`
+      Not a variation on it. The search page strips this section by that
+      exact heading, because it renders the citations itself; a different
+      wording leaves the reader a duplicate list.
     - Examples:
         - <a href="https://reactome.org/content/detail/R-HSA-109581">Apoptosis</a>
         - <a href="https://reactome.org/content/detail/R-HSA-1640170">Cell Cycle</a>

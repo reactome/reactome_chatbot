@@ -488,3 +488,44 @@ def test_an_abandoned_stream_is_recorded_and_not_swallowed(
     assert any(
         "abandoned by the caller" in message for message in messages
     ), f"no record of the abandoned stream; logged: {messages}"
+
+
+def test_the_trailing_source_list_never_reaches_the_caller(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The website renders citations as chips from the `citation` events, so the
+    # prose list at the end is a duplicate -- and after AnchorStripper has taken
+    # the links off, a worse one. They were matching the heading and could not
+    # win: our prompts never specified one, so the model invented a different
+    # heading per answer. Stripped here instead, on the served path.
+    stub = _StubGraph(
+        [
+            AnswerEvent(kind="citation", st_id="R-HSA-1", display_name="Apoptosis"),
+            AnswerEvent(kind="token", text="CDK5 phosphorylates tau.\n\n"),
+            AnswerEvent(kind="token", text="## Most rele"),
+            AnswerEvent(kind="token", text="vant sources\n- "),
+            AnswerEvent(
+                kind="token",
+                text='<a href="https://reactome.org/content/detail/R-HSA-1">Apoptosis</a>\n',
+            ),
+            AnswerEvent(kind="done", state="answered"),
+        ]
+    )
+    monkeypatch.setattr("api.answer.get_graph", lambda *_a, **_k: stub)
+    private_pem, public_pem = keys
+    response = _client(public_pem).post(
+        f"{PREFIX}/answer",
+        json={"question": "what does CDK5 do?", "caller_token": _token(private_pem)},
+    )
+    assert response.status_code == 200
+    prose = "".join(
+        json.loads(data)["text"]
+        for kind, data in _events(response.text)
+        if kind == "token"
+    )
+    assert prose.strip() == "CDK5 phosphorylates tau."
+    assert "sources" not in prose.lower()
+    assert "Apoptosis" not in prose, "the citation event is the list, not the prose"
+    # The citation itself must survive: stripping the prose copy must not cost
+    # the caller the data it renders chips from.
+    assert any(kind == "citation" for kind, _ in _events(response.text))
