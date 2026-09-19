@@ -82,13 +82,21 @@ a deleted one, and that the same token returns the same text.
 - [ ] T029 Report `cached` on the `start` event in `src/api/analysis_summary.py`, so the interface can say a summary was reused rather than implying the generator is deterministic (FR-015)
 - [ ] T030 Record in [research.md](./research.md) that the first increment's store is in-process and lost on deploy, and open follow-up work for a durable store — beta sets no `POSTGRES_LANGGRAPH_DB` today (research D4)
 
-## Phase 8: Human presence (FR-013) — BLOCKED
+## Phase 8: Human presence (FR-013) — UNBLOCKED 2026-09-19
 
-**Blocked on the website repo.** Do not implement by inference, and do not let the
-existing caller token satisfy this by default: spec 010's D1 settled that it
-asserts service identity and deliberately says nothing about humanity.
+Agreed with the website session; the shape is in [research.md](./research.md) D6.
+Still do not let the plain caller token satisfy this by default: spec 010's D1
+settled that it asserts service identity and says nothing about humanity. The
+claims below are additional, and their absence must refuse.
 
-- [ ] T031 Agree with the website session how human presence is asserted — most likely an additional claim minted after the Turnstile check they already perform on the chat. **Dependency: their agreement.** Until it exists, the endpoint must refuse rather than assume
+**One dependency remains, and it is theirs**: their proxy mints caller tokens
+for the answer route only. A summary route must exist before any claim can be
+carried. Everything in this phase can be built and tested before that lands.
+
+- [x] T031 Agree with the website session how human presence is asserted — `human`, `human_iat` and `subject` claims on the caller token, minted only when their Turnstile-backed identity cookie validated. They proposed gating on the analysis token instead and withdrew it: a token proves an analysis happened, not that a person is present, and tokens travel in pasted URLs
+- [ ] T031a Verify `human_iat` against a **30-minute** freshness bound in `src/util/caller_token.py`, refusing an older one. They refuse to mint past the same bound, so it fails at both ends rather than relying on either alone
+- [ ] T031b Key the rate limiter on `subject` when present, falling back to the caller identity, in `src/api/analysis_summary.py` — per-person throttling rather than per-proxy-address. Also limit per analysis token: twenty summaries of one analysis is not a scientist
+- [ ] T031c Test that a `human` claim with a stale `human_iat` is refused with **zero model calls**, in `tests/api/test_analysis_summary.py` — the freshness bound is the half most likely to be dropped, because the claim being present looks like success
 - [ ] T032 [US1] Verify the assertion in `src/util/caller_token.py` once T031 is agreed, refusing before any model call
 - [ ] T033 [P] Test that a request without the assertion is refused and makes **zero model calls**, counted on a patched graph rather than inferred from timing, in `tests/api/test_analysis_summary.py` (SC-004)
 
@@ -105,7 +113,7 @@ asserts service identity and deliberately says nothing about humanity.
 - T006 blocks T010, T017, T021, T024 — nothing can be summarised before a result can be fetched.
 - T008 blocks T027: the release is part of the storage key.
 - T013 blocks T015, T029, T034, T035.
-- **T031 blocks T032 and T033, and T031 blocks nothing else** — every other story can be built and tested behind a refusing gate.
+- **T031 is agreed (2026-09-19); T031a-c and T032-T033 follow from it, and block nothing else** — every other story can be built and tested behind a refusing gate. The website adding a summary route to its proxy is the only external dependency left.
 - US1 is independent. US2, US3 and US4 each build on US1's prompt-input path but are separately testable.
 
 ## Parallel opportunities
