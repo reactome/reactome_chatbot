@@ -87,10 +87,14 @@ WORDS = [
 ]
 
 
-def _bundle(tmp_path: Path, embedding: DeterministicFakeEmbedding) -> Path:
+def _bundle(
+    tmp_path: Path,
+    embedding: DeterministicFakeEmbedding,
+    collections: dict[str, int] | None = None,
+) -> Path:
     csv_dir = tmp_path / "csv_files"
     csv_dir.mkdir(parents=True, exist_ok=True)
-    for collection, count in COLLECTIONS.items():
+    for collection, count in (collections or COLLECTIONS).items():
         with open(csv_dir / f"{collection}.csv", "w", newline="") as handle:
             writer = csv.DictWriter(
                 handle, fieldnames=["st_id", "display_name", "text"]
@@ -211,18 +215,6 @@ def test_both_paths_honour_the_same_collection_selection(tmp_path: Path) -> None
 REAL_NAMES = ("complexes", "disease_variants", "ewas", "reactions", "summations")
 
 
-def _named_bundle(
-    tmp_path: Path, embedding: DeterministicFakeEmbedding, names: tuple[str, ...]
-) -> Path:
-    global COLLECTIONS
-    previous = COLLECTIONS
-    COLLECTIONS = {name: 20 for name in names}
-    try:
-        return _bundle(tmp_path, embedding)
-    finally:
-        COLLECTIONS = previous
-
-
 @pytest.mark.requires_retrieval_stack
 @pytest.mark.parametrize("wanted", REAL_NAMES)
 def test_every_collection_can_be_reached_and_only_it(
@@ -236,16 +228,23 @@ def test_every_collection_can_be_reached_and_only_it(
     carried by `reactions`, so every candidate answered just as well with the
     collection removed. Two failed hunts and a structural explanation.
 
-    So the guard lives here instead. A collection that routing can never reach
-    -- a name mismatch, a lookup that silently yields nothing -- is invisible
-    to `answer-sweep` by construction, and this is what would catch it.
+    So the guard lives here instead, and it is worth being exact about what it
+    replaces. It catches a *plumbing* failure: a collection that cannot be
+    reached at all, through a name mismatch or a lookup that silently yields
+    nothing. It does **not** catch the failure that motivated T005 -- a
+    classifier that simply never chooses a collection. Nothing deterministic
+    can, because that is one model call's judgement; it would need the routing
+    distribution watched in production, or a periodic probe. The residual risk
+    is recorded in research.md rather than claimed as covered.
     """
     _require_bm25_tokenizer()
     embedding = DeterministicFakeEmbedding(size=16)
     retriever = HybridRetriever.from_subdirectory(
         llm=FakeListChatModel(responses=[""]),
         embedding=embedding,
-        embeddings_directory=_named_bundle(tmp_path, embedding, REAL_NAMES),
+        embeddings_directory=_bundle(
+            tmp_path, embedding, {name: 20 for name in REAL_NAMES}
+        ),
     )
 
     token = selected_collections.set([wanted])

@@ -300,7 +300,10 @@ Attempted properly on 2026-09-19 rather than left as "no candidate found". It
 failed, and the reason is structural and worth writing down, because it is the
 same reason `reactions` failed and it was not obvious the second time.
 
-**Method.** Removing `complexes` from what `resolve_collections` sees is an
+**Method.** Nine questions over six complexes, in two shapes -- six asking
+which proteins make up a named complex, three naming components and asking
+which complex holds them. Removing `complexes` from what `resolve_collections`
+sees is an
 exact simulation of a bundle without it -- the name then widens to all the
 others, as it would there. This replaced copying a 3.3G bundle.
 
@@ -337,7 +340,10 @@ ask which complex holds them:
 | Which complex has NUP133, NUP160, NUP37? | 4/4 | **4/4** |
 | Which complex is made of LSM10, LSM11, SNRPB? | 3/4 | **4/4** |
 
-**Answered just as well without it.** Complex *names* appear throughout
+**Answered just as well without it** -- the CYBA/CYBB row proves nothing
+either way, since that question fails in both arms and is simply a bad
+question; the finding rests on the two that answer. Complex *names* appear
+throughout
 `reactions`, as the names of inputs and outputs, and throughout `summations`
 prose. So any question naming or seeking a complex is answerable from those,
 and the only thing structurally unique to `complexes` -- the component list --
@@ -351,6 +357,21 @@ worded. T005 should become what T007 already is -- a retrieval-level assertion
 that the collection was searched -- rather than a hunt for a better candidate,
 which is now two failed hunts and a structural explanation of why.
 
-Until that exists, **the sweep cannot detect a classifier that never routes to
-`complexes`**, and that remains the strongest reason not to deploy routing on
-the strength of a green sweep alone.
+### And the retrieval-level assertion does not close the original hole
+
+Worth being exact, because it would be easy to mark T005 done and believe the
+risk went with it. The parametrised test catches a **plumbing** failure: a
+collection that cannot be reached at all, through a name mismatch or a lookup
+that silently yields nothing. The failure that motivated T005 is different --
+**a classifier that simply never chooses `complexes`** -- and no deterministic
+test can catch that, because it is one model call's judgement.
+
+Covering it properly needs the routing distribution watched over real traffic,
+or a periodic probe that asks known-composition questions and checks the
+collection was selected. Neither exists. So the residual risk after T005a is:
+routing can under-serve `complexes` indefinitely, every tracked question still
+passes, and the only symptom is answers that are quietly worse.
+
+That is smaller than it was -- the plumbing is now pinned, and the nine
+questions above found no case where `complexes` was needed for a correct
+answer at all -- but it is not nothing, and it is not what T005a tests.
