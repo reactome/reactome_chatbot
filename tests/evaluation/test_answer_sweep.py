@@ -7,6 +7,7 @@ answer the real chatbot gives.
 """
 
 import asyncio
+import re
 from collections.abc import Callable
 
 import pytest
@@ -220,3 +221,32 @@ def test_the_sweep_does_not_pay_for_a_web_search() -> None:
         "the sweep now reads additional_content, so the assertion above is no "
         "longer the right guard"
     )
+
+
+def test_a_variant_guard_accepts_a_variant_named_in_a_list() -> None:
+    # Measured 2026-09-19: narrowed to reactions+summations, the chatbot
+    # answered the ABCA1 question with all six curated variants as a numbered
+    # list -- "1. **C1417R** - Causes Tangier disease" -- and the sweep called
+    # it a failure, because the pattern required "ABCA1 C1417R" adjacency. The
+    # answer was correct; the check was wrong, and it was wrong in the
+    # direction that makes a sweep get switched off.
+    named = (
+        "The ABCA1 variants listed in Reactome are: 1. **C1417R** - Causes "
+        "Tangier disease. 2. **Q537R** - Causes Tangier disease."
+    )
+    # The historical wrong answer, which named no variant at all, must still
+    # fail: a guard that passes the bug it was written for guards nothing.
+    pathway_prose = (
+        "Defective ABCA1 causes Tangier Disease, a disorder of cholesterol "
+        "transport, described at R-HSA-5682111."
+    )
+    abca1 = next(e for e in EXPECTATIONS if "ABCA1 variants" in e.question)
+    pten = next(e for e in EXPECTATIONS if "PTEN gene" in e.question)
+    for expectation in (abca1, pten):
+        for pattern in expectation.must_match:
+            assert re.search(
+                pattern, named, re.IGNORECASE
+            ), f"{expectation.question}: {pattern} rejects a named variant"
+            assert not re.search(
+                pattern, pathway_prose, re.IGNORECASE
+            ), f"{expectation.question}: {pattern} accepts pathway prose"

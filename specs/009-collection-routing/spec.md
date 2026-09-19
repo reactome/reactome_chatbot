@@ -142,12 +142,21 @@ fails without it.
 |---|---|---|---|
 | `ewas` | yes | no | **guards it** -- UniProt accessions live only there |
 | `summations` | yes | no | **guards it** -- the curated prose lives only there |
+| `disease_variants` (PTEN) | yes | no | **guards it** -- no variant is named without it |
+| `disease_variants` (ABCA1) | yes | **yes** | all six variants came back from `summations` prose |
 | `complexes` | -- | -- | no question found yet |
 | `reactions` | yes | **yes** | answered with the collection removed entirely |
 
 **No reaction name is unique to `reactions`.** The `summations` query covers
 `Pathway OR ReactionLikeEvent`, so every event name appears in both collections by
 construction. They overlap by design.
+
+**And the overlap is wider than that.** Measured 2026-09-19 (research.md), the
+ABCA1 question answered with all six curated variants while `disease_variants`
+was excluded -- the summation prose for "Defective ABCA1 does not transport CHOL"
+names them. So a collection can be partly reachable through `summations` too, and
+whether a question guards a collection has to be measured per question, not
+assumed from the collection it was written for.
 
 Two consequences for this feature.
 
