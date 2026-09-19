@@ -193,3 +193,70 @@ stays at the control's score with the classifier choosing -- 13/13 here, 15/15 i
 the container where MCP is configured. The TP53 and PTEN questions are the ones
 to watch, because they fail loudly and specifically. A classifier that never
 routes to `complexes` would still score full marks, which is why T005 matters.
+
+## What routing actually buys, measured 2026-09-19
+
+The classifier is wired up and choosing. Three measurements, and the second one
+is not the result the feature was pitched on.
+
+### It holds the acceptance bar
+
+`answer-sweep` with the classifier selecting collections: **13/13, the control
+score**, two `needs_live` skips. Five of six retrievals were narrowed, and the
+routing is the mapping the earlier measurement predicted:
+
+| question | routed to |
+|---|---|
+| UniProt accession for TP53 | `ewas` |
+| Selective autophagy summary | `summations` |
+| ABCA1 variants | `disease_variants` |
+| PTEN variant diseases | `disease_variants` |
+| What CDK5 phosphorylates | `ewas`, `summations` |
+| How TP53 regulates PTEN transcription | *all five* -- left empty, correctly |
+
+Only six of the thirteen questions retrieve at all: the refusals never do, and
+the userguide questions use a different bundle. So the routing evidence is six
+questions, which is a small base and should be said rather than glossed.
+
+### It does not reduce the prompt
+
+This is the correction. Narrowing was expected to cut context; it does not.
+
+| question | docs, all | docs, narrowed | chars, all | chars, narrowed |
+|---|---|---|---|---|
+| TP53 accession | 10 | 10 | 2,436 | 2,436 |
+| ABCA1 variants | 10 | 10 | 6,163 | 5,846 |
+| Selective autophagy | 10 | 10 | 22,114 | 21,797 |
+
+**Ten documents either way, context within 2%.** The chain caps the fused list
+at ten regardless of how many collections fed it, so narrowing changes *which*
+documents arrive, not how many. Any claim that this feature reduces prompt cost
+is wrong, and T003's framing -- "context tokens for a question needing one
+collection fall" -- was the wrong thing to measure.
+
+### What it does reduce is retrieval work
+
+Median of three runs per question, timed inside `aretrieve_documents`:
+
+| | all five | narrowed |
+|---|---|---|
+| median retrieval | **1.82s** | **1.43s** |
+
+About 21%, or roughly 0.4s against a first token near ten seconds. Real, and
+modest. Five collections mean ten sub-retrievals (BM25 and vector each); one
+collection means two.
+
+### So the honest case for this feature
+
+It did not fix a failing question -- the control already passed 13/13. It buys
+a fifth off retrieval time and it puts the right documents in a fixed-size
+context, which should matter most where the fixed ten are currently crowded out
+by the wrong collection. That last part is plausible and **not** measured here.
+
+Against that, a wrong narrow removes an answer rather than degrading it, which
+is why the prompt leans hard on leaving the selection empty and why every
+failure path in `resolve_collections` widens. The sweep shows correct routing
+on six questions; it does not show that the classifier is right in general.
+
+`complexes` still has no guard question (T005), so a classifier that never
+routes to it would score full marks.

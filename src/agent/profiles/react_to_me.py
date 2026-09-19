@@ -19,6 +19,7 @@ from agent.tasks.safety_checker import SafetyCheck
 from agent.tasks.unsafe_question import create_unsafe_answer_generator
 from reactome_mcp.answer import ToolCallingModel, answer_from_live_services
 from reactome_mcp.session import get_mcp_tools, is_configured
+from retrievers.csv_chroma import selected_collections
 from retrievers.reactome.rag import create_reactome_rag
 from retrievers.userguide.rag import create_userguide_rag
 from util.embedding_environment import EmbeddingEnvironment
@@ -28,6 +29,9 @@ logger = logging.getLogger(__name__)
 
 class ReactToMeState(BaseState):
     active_sources: list[SourceName]
+    # Empty means every collection, which is what `resolve_collections` does
+    # with it. Only meaningful when the active source is `reactome`.
+    collections: list[str]
 
 
 class ReactToMeGraphBuilder(BaseGraphBuilder):
@@ -162,6 +166,7 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
             reason_unsafe=safety_check.reason_unsafe,
             detected_language=detected_language,
             active_sources=active_sources,
+            collections=intent.collections,
         )
 
     async def _answer_from_live_services(
@@ -183,6 +188,11 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
             )
             fallback = dict(state)
             fallback["active_sources"] = ["reactome"]
+            # This fallback is retrieval over the whole bundle standing in for
+            # a live lookup; a question routed to `live` chose no collections,
+            # and narrowing to a selection nobody made would be worse than the
+            # answer it replaces.
+            fallback["collections"] = []
             # The real config, not a fresh one: it carries the callbacks the UI
             # streams through, and a fallback nobody can see is not a fallback.
             return await self.generate_answer(ReactToMeState(**fallback), config)
@@ -228,21 +238,38 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         if source == "live":
             return await self._answer_from_live_services(state, config)
         rag = self.rags[source]
-        result: dict[str, Any] = await rag.ainvoke(
-            {
-                "input": state["rephrased_input"],
-                # A separate variable, never concatenated into `input`:
-                # create_retrieval_chain passes `input` alone to the retriever, so
-                # anything folded into it reaches BM25 and the query expander.
-                "detected_language": state["detected_language"],
-                "chat_history": (
-                    state["chat_history"]
-                    if state["chat_history"]
-                    else [HumanMessage(state["user_input"])]
-                ),
-            },
-            config,
+        # Set around the whole retrieval rather than passed down:
+        # `create_retrieval_chain` gives the retriever no path for extra
+        # arguments, and LangGraph copies the context into the tasks it
+        # spawns, so a value set here reaches the retriever inside them.
+        # Reset in `finally`, because the graph reuses this task across turns.
+        #
+        # Only `reactome` has collections. `userguide` is a separate bundle
+        # with one, and leaving a stale selection set would narrow it to names
+        # it does not have -- which `resolve_collections` widens back, but
+        # silently and with a WARNING for every question.
+        token = selected_collections.set(
+            state["collections"] if source == "reactome" else None
         )
+        try:
+            result: dict[str, Any] = await rag.ainvoke(
+                {
+                    "input": state["rephrased_input"],
+                    # A separate variable, never concatenated into `input`:
+                    # create_retrieval_chain passes `input` alone to the
+                    # retriever, so anything folded into it reaches BM25 and
+                    # the query expander.
+                    "detected_language": state["detected_language"],
+                    "chat_history": (
+                        state["chat_history"]
+                        if state["chat_history"]
+                        else [HumanMessage(state["user_input"])]
+                    ),
+                },
+                config,
+            )
+        finally:
+            selected_collections.reset(token)
         return ReactToMeState(
             chat_history=[
                 HumanMessage(state["user_input"]),

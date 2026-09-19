@@ -45,7 +45,11 @@ from langchain_core.language_models.fake_chat_models import (  # noqa: E402
     FakeListChatModel,
 )
 
-from retrievers.csv_chroma import HybridRetriever, chroma_settings  # noqa: E402
+from retrievers.csv_chroma import (  # noqa: E402
+    HybridRetriever,
+    chroma_settings,
+    selected_collections,
+)
 
 
 # Large enough that the per-collection cap actually binds. At twelve it did
@@ -165,3 +169,40 @@ def test_async_returns_exactly_what_sync_returns(
     # reordering is a ranking change and the top documents are the ones that
     # reach the model.
     assert [d.page_content for d in asynchronous] == [d.page_content for d in sync]
+
+
+def test_both_paths_honour_the_same_collection_selection(tmp_path: Path) -> None:
+    """T017: a filter applied to one path only is the bug this pins.
+
+    The application serves through the async path and `bin/retrieval_baseline`
+    drives the sync one, so a selection honoured by only one means the measured
+    path and the served path search different collections -- and neither the
+    measurement nor the answer would look wrong.
+    """
+    _require_bm25_tokenizer()
+    embedding = DeterministicFakeEmbedding(size=16)
+    retriever = HybridRetriever.from_subdirectory(
+        llm=FakeListChatModel(responses=[""]),
+        embedding=embedding,
+        embeddings_directory=_bundle(tmp_path, embedding),
+    )
+    queries = ["apoptosis signalling"]
+
+    token = selected_collections.set(["alpha"])
+    try:
+        sync = retriever.retrieve_documents(
+            queries, CallbackManagerForRetrieverRun.get_noop_manager()
+        )
+        asynchronous = asyncio.run(
+            retriever.aretrieve_documents(
+                queries, AsyncCallbackManagerForRetrieverRun.get_noop_manager()
+            )
+        )
+    finally:
+        selected_collections.reset(token)
+
+    assert [d.page_content for d in asynchronous] == [d.page_content for d in sync]
+    # And the selection actually bit: `beta` documents must be absent from both.
+    for documents in (sync, asynchronous):
+        assert documents, "the selection removed everything, so this proves nothing"
+        assert all("beta" not in d.page_content for d in documents)
