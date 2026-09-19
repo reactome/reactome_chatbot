@@ -12,7 +12,14 @@ from collections.abc import Callable
 
 import pytest
 
-from evaluation.answer_sweep import EXPECTATIONS, Expectation, _contains, run
+from evaluation.answer_sweep import (
+    EXPECTATIONS,
+    Expectation,
+    Result,
+    _contains,
+    _looks_transient,
+    run,
+)
 
 
 class StubGraph:
@@ -250,3 +257,24 @@ def test_a_variant_guard_accepts_a_variant_named_in_a_list() -> None:
             assert not re.search(
                 pattern, pathway_prose, re.IGNORECASE
             ), f"{expectation.question}: {pattern} accepts pathway prose"
+
+
+def test_a_correct_empty_answer_is_not_treated_as_an_outage() -> None:
+    # `src/reactome_mcp/answer.py` instructs the model: "If the tools do not
+    # answer the question, say plainly what you could not find out." So
+    # "could not find out" is the phrasing of a *correct* negative answer, and
+    # having it in TRANSIENT meant a real failure was retried and could pass on
+    # the second attempt -- the gate quietly forgiving what it exists to catch.
+    correct_negative = (
+        "I could not find out which curator annotated this reaction from the "
+        "tools available."
+    )
+    assert not _looks_transient(
+        Result(expectation=EXPECTATIONS[0], answer=correct_negative)
+    )
+    # The literal this repository emits itself on a failed lookup still counts.
+    outage = (
+        "I could not complete that lookup against the live Reactome services. "
+        "Please try rephrasing the question."
+    )
+    assert _looks_transient(Result(expectation=EXPECTATIONS[0], answer=outage))
