@@ -87,10 +87,14 @@ WORDS = [
 ]
 
 
-def _bundle(tmp_path: Path, embedding: DeterministicFakeEmbedding) -> Path:
+def _bundle(
+    tmp_path: Path,
+    embedding: DeterministicFakeEmbedding,
+    collections: dict[str, int] | None = None,
+) -> Path:
     csv_dir = tmp_path / "csv_files"
     csv_dir.mkdir(parents=True, exist_ok=True)
-    for collection, count in COLLECTIONS.items():
+    for collection, count in (collections or COLLECTIONS).items():
         with open(csv_dir / f"{collection}.csv", "w", newline="") as handle:
             writer = csv.DictWriter(
                 handle, fieldnames=["st_id", "display_name", "text"]
@@ -206,3 +210,56 @@ def test_both_paths_honour_the_same_collection_selection(tmp_path: Path) -> None
     for documents in (sync, asynchronous):
         assert documents, "the selection removed everything, so this proves nothing"
         assert all("beta" not in d.page_content for d in documents)
+
+
+REAL_NAMES = ("complexes", "disease_variants", "ewas", "reactions", "summations")
+
+
+@pytest.mark.requires_retrieval_stack
+@pytest.mark.parametrize("wanted", REAL_NAMES)
+def test_every_collection_can_be_reached_and_only_it(
+    tmp_path: Path, wanted: str
+) -> None:
+    """T005a and T007: assert at retrieval level that a collection was searched.
+
+    Neither `complexes` nor `reactions` can be guarded by asking a question.
+    Measured 2026-09-19 (specs/009-collection-routing/research.md): their
+    content is duplicated in `summations` prose and in the input/output names
+    carried by `reactions`, so every candidate answered just as well with the
+    collection removed. Two failed hunts and a structural explanation.
+
+    So the guard lives here instead, and it is worth being exact about what it
+    replaces. It catches a *plumbing* failure: a collection that cannot be
+    reached at all, through a name mismatch or a lookup that silently yields
+    nothing. It does **not** catch the failure that motivated T005 -- a
+    classifier that simply never chooses a collection. Nothing deterministic
+    can, because that is one model call's judgement; it would need the routing
+    distribution watched in production, or a periodic probe. The residual risk
+    is recorded in research.md rather than claimed as covered.
+    """
+    _require_bm25_tokenizer()
+    embedding = DeterministicFakeEmbedding(size=16)
+    retriever = HybridRetriever.from_subdirectory(
+        llm=FakeListChatModel(responses=[""]),
+        embedding=embedding,
+        embeddings_directory=_bundle(
+            tmp_path, embedding, {name: 20 for name in REAL_NAMES}
+        ),
+    )
+
+    token = selected_collections.set([wanted])
+    try:
+        documents = retriever.retrieve_documents(
+            ["kinase phosphorylation"],
+            CallbackManagerForRetrieverRun.get_noop_manager(),
+        )
+    finally:
+        selected_collections.reset(token)
+
+    assert documents, f"{wanted} is selectable but returned nothing"
+    for other in REAL_NAMES:
+        if other == wanted:
+            continue
+        assert not any(
+            other in d.page_content for d in documents
+        ), f"selecting {wanted} also searched {other}"
