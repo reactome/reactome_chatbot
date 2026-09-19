@@ -1,7 +1,7 @@
 import asyncio
 import os
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
@@ -196,6 +196,22 @@ def resolve_llm_model(llm_config: "LLMConfig | None") -> tuple[str, str, str | N
 
 
 MAX_CITATIONS = 12
+
+
+def _is_sub_retriever(event: Mapping[str, Any]) -> bool:
+    """True for the per-collection searches inside the hybrid retriever.
+
+    Identified by the tags this repository sets itself in
+    `HybridRetriever.retrieve_documents` -- `{collection}-bm25-{i}` and
+    `{collection}-vector-{i}` -- rather than by retriever class name. The name
+    is not usable: the user guide's own chain-level retriever is a
+    `VectorStoreRetriever` too, and filtering on that would silently drop every
+    user-guide citation.
+    """
+    return any(
+        "-bm25-" in str(tag) or "-vector-" in str(tag)
+        for tag in (event.get("tags") or [])
+    )
 
 
 def _citation_for(document: "Document") -> "AnswerEvent | None":
@@ -451,7 +467,38 @@ class AgentGraph:
                     retrieval_done = True
                 continue
 
+            if kind == "on_retriever_end" and _is_sub_retriever(event):
+                # Skip. The hybrid retriever runs one BM25 and one vector search
+                # per query variant per collection, and each fires its own
+                # on_retriever_end -- 51 events for one question. Taking
+                # citations from those meant taking them from whichever fired
+                # first, which is always the first collection's BM25.
+                #
+                # Measured: 97 of 97 cited documents came from reactions.csv,
+                # including for "which diseases involve variants of the PTEN
+                # gene", where the disease_variants documents were retrieved and
+                # could never be cited. The contract calls citations "the most
+                # relevant few"; they were one sub-retriever's few.
+                continue
+
             if kind == "on_retriever_end":
+                # Skip the sub-retrievers. The Reactome ensemble fires 51 of
+                # these -- one per collection per query variant per retriever --
+                # and only the last is the fused result. Citations were taken
+                # from the first events to arrive, so every one came from
+                # whichever collection happened to be iterated first: measured,
+                # 97 of 97 cited documents were from reactions.csv, including for
+                # "which diseases involve variants of the PTEN gene", whose
+                # disease_variants documents were retrieved and never cited.
+                #
+                # Keyed on the child tags this repo creates itself
+                # ({collection}-bm25-{i}, {collection}-vector-{i}) rather than on
+                # the retriever class: the user guide's top-level retriever is a
+                # VectorStoreRetriever, so filtering by class would silently drop
+                # its citations instead.
+                tags = event.get("tags") or []
+                if any("-bm25-" in tag or "-vector-" in tag for tag in tags):
+                    continue
                 retrieval_done = True
                 for document in event["data"].get("output") or []:
                     if len(seen_citations) >= MAX_CITATIONS:
