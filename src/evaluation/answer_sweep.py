@@ -236,10 +236,23 @@ def _contains(haystack: str, needle: str) -> bool:
 # broken". Seen in the wild: reactome.org served a Cloudflare challenge to a
 # burst of requests and the answer degraded to "I could not find out ... due to
 # a service error" -- which is the error handling working, not a regression.
+#
+# "could not find out" used to be here and was removed 2026-09-19. It is the
+# phrasing `src/reactome_mcp/answer.py` *instructs* the model to use for a
+# legitimate empty result -- "If the tools do not answer the question, say
+# plainly what you could not find out". So it matched a correct negative answer
+# as readily as an outage, and it resolved that ambiguity in the direction that
+# hides regressions: a real failure was retried and could pass on the second
+# attempt, quietly forgiving the thing the gate exists to catch.
+#
+# What is left is one literal this repository emits itself and one phrase a
+# correct answer has no reason to use. Neither is a real signal. The real one
+# would be the tool exception in `answer_from_live_services`, which is caught,
+# logged and then paraphrased by the model -- so it cannot be recovered from
+# the text. Propagating it out of the live path is recorded as follow-up work.
 TRANSIENT = (
     "service error",
     "could not complete that lookup",
-    "could not find out",
 )
 
 

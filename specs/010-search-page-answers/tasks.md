@@ -62,6 +62,7 @@ state.
 - [ ] T020c Establish whether a search-page question needs all four preprocessing calls. The sequential half of this is answered and done (T019a): they run in two rounds and cost 2.6s at the median, not the ~16s recorded here, which never reproduced
 - [ ] T021 Land spec 009 collection routing and re-measure. **Still open — I marked this done on 2026-09-18 and was wrong.** What landed is *source* routing (`resolve_active_sources` picks reactome / userguide / live). Collection routing is selecting among the five collections *within* the reactome bundle, and it is not implemented: `QueryIntent` has no `collections` field, `resolve_collections` does not exist, and `retrieve_documents` still loops over every collection
 - [ ] T022 Re-assess FR-005 against the result and say plainly whether 2s/10s is reachable
+- [ ] T023 Propagate a real failure signal out of the live path, so `answer_sweep`'s retry keys on the tool exception rather than on the model's prose. Today `answer_from_live_services` catches the exception, logs it and hands the model `"This lookup failed: {exc}"`, which the model paraphrases -- so nothing distinguishes "upstream broke" from "there is genuinely nothing" by the time the sweep sees it. The prose marker that conflated them is removed; what remains is one literal this repo emits itself, which is a narrower guess, not a signal
 
 ## Phase 6: Handover
 
