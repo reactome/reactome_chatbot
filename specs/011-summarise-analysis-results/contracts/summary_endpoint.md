@@ -36,8 +36,18 @@ Turnstile-backed identity cookie validated on that request:
 | `human_iat` | epoch seconds, when the challenge was solved |
 | `human_sub` | the cookie's random 16-byte subject, for per-person rate limiting |
 
-**Freshness is 30 minutes and the bound is inclusive**: a challenge solved
-exactly 1800.000s ago is accepted, 1800.001s is not. Both sides enforce it --
+**Freshness is 30 minutes and the bound is inclusive**: `now - human_iat <= 1800`,
+so a challenge solved exactly 1800s ago is accepted and 1801s is not.
+
+Stated in whole seconds on purpose. The bound was first agreed as "1800.000
+accepted, 1800.001 refused", which is not a distinction this claim can carry:
+`human_iat` is epoch **seconds**, and it is derived as the cookie's expiry
+minus a constant TTL, so it arrives already rounded to a second. A sub-second
+edge would be a boundary neither side can actually be on, tested against a
+clock finer than the value. Effective precision is one second, and a challenge
+solved 1800.4s ago presents as 1800 and is accepted.
+
+Both sides enforce it --
 the website refuses to mint past it, this service refuses to accept past it --
 so neither is a single point of failure, and if it is ever changed it is
 changed in both places in one change.
@@ -86,6 +96,12 @@ data: {"state": "summarised", "seconds": 6.2}
 `state` is one of `summarised`, `not_found`, `gone`, `unsupported`, `refused`,
 `failed`. Anything but `summarised` means render no summary. Always HTTP 200 —
 never an error code, so the analysis page cannot be broken by this service.
+
+**No prose source list.** Citations arrive as `citation` events, as on
+`/api/answer`, and the summary text must not end with a list of them --
+`SourcesSectionStripper` exists because that duplicate cost the website a
+pattern it could not write correctly. This endpoint's prompt is its own, so
+the right fix here is not to ask for one in the first place.
 
 `cached` on `start` says whether this text was generated now or reused. It exists
 because the interface must not imply determinism it does not have: a reader who
