@@ -149,6 +149,28 @@ linked phrase in the middle. Where the model used a link as a trailing citation,
 that leaves the pathway title as a bare clause -- cosmetic, and the structured
 `citation` events are the reliable source for links.
 
+**No trailing source list.** The answer prompts ask for a bullet list of every
+citation at the end, which the chat UI renders. This caller gets its links from
+the `citation` events, so that list is a duplicate -- and after the anchors come
+off, a duplicate with no links in it. The endpoint drops the heading and
+everything after it.
+
+Callers **must not** pattern-match the heading themselves. Until 2026-09-19 the
+prompts specified no heading at all, only "a bullet-point list of each unique
+citation anchor", so the model invented one per answer: `## Sources`,
+`## Most relevant sources`, `relevant references`, `Key sources`,
+`Top citations`. The website was matching those and could not win, because it
+was fitting samples from an unconstrained generator. The prompts now pin the
+heading to exactly:
+
+```
+## Sources
+```
+
+and `SourcesSectionStripper` removes it on the served path. The stripper still
+accepts the older variants, because a prompt is an instruction and not a
+guarantee, but no caller needs to know that.
+
 ## Properties worth holding to
 
 **It must be safe to ignore.** Any failure, timeout, refusal or unverified caller
