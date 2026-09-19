@@ -375,3 +375,27 @@ passes, and the only symptom is answers that are quietly worse.
 That is smaller than it was -- the plumbing is now pinned, and the nine
 questions above found no case where `complexes` was needed for a correct
 answer at all -- but it is not nothing, and it is not what T005a tests.
+
+## The routing probe, 2026-09-19
+
+T005b asked for the observation no test can make. `bin/routing-probe` makes it:
+ten questions, two per collection, asking the classifier directly and checking
+**what it selected** rather than what any answer said. One model call each, so
+it is cheap enough to run on every deploy.
+
+Two properties, and the asymmetry between them is the same one the feature
+rests on:
+
+- **Coverage** -- every collection is chosen by at least one question. This is
+  the guard for `complexes`, which nothing else can watch.
+- **No wrong narrow** -- a question that narrows must include the collection
+  its answer lives in. An empty selection is *never* a failure, because
+  widening is safe and the prompt asks for it whenever the model is unsure.
+
+First run: **10/10 correct, every collection chosen, nothing left open.** So
+`complexes` is being routed to, and the under-routing risk that argued against
+deploying is not currently realised.
+
+What that is not: a guarantee. It is a snapshot of one model's judgement on
+one day. The risk was always drift, and the probe is only a guard if it keeps
+being run -- which is why T005c exists and is open.
