@@ -272,3 +272,33 @@ def test_a_missing_disclosure_choice_is_rejected(keys: tuple[str, str]) -> None:
         json={"token": "MjAyNjA5MTkxODExNDJfMTE", "caller_token": _token(private)},
     )
     assert response.status_code == 422
+
+
+def test_the_unbuilt_identifier_tier_is_refused_not_quietly_downgraded(
+    keys: tuple[str, str], wired: _Counter
+) -> None:
+    # `identifiers` is agreed and not built. Serving an aggregate summary for
+    # it would disclose nothing extra and still be wrong: the reader chose the
+    # disclosing option and would get the other, with nothing saying so. A
+    # choice quietly overridden is worse than one refused, because it looks
+    # like it was honoured.
+    private, public = keys
+    payload = _events(
+        _post(public, caller_token=_token(private), disclosure="identifiers").text
+    )[-1][1]
+    assert payload["state"] == "refused"
+    assert payload["reason"] == "unsupported_tier"
+    assert wired.calls == 0
+
+
+def test_a_rate_limited_caller_is_not_told_it_is_unverified(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # It used to answer `no_caller`, which an interface renders as "not
+    # verified" to a reader who is verified and merely asked too often.
+    monkeypatch.setattr(
+        "api.analysis_summary._limiter", SlidingWindowLimiter(limit=0, window=600.0)
+    )
+    private, public = keys
+    payload = _events(_post(public, caller_token=_token(private)).text)[-1][1]
+    assert payload["reason"] == "rate_limited"

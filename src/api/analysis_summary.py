@@ -28,7 +28,11 @@ from agent.graph import resolve_llm_model
 from agent.models import get_llm
 from analysis.client import current_release, fetch_result
 from analysis.disclosure import Tier, for_tier
-from analysis.summarise import VERDICT_INSTRUCTION, prompt_input
+from analysis.summarise import (
+    INEXACT_COUNT_INSTRUCTION,
+    VERDICT_INSTRUCTION,
+    prompt_input,
+)
 from util.caller_token import TokenRejectedError, human_presence_reason, verify
 from util.logging import logging
 from util.rate_limit import identity_of, limiter_from_env
@@ -55,10 +59,19 @@ Rules, in order of importance:
 3. Whenever you call a pathway significant, say whether that is before or
    after multiple-testing correction.
 4. Do not name a pathway that is not in the data below.
-5. Do not list sources or citations at the end. The interface renders them
+5. Never state how many pathways were significant overall unless the data
+   says that count is exact. Only the highest-ranked are included.
+6. Do not list sources or citations at the end. The interface renders them
    from structured events; a list here is a duplicate.
-6. Four short paragraphs at most. Plain prose for a working scientist.
+7. Four short paragraphs at most. Plain prose for a working scientist.
 """.strip()
+
+
+#: `identifiers` is agreed in the contract and not built (Phase 4). Serving an
+#: aggregate summary for it would be safe but silently wrong: the reader chose
+#: the disclosing option and would be given the other one, with nothing saying
+#: so. A choice quietly overridden is worse than a choice refused.
+IMPLEMENTED_TIERS = ("aggregate",)
 
 
 class SummaryRequest(BaseModel):
@@ -107,12 +120,17 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
     if presence:
         return _refusal(presence, presence)
 
+    if body.disclosure not in IMPLEMENTED_TIERS:
+        return _refusal("unsupported_tier", f"tier {body.disclosure} is not built")
+
     # Per person where the website tells us who, else per caller. `human_sub`
     # is the identity cookie's subject; `sub` is the caller token's own.
     human_sub = claims.get("human_sub")
     key = f"human:{human_sub}" if isinstance(human_sub, str) and human_sub else None
     if not _limiter.allow(key or identity_of(claims, body.caller_token)):
-        return _refusal("no_caller", "rate limited")
+        # Its own reason: a caller told `no_caller` would render "not
+        # verified" to a reader who is verified and simply asked too often.
+        return _refusal("rate_limited", "rate limited")
 
     async def stream() -> AsyncIterator[str]:
         state = "failed"
@@ -154,6 +172,8 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
                 provider, model, base_url = resolve_llm_model(None)
                 llm = get_llm(provider, model, base_url=base_url, request_timeout=90.0)
                 instruction = VERDICT_INSTRUCTION[model_input["verdict"]]
+                if not model_input["significant_count_is_exact"]:
+                    instruction = f"{instruction} {INEXACT_COUNT_INSTRUCTION}"
                 messages = [
                     ("system", SYSTEM_PROMPT),
                     (

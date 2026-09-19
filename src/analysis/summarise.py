@@ -7,6 +7,7 @@ the case a model will otherwise narrate as though the lowest p-value were a
 discovery (FR-004).
 """
 
+from itertools import pairwise
 from typing import Any
 
 #: The conventional threshold, and it is stated rather than assumed so a
@@ -37,12 +38,35 @@ def prompt_input(payload: dict[str, Any]) -> dict[str, Any]:
         verdict = "has_findings"
 
     unmatched = payload.get("identifiersNotFound")
+    shown = len(pathways)
+    total = payload.get("pathways_total", shown)
+
+    # How many pathways are significant *overall* is not in this payload, and
+    # saying so is not pedantry: handed "12 significant" and "1280 total", a
+    # model writes "12 significant out of 1280". Measured against a real
+    # result on 2026-09-19, and it is false -- the top twelve were sent, all
+    # twelve passed, so the true count is at least twelve and unknown above.
+    #
+    # It is exact only when a non-significant pathway appears among those
+    # shown, and the results are ordered worst-p-value-last. The ordering is
+    # checked rather than assumed, because relying on someone else's default
+    # sort is how this kind of claim becomes wrong quietly.
+    p_values = [q.get("entities", {}).get("pValue") for q in pathways]
+    ordered = all(
+        a is not None and b is not None and a <= b for a, b in pairwise(p_values)
+    )
+    significant_is_exact = shown >= total or (
+        ordered and bool(pathways) and not _significant(pathways[-1])
+    )
+
     out: dict[str, Any] = {
         "analysis_type": payload.get("summary", {}).get("type"),
         "verdict": verdict,
         "fdr_threshold": FDR_THRESHOLD,
-        "pathways_total": payload.get("pathways_total", len(pathways)),
-        "pathways_significant": len(significant),
+        "pathways_total": total,
+        "pathways_shown": shown,
+        "significant_among_shown": len(significant),
+        "significant_count_is_exact": significant_is_exact,
         "identifiers_not_found": unmatched,
         "pathways": [
             {
@@ -73,3 +97,12 @@ VERDICT_INSTRUCTION = {
     "has_findings": "Describe the pathways that pass correction. Distinguish "
     "significance before and after correction wherever you mention it.",
 }
+
+#: Appended whenever the count is a lower bound. Separate from the verdict
+#: because it is about what the *data* omits rather than what it shows.
+INEXACT_COUNT_INSTRUCTION = (
+    "Only the highest-ranked pathways are included here, and every one of them "
+    "is significant, so the number significant overall is NOT known. Never "
+    "state how many of the total were significant, and never imply that only "
+    "the pathways listed here passed."
+)
