@@ -19,9 +19,10 @@ routing stops searching them. Routing must not land before this closes, or the
 acceptance criterion cannot detect the failure the feature can cause.
 
 - [x] T004 [P] Add a `summations`-dependent question to `EXPECTATIONS` in src/evaluation/answer_sweep.py (Selective autophagy / lysosome; verified by removal)
-- [ ] T005 [P] Find a `complexes` candidate that fails without the collection (the first attempt did not), then add the question to `EXPECTATIONS` in src/evaluation/answer_sweep.py
+- [x] T005 [P] ~~Find a `complexes` candidate that fails without the collection~~ **Attempted and abandoned with a reason, 2026-09-19.** Six candidates across two question shapes; every one answered just as well without the collection, because complex names appear throughout `reactions` (as input and output names) and `summations` prose. The one thing unique to `complexes` -- the component list -- has answers too variable to assert on: the same configuration returned 1 to 6 of 7 components. See research.md
+- [x] T005a [P] Assert at retrieval level that `complexes` was searched, in tests/retrievers/test_sync_async_equivalence.py -- parametrised over all five real collection names: each is reachable, and selecting it searches nothing else. Verified by sabotaging `resolve_collections` to ignore the selection, which fails all five
 - [x] T006 [P] Add an `ewas`-dependent question to `EXPECTATIONS` in src/evaluation/answer_sweep.py (TP53 UniProt P04637; verified by removal)
-- [ ] T007 Assert at retrieval level that `reactions` was searched, in tests/retrievers/test_collection_selection.py -- no answer-level question can guard it, because every reaction name also appears in `summations`
+- [x] T007 Assert at retrieval level that `reactions` was searched -- closed by the same parametrised test as T005a, in tests/retrievers/test_sync_async_equivalence.py. No answer-level question can guard it, because every reaction name also appears in `summations`
 - [x] T008 Verify each new question FAILS when its collection is removed from the bundle copy, and passes with it present; record the evidence in the PR (method established; two of four candidates survived it)
 - [x] T009 Pin current behaviour: a characterization test in tests/retrievers/test_collection_selection.py asserting that with no selection every collection in the bundle is searched
 - [ ] T010 Run `./bin/answer-sweep` against Release97 and confirm green before any behaviour change

@@ -293,3 +293,64 @@ is not in the bundle is widened to all by `resolve_collections` with a WARNING,
 which is the failure direction this feature requires. Constraining the schema
 would instead make structured output reject the response, turning a harmless
 mistake into a failed answer.
+
+## T005: `complexes` cannot be guarded by asking a question either
+
+Attempted properly on 2026-09-19 rather than left as "no candidate found". It
+failed, and the reason is structural and worth writing down, because it is the
+same reason `reactions` failed and it was not obvious the second time.
+
+**Method.** Removing `complexes` from what `resolve_collections` sees is an
+exact simulation of a bundle without it -- the name then widens to all the
+others, as it would there. This replaced copying a 3.3G bundle.
+
+**A false start worth recording.** The first attempt set the
+`selected_collections` ContextVar around the call. That no longer works now the
+classifier is wired: `generate_answer` sets it from the classifier's choice and
+overwrites anything set outside, so *both arms searched only `complexes`* and
+the result was void. It was caught by instrumenting what retrieval actually
+searched, which is the second time in one day that check has saved a
+measurement.
+
+**Composition questions are too variable to build a guard on.** Asking which
+proteins make up a complex requires naming four to seven things, and the model
+names a different subset each run. The same configuration, three runs:
+
+| question | complexes only | complexes+summations | all five |
+|---|---|---|---|
+| Nup107 components (of 4) | 2, 1, 1 | 2, 1, 2 | 2, 1, 1 |
+| U7 snRNP subunits (of 7) | 2, 1, 1 | 2, 2, 2 | 6, 2, 2 |
+
+An earlier four-run pass appeared to show `complexes` making the Nup107 answer
+*worse* -- 1,1,1,1 against 3,3,3,3 without it. It did not survive being run
+again. That claim was under-powered and is withdrawn; the variance is larger
+than any difference between the arms, which is exactly the trap
+[[probabilistic-bugs-need-sized-tests]] describes.
+
+Every guard that works is a **single stable token**: `P04637`, `Tangier`,
+`lysosom`. So the question was inverted to ask for one -- name the components,
+ask which complex holds them:
+
+| question | with `complexes` | without |
+|---|---|---|
+| Which complex contains CYBA and CYBB? | 0/4 | 0/4 |
+| Which complex has NUP133, NUP160, NUP37? | 4/4 | **4/4** |
+| Which complex is made of LSM10, LSM11, SNRPB? | 3/4 | **4/4** |
+
+**Answered just as well without it.** Complex *names* appear throughout
+`reactions`, as the names of inputs and outputs, and throughout `summations`
+prose. So any question naming or seeking a complex is answerable from those,
+and the only thing structurally unique to `complexes` -- the component list --
+is the thing whose answers are too variable to assert on.
+
+### What this changes
+
+`complexes` joins `reactions`: a collection whose content is duplicated
+elsewhere cannot be guarded by asking a question, however the question is
+worded. T005 should become what T007 already is -- a retrieval-level assertion
+that the collection was searched -- rather than a hunt for a better candidate,
+which is now two failed hunts and a structural explanation of why.
+
+Until that exists, **the sweep cannot detect a classifier that never routes to
+`complexes`**, and that remains the strongest reason not to deploy routing on
+the strength of a green sweep alone.

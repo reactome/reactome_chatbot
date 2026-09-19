@@ -206,3 +206,61 @@ def test_both_paths_honour_the_same_collection_selection(tmp_path: Path) -> None
     for documents in (sync, asynchronous):
         assert documents, "the selection removed everything, so this proves nothing"
         assert all("beta" not in d.page_content for d in documents)
+
+
+REAL_NAMES = ("complexes", "disease_variants", "ewas", "reactions", "summations")
+
+
+def _named_bundle(
+    tmp_path: Path, embedding: DeterministicFakeEmbedding, names: tuple[str, ...]
+) -> Path:
+    global COLLECTIONS
+    previous = COLLECTIONS
+    COLLECTIONS = {name: 20 for name in names}
+    try:
+        return _bundle(tmp_path, embedding)
+    finally:
+        COLLECTIONS = previous
+
+
+@pytest.mark.requires_retrieval_stack
+@pytest.mark.parametrize("wanted", REAL_NAMES)
+def test_every_collection_can_be_reached_and_only_it(
+    tmp_path: Path, wanted: str
+) -> None:
+    """T005a and T007: assert at retrieval level that a collection was searched.
+
+    Neither `complexes` nor `reactions` can be guarded by asking a question.
+    Measured 2026-09-19 (specs/009-collection-routing/research.md): their
+    content is duplicated in `summations` prose and in the input/output names
+    carried by `reactions`, so every candidate answered just as well with the
+    collection removed. Two failed hunts and a structural explanation.
+
+    So the guard lives here instead. A collection that routing can never reach
+    -- a name mismatch, a lookup that silently yields nothing -- is invisible
+    to `answer-sweep` by construction, and this is what would catch it.
+    """
+    _require_bm25_tokenizer()
+    embedding = DeterministicFakeEmbedding(size=16)
+    retriever = HybridRetriever.from_subdirectory(
+        llm=FakeListChatModel(responses=[""]),
+        embedding=embedding,
+        embeddings_directory=_named_bundle(tmp_path, embedding, REAL_NAMES),
+    )
+
+    token = selected_collections.set([wanted])
+    try:
+        documents = retriever.retrieve_documents(
+            ["kinase phosphorylation"],
+            CallbackManagerForRetrieverRun.get_noop_manager(),
+        )
+    finally:
+        selected_collections.reset(token)
+
+    assert documents, f"{wanted} is selectable but returned nothing"
+    for other in REAL_NAMES:
+        if other == wanted:
+            continue
+        assert not any(
+            other in d.page_content for d in documents
+        ), f"selecting {wanted} also searched {other}"
