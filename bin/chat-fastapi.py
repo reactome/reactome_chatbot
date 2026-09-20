@@ -14,6 +14,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from agent.registry import build_graph, set_graph
+from api.analysis_summary import router as analysis_summary_router
 from api.answer import router as answer_router
 from util.caller_token import load_verifying_key
 from util.captcha_scope import is_captcha_exempt
@@ -66,6 +67,11 @@ CHAINLIT_URI = os.getenv("CHAINLIT_URI")
 # the Chainlit mount point so one nginx location covers both.
 API_PREFIX = f"{CHAINLIT_URI}/api" if CHAINLIT_URI else "/chat/api"
 app.include_router(answer_router, prefix=API_PREFIX)
+# Same prefix, so the captcha exemption below covers both. It verifies its own
+# caller with a signed token and additionally requires evidence that a person
+# is present -- a stricter bar than the answer endpoint's, because it discloses
+# the user's own uploaded analysis rather than public pathway text.
+app.include_router(analysis_summary_router, prefix=API_PREFIX)
 CHAINLIT_URL = os.getenv("CHAINLIT_URL")
 
 CLOUDFLARE_SECRET_KEY = get_secret("CLOUDFLARE_SECRET_KEY")
