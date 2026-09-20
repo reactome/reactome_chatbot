@@ -263,16 +263,37 @@ history, it **changed 14 of 15**:
 - "What does CDK5 phosphorylate in Alzheimer disease?" -> "What are the
   substrates that CDK5 phosphorylates in the context of..."
 
-That is query normalisation, not follow-up resolution -- real work that feeds
-retrieval and intent classification. Removing it is a retrieval-quality
-change, not a plumbing one.
+That is query normalisation rather than follow-up resolution: it feeds
+retrieval and intent classification with different text than it was given.
+
+**"Changed" is not "improved", and the two facts here point opposite ways.**
+It rewrites 14 of 15 questions, *and* the sweep passes without it -- so for
+the tracked set those rewrites are not load-bearing. What the measurement
+supports is that removing it is a retrieval-*input* change rather than a
+plumbing one, and therefore needs measuring on something other than the
+thirteen questions that already pass either way. It does not support the
+claim that the rewrites are valuable.
 
 ### With it bypassed, the sweep still passes -- and latency barely moves
 
 `answer-sweep` was 13/13 with the rephraser replaced by a pass-through
-(precondition asserted: bypassed 13 times). But first token p50 went to
-**2.97s with both this and query expansion disabled, against 2.73s with
-expansion disabled alone.** No better, and inside the noise.
+(precondition asserted: bypassed 13 times).
+
+Latency, both arms **interleaved in one window**, n=25 each:
+
+| | first token p50 | min | max |
+|---|---|---|---|
+| expansion off | 2.94s | 2.35s | 5.94s |
+| expansion off + rephrase off | **2.83s** | 2.04s | 8.12s |
+
+About **0.11s**, which is the round arithmetic below rather than the ~0.8s the
+call's own duration suggests.
+
+A first version of this compared 2.97s against a 2.73s taken in an earlier
+run and reported "no better, slightly worse" -- the cross-window comparison
+that the T022 review had just corrected, repeated here a few hours later. The
+direction was wrong; the conclusion that the saving is ~0.1s rather than ~0.8s
+was not, and is now better supported.
 
 ### Why removing a 0.88s call saved 0.07s
 
@@ -294,8 +315,8 @@ change this measurement did not make.
 ### So, for FR-005a
 
 **2s to first token is not reachable by removing these two calls.** Expansion
-off gets p50 to 2.73s; adding rephrase-off does not improve it, and the tail
-returns (max 11.31s). Restructuring preprocessing into one round is worth
+off gets p50 to 2.94s and adding rephrase-off reaches 2.83s -- the best single
+observation dipped to 2.04s, and the median did not. Restructuring preprocessing into one round is worth
 about 0.8s more on paper, which would put p50 near 2s -- on paper, and against
 a tail that neither change addresses.
 
