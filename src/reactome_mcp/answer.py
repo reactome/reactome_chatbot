@@ -13,6 +13,7 @@ found", and a cap means a confused model cannot spend a user's afternoon.
 
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 from langchain_core.messages import (
@@ -27,6 +28,33 @@ from langchain_core.tools import BaseTool
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_ROUNDS = 2
+
+
+@dataclass
+class LiveReport:
+    """What went wrong underneath, for a caller that needs to know.
+
+    A tool exception is caught here, logged, and handed to the model as
+    `"This lookup failed: ..."` -- which the model then paraphrases. By the
+    time anyone downstream sees text, the fact that an upstream call failed
+    has been through a lossy channel and is gone.
+
+    `answer_sweep` needs it: a failed lookup and a correct empty answer read
+    the same in prose, and the sweep was matching prose to decide whether to
+    retry. It keyed on "could not find out" -- which is the wording the prompt
+    *instructs* for a legitimate empty result -- so a real regression was
+    retried and could pass on the second attempt.
+
+    Optional on purpose. Callers that do not care pass nothing and the
+    signature is unchanged for all of them.
+    """
+
+    tool_failures: int = 0
+    failed_tools: list[str] = field(default_factory=list)
+
+    @property
+    def upstream_failed(self) -> bool:
+        return self.tool_failures > 0
 
 
 @runtime_checkable
@@ -64,6 +92,7 @@ async def answer_from_live_services(
     language: str = "English",
     chat_history: Sequence[BaseMessage] | None = None,
     config: RunnableConfig | None = None,
+    report: LiveReport | None = None,
 ) -> str:
     """Run the tool-calling loop and return the answer text.
 
@@ -110,6 +139,12 @@ async def answer_from_live_services(
                 # to say it could not find out, rather than invent.
                 logger.warning("live tool %s failed: %s", call["name"], exc)
                 result = f"This lookup failed: {exc}"
+                # Recorded before it is stringified into the model's context,
+                # which is the last point at which it is still a fact rather
+                # than a paraphrase.
+                if report is not None:
+                    report.tool_failures += 1
+                    report.failed_tools.append(str(call["name"]))
             messages.append(ToolMessage(content=str(result), tool_call_id=call["id"]))
     else:
         # Out of rounds with tool calls still pending: answer from what we have

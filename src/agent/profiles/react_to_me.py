@@ -17,7 +17,11 @@ from agent.tasks.intent_classifier import (
 )
 from agent.tasks.safety_checker import SafetyCheck
 from agent.tasks.unsafe_question import create_unsafe_answer_generator
-from reactome_mcp.answer import ToolCallingModel, answer_from_live_services
+from reactome_mcp.answer import (
+    LiveReport,
+    ToolCallingModel,
+    answer_from_live_services,
+)
 from reactome_mcp.session import get_mcp_tools, is_configured
 from retrievers.csv_chroma import selected_collections
 from retrievers.reactome.rag import create_reactome_rag
@@ -39,6 +43,11 @@ class ReactToMeState(BaseState):
     # `resolve_collections` does with it, and it is how the graph behaved
     # before routing. Only meaningful when the active source is `reactome`.
     collections: NotRequired[list[str]]
+    # True when a live tool call raised underneath this answer. Carried so a
+    # caller can tell "upstream broke" from "there is genuinely nothing" --
+    # which is impossible from the answer text, because the model paraphrases
+    # the failure into the same prose a correct empty result produces.
+    live_tool_failed: NotRequired[bool]
 
 
 class ReactToMeGraphBuilder(BaseGraphBuilder):
@@ -204,6 +213,7 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
             # streams through, and a fallback nobody can see is not a fallback.
             return await self.generate_answer(ReactToMeState(**fallback), config)
 
+        report = LiveReport()
         answer = await answer_from_live_services(
             # BaseChatModel satisfies ToolCallingModel at runtime; its
             # bind_tools signature is wider than the Protocol restates.
@@ -213,10 +223,12 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
             language=state["detected_language"],
             chat_history=state["chat_history"] or None,
             config=config,
+            report=report,
         )
         return ReactToMeState(
             chat_history=[HumanMessage(state["user_input"]), AIMessage(answer)],
             answer=answer,
+            live_tool_failed=report.upstream_failed,
         )
 
     async def generate_unsafe_response(

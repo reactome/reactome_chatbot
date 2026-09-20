@@ -202,6 +202,9 @@ class Result:
     answer: str = ""
     seconds: float = 0.0
     error: str = ""
+    #: A live tool call raised underneath this answer. The real signal the
+    #: retry keys on, in place of matching the model's prose.
+    upstream_failed: bool = False
     missing: list[str] = field(default_factory=list)
     forbidden: list[str] = field(default_factory=list)
     retried: bool = False
@@ -232,45 +235,27 @@ def _contains(haystack: str, needle: str) -> bool:
     return re.search(pattern, haystack, re.IGNORECASE) is not None
 
 
-# Text meaning "the upstream service had a problem", not "the chatbot is
-# broken". Seen in the wild: reactome.org served a Cloudflare challenge to a
-# burst of requests and the answer degraded to "I could not find out ... due to
-# a service error" -- which is the error handling working, not a regression.
+# Retrying is decided by what actually happened upstream, not by what the
+# answer says about it. `answer_from_live_services` records a tool exception
+# on a `LiveReport` before stringifying it into the model's context, and the
+# graph carries that out as `live_tool_failed` -- see T023 in spec 010.
 #
-# "could not find out" used to be here and was removed 2026-09-19. It is the
-# phrasing `src/reactome_mcp/answer.py` *instructs* the model to use for a
-# legitimate empty result -- "If the tools do not answer the question, say
-# plainly what you could not find out". So it matched a correct negative answer
-# as readily as an outage, and it resolved that ambiguity in the direction that
-# hides regressions: a real failure was retried and could pass on the second
-# attempt, quietly forgiving the thing the gate exists to catch.
+# This used to match prose, and one of the strings was "could not find out",
+# which is the wording `src/reactome_mcp/answer.py` *instructs* the model to
+# use for a legitimate empty result. So the marker matched correct answers by
+# construction, and since a match triggers a retry, a real regression got a
+# second attempt and could pass. The gate was forgiving precisely what it
+# exists to catch.
 #
-# The two left were put to the same test, 2026-09-19, rather than assumed safe
-# because they read less like instructions. Neither appears in any prompt, tool
-# description or example in this repository. "could not complete that lookup"
-# is a literal emitted only by `answer_from_live_services`; "service error" has
-# no source here at all, and can only arise from the model paraphrasing the
-# `"This lookup failed: {exc}"` it is handed when a tool actually raised. So
-# both derive from real failure paths rather than from intended output.
-#
-# That is evidence, not proof: the MCP tool descriptions come from the remote
-# server and are not checked here. The real one
-# would be the tool exception in `answer_from_live_services`, which is caught,
-# logged and then paraphrased by the model -- so it cannot be recovered from
-# the text. Propagating it out of the live path is recorded as follow-up work.
-TRANSIENT = (
-    "service error",
-    "could not complete that lookup",
-)
+# The lesson generalises past this file: an exception that is caught, logged,
+# stringified into a prompt and paraphrased has been through a lossy channel
+# by design. Matching on the far end recovers nothing; the fix belongs where
+# the information is discarded.
 
 
 def _has_collection(name: str) -> bool:
     bundle = EmbeddingEnvironment.get_dir("reactome")
     return bool(bundle and (bundle / name / "chroma.sqlite3").exists())
-
-
-def _looks_transient(result: "Result") -> bool:
-    return any(_contains(result.answer, marker) for marker in TRANSIENT)
 
 
 async def run(expectations: tuple[Expectation, ...], retries: int = 1) -> list[Result]:
@@ -324,6 +309,7 @@ async def run(expectations: tuple[Expectation, ...], retries: int = 1) -> list[R
                         enable_postprocess=False,
                     )
                     result.answer = " ".join(str(out.get("answer") or "").split())
+                    result.upstream_failed = bool(out.get("live_tool_failed"))
                 except Exception as exc:
                     result.error = f"{type(exc).__name__}: {exc}"
                 result.seconds = time.monotonic() - started
@@ -347,7 +333,7 @@ async def run(expectations: tuple[Expectation, ...], retries: int = 1) -> list[R
                 if (
                     not result.ok
                     and attempt < retries
-                    and (result.error or _looks_transient(result))
+                    and (result.error or result.upstream_failed)
                 ):
                     print(
                         "        upstream looked unwell; retrying once", file=sys.stderr

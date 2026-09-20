@@ -14,7 +14,11 @@ from typing import Any
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.tools import tool
 
-from reactome_mcp.answer import MAX_TOOL_ROUNDS, answer_from_live_services
+from reactome_mcp.answer import (
+    MAX_TOOL_ROUNDS,
+    LiveReport,
+    answer_from_live_services,
+)
 
 
 @tool
@@ -220,3 +224,58 @@ def test_chat_history_is_carried_into_the_conversation() -> None:
     assert any(
         isinstance(m, HumanMessage) and "what species" in str(m.content) for m in sent
     ), "the history never reached the model"
+
+
+def test_a_tool_exception_is_recorded_before_it_becomes_prose() -> None:
+    """The signal T023 exists to provide.
+
+    The exception is caught, logged, and handed to the model as text, which
+    the model then paraphrases. By the time anything downstream reads prose,
+    "a lookup failed" and "there is genuinely nothing" are the same sentence.
+    Recorded here, at the last point where it is still a fact.
+    """
+    llm = _FakeLLM(
+        [
+            AIMessage("", tool_calls=[_call("failing_tool")]),
+            AIMessage("I could not find out."),
+        ]
+    )
+    report = LiveReport()
+    answer = asyncio.run(
+        answer_from_live_services(llm, [failing_tool], "anything", report=report)
+    )
+
+    assert report.upstream_failed
+    assert report.tool_failures == 1
+    assert report.failed_tools == ["failing_tool"]
+    # And the prose really is indistinguishable, which is the whole point.
+    assert "could not find out" in answer.lower()
+
+
+def test_a_successful_lookup_records_no_failure() -> None:
+    llm = _FakeLLM(
+        [
+            AIMessage("", tool_calls=[_call("reactome_species")]),
+            AIMessage("Reactome covers 96 species."),
+        ]
+    )
+    report = LiveReport()
+    asyncio.run(answer_from_live_services(llm, [reactome_species], "x", report=report))
+    assert not report.upstream_failed
+    assert report.failed_tools == []
+
+
+def test_the_report_is_optional_so_existing_callers_are_unaffected() -> None:
+    llm = _FakeLLM(
+        [
+            AIMessage("", tool_calls=[_call("failing_tool")]),
+            AIMessage("I could not look that up."),
+        ]
+    )
+    # No report passed: must behave exactly as before, not raise.
+    assert (
+        "could not"
+        in asyncio.run(
+            answer_from_live_services(llm, [failing_tool], "anything")
+        ).lower()
+    )

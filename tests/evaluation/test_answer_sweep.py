@@ -9,15 +9,14 @@ answer the real chatbot gives.
 import asyncio
 import re
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
 from evaluation.answer_sweep import (
     EXPECTATIONS,
     Expectation,
-    Result,
     _contains,
-    _looks_transient,
     run,
 )
 
@@ -28,15 +27,23 @@ class StubGraph:
     def __init__(self, answers: list[str | Exception]) -> None:
         self.answers = answers
         self.asked: list[str] = []
+        #: Whether each answer should report a live tool having raised. The
+        #: sweep keys its retry on this rather than on the prose, because a
+        #: failed lookup and a correct empty result read identically.
+        self.upstream_failed: list[bool] = []
 
     async def ainvoke(
         self, question: str, *_args: object, **_kwargs: object
     ) -> dict[str, object]:
         self.asked.append(question)
-        answer = self.answers[min(len(self.asked) - 1, len(self.answers) - 1)]
+        index = min(len(self.asked) - 1, len(self.answers) - 1)
+        answer = self.answers[index]
         if isinstance(answer, Exception):
             raise answer
-        return {"answer": answer}
+        failed = (
+            self.upstream_failed[index] if index < len(self.upstream_failed) else False
+        )
+        return {"answer": answer, "live_tool_failed": failed}
 
     async def close_pool(self) -> None:
         pass
@@ -97,7 +104,11 @@ def test_an_exception_is_a_failure_not_a_crash(stub: Install) -> None:
 
 
 def test_a_transient_blip_is_retried_and_the_retry_is_reported(stub: Install) -> None:
-    graph = stub(["A service error occurred.", "Use ReactomeGSA."])
+    # Driven by the recorded tool failure, not by what the answer says. The
+    # first attempt's prose is deliberately indistinguishable from a correct
+    # empty result: only the signal separates them.
+    graph = stub(["I could not find out.", "Use ReactomeGSA."])
+    graph.upstream_failed = [True, False]
     (result,) = asyncio.run(run(ONE))
     assert result.ok
     assert len(graph.asked) == 2
@@ -259,22 +270,26 @@ def test_a_variant_guard_accepts_a_variant_named_in_a_list() -> None:
             ), f"{expectation.question}: {pattern} accepts pathway prose"
 
 
-def test_a_correct_empty_answer_is_not_treated_as_an_outage() -> None:
-    # `src/reactome_mcp/answer.py` instructs the model: "If the tools do not
-    # answer the question, say plainly what you could not find out." So
-    # "could not find out" is the phrasing of a *correct* negative answer, and
-    # having it in TRANSIENT meant a real failure was retried and could pass on
-    # the second attempt -- the gate quietly forgiving what it exists to catch.
-    correct_negative = (
-        "I could not find out which curator annotated this reaction from the "
-        "tools available."
-    )
-    assert not _looks_transient(
-        Result(expectation=EXPECTATIONS[0], answer=correct_negative)
-    )
-    # The literal this repository emits itself on a failed lookup still counts.
-    outage = (
-        "I could not complete that lookup against the live Reactome services. "
-        "Please try rephrasing the question."
-    )
-    assert _looks_transient(Result(expectation=EXPECTATIONS[0], answer=outage))
+def test_a_correct_empty_answer_is_not_retried(stub: Install) -> None:
+    # The bug this replaced: "could not find out" was a retry marker, and it
+    # is the wording `src/reactome_mcp/answer.py` instructs the model to use
+    # for a legitimate empty result. So a real regression was retried and
+    # could pass on the second attempt -- the gate forgiving exactly what it
+    # exists to catch.
+    #
+    # Same prose as the retried case above, no tool failure recorded, so it
+    # must fail once and stay failed.
+    graph = stub(["I could not find out.", "Use ReactomeGSA."])
+    graph.upstream_failed = [False, False]
+    (result,) = asyncio.run(run(ONE))
+    assert not result.ok
+    assert len(graph.asked) == 1, "a correct empty answer must not be retried"
+    assert not result.retried
+
+
+def test_the_retry_decision_never_reads_the_answer_text() -> None:
+    # A regression guard on the design rather than a behaviour: if prose
+    # matching comes back, it will come back as a list of markers here.
+    source = Path("src/evaluation/answer_sweep.py").read_text()
+    assert "TRANSIENT" not in source
+    assert "_looks_transient" not in source
