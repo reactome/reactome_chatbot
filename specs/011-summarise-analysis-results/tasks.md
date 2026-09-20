@@ -106,10 +106,10 @@ exists to prevent. Both signals are checked now.
 
 ## Phase 7: Stability and transparency (FR-014, FR-015)
 
-- [ ] T027 Store summaries keyed `(token, release, tier)` in `src/analysis/store.py`; an aggregate summary and a disclosing one are different artefacts and must not be interchanged
-- [ ] T028 [P] Test in `tests/analysis/test_store.py` that the same token returns byte-identical text on a second request, and that a release change discards the stored summary — the second half matters because the Analysis Service deletes the underlying result on a release (research D2, D3)
-- [ ] T029 Report `cached` on the `start` event in `src/api/analysis_summary.py`, so the interface can say a summary was reused rather than implying the generator is deterministic (FR-015)
-- [ ] T030 Record in [research.md](./research.md) that the first increment's store is in-process and lost on deploy, and open follow-up work for a durable store — beta sets no `POSTGRES_LANGGRAPH_DB` today (research D4)
+- [x] T027 Store summaries keyed `(token, release, tier)` in `src/analysis/store.py`; an aggregate summary and a disclosing one are different artefacts and must not be interchanged. **Keyed on the tier that *applied*, not the one requested** — a disclosure that could not be honoured produced an aggregate summary, and storing it under `identifiers` would serve it back later as though the identifiers had been used
+- [x] T028 [P] Test in `tests/analysis/test_store.py` that the same token returns byte-identical text on a second request, and that a release change discards the stored summary — the second half matters because the Analysis Service deletes the underlying result on a release (research D2, D3)
+- [x] T029 Report `cached` on the `start` event in `src/api/analysis_summary.py`, so the interface can say a summary was reused rather than implying the generator is deterministic (FR-015)
+- [x] T030 Record in [research.md](./research.md) that the first increment's store is in-process and lost on deploy, and open follow-up work for a durable store — beta sets no `POSTGRES_LANGGRAPH_DB` today (research D4)
 
 ## Phase 8: Human presence (FR-013) — UNBLOCKED 2026-09-19
 
