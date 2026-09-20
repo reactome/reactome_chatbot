@@ -196,3 +196,37 @@ def test_a_list_body_is_an_outcome_not_an_exception() -> None:
             return await analysis_client.fetch_result(SAMPLE_TOKEN, client=http)
 
     assert asyncio.run(go()).outcome == "failed"  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize("gsa_type", ["GSA_REGULATION", "GSA_STATISTICS", "GSVA"])
+def test_a_gsa_type_is_declined_even_without_a_gsa_method(gsa_type: str) -> None:
+    # The first version recognised GSA by `gsaMethod` alone. A result
+    # carrying one of these types without that field would have been
+    # summarised confidently -- the exact outcome D8 exists to prevent. The
+    # type list is read from the API's own enum, not guessed.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"summary": {"type": gsa_type}, "pathways": []})
+
+    async def go() -> object:
+        async with _client(handler) as http:
+            return await analysis_client.fetch_result(SAMPLE_TOKEN, client=http)
+
+    assert asyncio.run(go()).outcome == "unsupported"  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    "supported", ["OVERREPRESENTATION", "EXPRESSION", "SPECIES_COMPARISON"]
+)
+def test_the_types_this_service_models_are_not_declined(supported: str) -> None:
+    # A check that declined everything would pass the test above and make the
+    # feature useless.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"summary": {"type": supported}, "pathways": []}
+        )
+
+    async def go() -> object:
+        async with _client(handler) as http:
+            return await analysis_client.fetch_result(SAMPLE_TOKEN, client=http)
+
+    assert asyncio.run(go()).outcome == "ok"  # type: ignore[attr-defined]

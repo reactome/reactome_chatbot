@@ -86,13 +86,23 @@ surface.
 
 ## Phase 6: User Story 4 — Readings specific to the analysis type (P4)
 
+**The type enum, read from the API on 2026-09-20 rather than guessed**:
+`SPECIES_COMPARISON`, `OVERREPRESENTATION`, `EXPRESSION`, `GSA_REGULATION`,
+`GSA_STATISTICS`, `GSVA`. Three are summarised; the three GSA ones are
+declined.
+
+That reading also closed a gap in T009: `is_gsa` recognised ReactomeGSA by
+its `gsaMethod` field alone, so a result carrying one of those types
+*without* that field would have been summarised confidently — the outcome D8
+exists to prevent. Both signals are checked now.
+
 **Goal**: An expression result and a species comparison each get the reading that fits them.
 
 **Independent test**: Submit one of each; neither summary describes the other's kind of result.
 
-- [ ] T024 [US4] Branch the prompt input on `summary.type` in `src/analysis/summarise.py`, and for `EXPRESSION` carry `entities.exp[]` and the value range **without** `expression.columnNames`, which is user-supplied text
-- [ ] T025 [US4] For `SPECIES_COMPARISON`, state in the prompt input that findings are inferred by orthology in `src/analysis/summarise.py`, so the summary cannot present them as observed
-- [ ] T026 [P] [US4] Test that an expression result's summary refers to behaviour across columns and a species comparison's does not, and vice versa, in `tests/analysis/test_summarise.py`
+- [x] T024 [US4] Branch the prompt input on `summary.type` in `src/analysis/summarise.py`, and for `EXPRESSION` carry `entities.exp[]` and the value range **without** `expression.columnNames`, which is user-supplied text
+- [x] T025 [US4] For `SPECIES_COMPARISON`, state in the prompt input that findings are inferred by orthology in `src/analysis/summarise.py`, so the summary cannot present them as observed
+- [x] T026 [P] [US4] Test that an expression result's summary refers to behaviour across columns and a species comparison's does not, and vice versa, in `tests/analysis/test_summarise.py`
 
 ## Phase 7: Stability and transparency (FR-014, FR-015)
 

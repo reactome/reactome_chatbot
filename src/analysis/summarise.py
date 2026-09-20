@@ -150,6 +150,36 @@ UNMATCHED_INSTRUCTION = (
     "suggests the wrong species was analysed."
 )
 
+#: What each analysis type supports saying, and what it does not. A summary
+#: that ignores the type either says nothing useful or says something wrong,
+#: and the wrong thing is the likelier: an expression result read as a plain
+#: enrichment loses the whole point of it, and a species comparison read as
+#: observation states as fact what was inferred.
+TYPE_INSTRUCTION = {
+    "EXPRESSION": (
+        "This is an expression analysis. Each pathway carries `exp`, its "
+        "values across the submitted columns in order. Describe how the "
+        "highlighted pathways behave *across* those columns -- rising, "
+        "falling, mixed -- rather than treating the result as a single "
+        "enrichment. **The columns are unlabelled here and you must not "
+        "guess what they are**: say 'the first column' and so on, never a "
+        "condition, timepoint or sample name."
+    ),
+    "SPECIES_COMPARISON": (
+        "This is a species comparison. The findings are **inferred by "
+        "orthology**, not observed in the compared species, and you must say "
+        "so. An inferred event means Reactome projected a human event onto "
+        "that species because the proteins correspond; it is not evidence "
+        "the event has been measured there."
+    ),
+    "OVERREPRESENTATION": (
+        "This is an over-representation analysis: which pathways contain "
+        "more of the submitted identifiers than chance would give. It says "
+        "nothing about direction, magnitude or regulation, so do not "
+        "describe anything as up, down, increased or activated."
+    ),
+}
+
 #: Always appended. Both halves are things a model will otherwise get wrong
 #: in the same direction -- towards overstating a finding.
 STATISTICS_INSTRUCTION = (

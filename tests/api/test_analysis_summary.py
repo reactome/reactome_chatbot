@@ -431,3 +431,42 @@ def test_nothing_to_disclose_is_not_a_failed_disclosure(
         _post(public, caller_token=_token(private), disclosure="identifiers").text
     )[0][1]
     assert start["disclosure"] == "identifiers"
+
+
+@pytest.mark.parametrize(
+    ("analysis_type", "expected", "forbidden"),
+    [
+        ("EXPRESSION", "across", "orthology"),
+        ("SPECIES_COMPARISON", "orthology", "columns"),
+        ("OVERREPRESENTATION", "up, down", "orthology"),
+    ],
+)
+def test_each_type_gets_its_own_reading_on_the_served_path(
+    keys: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    analysis_type: str,
+    expected: str,
+    forbidden: str,
+) -> None:
+    # US4's independent test: submit each type and check neither summary is
+    # told the other's reading. Asserted on what reaches the model, over
+    # HTTP, because the branch is in the endpoint and not in `summarise`.
+    monkeypatch.setitem(RESULT["summary"], "type", analysis_type)
+    sent: list[Any] = []
+
+    class _Recording(_Counter):
+        async def astream(self, messages: Any) -> AsyncIterator[Any]:
+            sent.append(messages)
+            async for chunk in super().astream(messages):
+                yield chunk
+
+    recording = _Recording()
+    private, public = keys
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr("api.analysis_summary.get_llm", lambda *a, **k: recording)
+        response = _post(public, caller_token=_token(private))
+    assert _events(response.text)[0][1]["analysis_type"] == analysis_type
+    assert sent, "the model was never called, so this proves nothing"
+    prompt = json.dumps(sent, default=str)
+    assert expected in prompt, f"{analysis_type} was not given its own reading"
+    assert forbidden not in prompt, f"{analysis_type} was given another's"

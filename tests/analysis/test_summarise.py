@@ -210,3 +210,32 @@ def test_the_fragility_threshold_discriminates_on_realistic_inputs() -> None:
     real_flags = [p["fragile"] for p in prompt_input(realistic)["pathways"]]
     assert all(tiny_flags), "a hit on two entities must be flagged"
     assert not any(real_flags), "ordinary hits must not all be flagged"
+
+
+def test_each_analysis_type_is_told_what_it_may_and_may_not_say() -> None:
+    # US4. A summary that ignores the type either says nothing useful or
+    # says something wrong, and wrong is likelier: an expression result read
+    # as a plain enrichment loses the point, and a species comparison read as
+    # observation states as fact what was inferred.
+    from analysis.summarise import TYPE_INSTRUCTION
+
+    assert "across" in TYPE_INSTRUCTION["EXPRESSION"]
+    assert "must not" in TYPE_INSTRUCTION["EXPRESSION"]
+    assert "orthology" in TYPE_INSTRUCTION["SPECIES_COMPARISON"]
+    assert "not evidence the event has been measured" in (
+        TYPE_INSTRUCTION["SPECIES_COMPARISON"].replace("  ", " ")
+    )
+    # The over-representation reading exists to forbid direction language,
+    # which is the thing that result cannot support at all.
+    assert "up, down" in TYPE_INSTRUCTION["OVERREPRESENTATION"]
+
+
+def test_no_type_instruction_claims_another_types_reading() -> None:
+    # The cross-check US4 asks for: neither summary may describe the other's
+    # kind of result. Asserted on the instructions, since that is where the
+    # confusion would originate.
+    from analysis.summarise import TYPE_INSTRUCTION
+
+    assert "orthology" not in TYPE_INSTRUCTION["EXPRESSION"]
+    assert "columns" not in TYPE_INSTRUCTION["SPECIES_COMPARISON"]
+    assert "columns" not in TYPE_INSTRUCTION["OVERREPRESENTATION"]

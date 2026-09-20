@@ -137,3 +137,14 @@ def test_no_warnings_key_when_the_service_sent_none() -> None:
     result = json.loads(json.dumps(RESULT))
     result["warnings"] = []
     assert "warnings" not in aggregate(result)
+
+
+def test_expression_values_survive_but_their_labels_do_not() -> None:
+    # The expression story needs the per-pathway values; it must never need
+    # the column names, which are user-supplied text like "Patient_001_tumour".
+    result = json.loads(json.dumps(RESULT))
+    result["pathways"][0]["entities"]["exp"] = [1.2, -0.4, 0.9]
+    payload = aggregate(result)
+    assert payload["pathways"][0]["entities"]["exp"] == [1.2, -0.4, 0.9]
+    assert "columnNames" not in json.dumps(payload)
+    assert "Patient_001_tumour" not in json.dumps(payload)
