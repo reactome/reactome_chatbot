@@ -91,3 +91,33 @@ def test_an_unsorted_result_is_never_claimed_as_exact() -> None:
     payload = _payload(0.9, 0.001)
     payload["pathways_total"] = 1280
     assert prompt_input(payload)["significant_count_is_exact"] is False
+
+
+def test_a_result_with_everything_matched_says_so_rather_than_hedging() -> None:
+    # US2 scenario 2. "Nothing went wrong" is the case a model most readily
+    # embellishes into a caveat, so it is stated as a fact in the input
+    # rather than left to be noticed.
+    payload = _payload(0.001)
+    payload["identifiersNotFound"] = 0
+    out = prompt_input(payload)
+    assert out["all_identifiers_matched"] is True
+    assert out["identifiers_not_found"] == 0
+
+
+def test_unmatched_identifiers_are_reported_as_a_count_not_a_proportion() -> None:
+    # Measured against beta: the aggregate result carries how many were NOT
+    # found and nothing about how many were submitted. The denominator lives
+    # only behind `/found/all`, which returns the reader's own identifiers --
+    # so a proportion is not derivable at this tier, and asking for one would
+    # invent a statistic the way "12 significant out of 1280" did (D9).
+    from analysis.summarise import UNMATCHED_INSTRUCTION
+
+    payload = _payload(0.001)
+    payload["identifiersNotFound"] = 7
+    out = prompt_input(payload)
+    assert out["identifiers_not_found"] == 7
+    assert out["all_identifiers_matched"] is False
+    assert "how many were submitted" in UNMATCHED_INSTRUCTION
+    assert "Never state a proportion" in UNMATCHED_INSTRUCTION
+    # Nothing in the payload lets a proportion be computed.
+    assert not any("submitted" in k or "total_identifiers" in k for k in out)

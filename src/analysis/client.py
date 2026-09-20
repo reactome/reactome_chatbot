@@ -177,3 +177,44 @@ async def current_release(*, client: httpx.AsyncClient | None = None) -> str | N
     finally:
         if owned:
             await client.aclose()
+
+
+async def fetch_not_found(
+    token: str, *, limit: int = 50, client: httpx.AsyncClient | None = None
+) -> list[str] | None:
+    """The user's unmatched identifiers. **Identifier tier only.**
+
+    This is the endpoint that returns the reader's own submitted data, so it
+    is a separate function taking a separate decision rather than a flag on
+    `fetch_result`. A flag acquires a default, and a default here is a
+    disclosure nobody chose.
+
+    Bounded: a list of thousands would be sent to a model provider and tell
+    the reader nothing a sample does not.
+    """
+    if not is_well_formed(token):
+        return None
+    owned = client is None
+    client = client or httpx.AsyncClient(timeout=TIMEOUT_SECONDS)
+    try:
+        response = await client.get(
+            f"{base_url()}/token/{token}/notFound",
+            headers=_headers(),
+            params={"pageSize": limit, "page": 1},
+        )
+        if response.status_code != 200:
+            return None
+        payload = response.json()
+    except Exception as exc:
+        logger.warning("not-found lookup failed: %s", type(exc).__name__)
+        return None
+    finally:
+        if owned:
+            await client.aclose()
+    if not isinstance(payload, list):
+        return None
+    return [
+        str(entry["id"])
+        for entry in payload
+        if isinstance(entry, dict) and entry.get("id")
+    ][:limit]

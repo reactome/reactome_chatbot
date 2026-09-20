@@ -26,10 +26,12 @@ from pydantic import BaseModel, Field
 
 from agent.graph import resolve_llm_model
 from agent.models import get_llm
-from analysis.client import current_release, fetch_result
+from analysis.client import current_release, fetch_not_found, fetch_result
 from analysis.disclosure import Tier, for_tier
 from analysis.summarise import (
     INEXACT_COUNT_INSTRUCTION,
+    NAMED_UNMATCHED_INSTRUCTION,
+    UNMATCHED_INSTRUCTION,
     VERDICT_INSTRUCTION,
     prompt_input,
 )
@@ -67,11 +69,7 @@ Rules, in order of importance:
 """.strip()
 
 
-#: `identifiers` is agreed in the contract and not built (Phase 4). Serving an
-#: aggregate summary for it would be safe but silently wrong: the reader chose
-#: the disclosing option and would be given the other one, with nothing saying
-#: so. A choice quietly overridden is worse than a choice refused.
-IMPLEMENTED_TIERS = ("aggregate",)
+IMPLEMENTED_TIERS = ("aggregate", "identifiers")
 
 
 class SummaryRequest(BaseModel):
@@ -143,6 +141,14 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
 
                 payload = for_tier(fetched.result, body.disclosure)
                 model_input = prompt_input(payload)
+                if body.disclosure == "identifiers":
+                    # The only place this service asks for the reader's own
+                    # identifiers, reached only because they chose it. A
+                    # separate call taking a separate decision, never a flag
+                    # with a default, and never on the aggregate path.
+                    unmatched = await fetch_not_found(body.token)
+                    if unmatched:
+                        model_input["identifiers_not_found_names"] = unmatched
                 release = await current_release()
                 yield _sse(
                     "start",
@@ -174,6 +180,9 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
                 instruction = VERDICT_INSTRUCTION[model_input["verdict"]]
                 if not model_input["significant_count_is_exact"]:
                     instruction = f"{instruction} {INEXACT_COUNT_INSTRUCTION}"
+                instruction = f"{instruction} {UNMATCHED_INSTRUCTION}"
+                if model_input.get("identifiers_not_found_names"):
+                    instruction = f"{instruction} {NAMED_UNMATCHED_INSTRUCTION}"
                 messages = [
                     ("system", SYSTEM_PROMPT),
                     (

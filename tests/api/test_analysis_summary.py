@@ -274,21 +274,72 @@ def test_a_missing_disclosure_choice_is_rejected(keys: tuple[str, str]) -> None:
     assert response.status_code == 422
 
 
-def test_the_unbuilt_identifier_tier_is_refused_not_quietly_downgraded(
-    keys: tuple[str, str], wired: _Counter
+def _with_not_found_spy(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Records every request for the reader's own identifiers."""
+    asked: list[str] = []
+
+    async def _spy(token: str, **_kwargs: Any) -> list[str]:
+        asked.append(token)
+        return ["SMITH_LAB_SECRET_GENE_001", "PATIENT_004_MARKER"]
+
+    monkeypatch.setattr("api.analysis_summary.fetch_not_found", _spy)
+    return asked
+
+
+def test_the_aggregate_tier_never_asks_for_the_users_identifiers(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `identifiers` is agreed and not built. Serving an aggregate summary for
-    # it would disclose nothing extra and still be wrong: the reader chose the
-    # disclosing option and would get the other, with nothing saying so. A
-    # choice quietly overridden is worse than one refused, because it looks
-    # like it was honoured.
+    # T019, and the single most important assertion in this feature. Asserted
+    # by recording the outbound call, not by reading the summary and seeing
+    # nothing alarming -- a model that simply did not mention them would pass
+    # the second check while the identifiers had already left the service.
+    asked = _with_not_found_spy(monkeypatch)
     private, public = keys
-    payload = _events(
+    events = _events(_post(public, caller_token=_token(private)).text)
+    assert events[-1][1]["state"] == "summarised"
+    assert asked == [], "the aggregate tier fetched the user's identifiers"
+
+
+def test_the_identifier_tier_asks_only_when_it_was_chosen(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asked = _with_not_found_spy(monkeypatch)
+    private, public = keys
+    events = _events(
         _post(public, caller_token=_token(private), disclosure="identifiers").text
-    )[-1][1]
-    assert payload["state"] == "refused"
-    assert payload["reason"] == "unsupported_tier"
-    assert wired.calls == 0
+    )
+    assert events[-1][1]["state"] == "summarised"
+    assert len(asked) == 1, "the chosen tier did not fetch what it promised"
+
+
+def test_the_identifiers_reach_the_model_only_on_the_disclosing_tier(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The guarantee stated as the reader would understand it: on the default
+    # choice their identifiers are not sent anywhere, and on the other choice
+    # they are -- which is the whole point of offering a choice.
+    _with_not_found_spy(monkeypatch)
+    sent: list[Any] = []
+
+    class _Recording(_Counter):
+        async def astream(self, messages: Any) -> AsyncIterator[Any]:
+            sent.append(messages)
+            async for chunk in super().astream(messages):
+                yield chunk
+
+    private, public = keys
+    for tier, expected in (("aggregate", False), ("identifiers", True)):
+        sent.clear()
+        recording = _Recording()
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(
+                "api.analysis_summary.get_llm",
+                lambda *a, _r=recording, **k: _r,
+            )
+            _post(public, caller_token=_token(private), disclosure=tier)
+        assert sent, f"{tier}: the model was never called, so this proves nothing"
+        leaked = "SMITH_LAB_SECRET_GENE_001" in json.dumps(sent, default=str)
+        assert leaked is expected, f"{tier} tier sent identifiers: {leaked}"
 
 
 def test_a_rate_limited_caller_is_not_told_it_is_unverified(
@@ -302,3 +353,33 @@ def test_a_rate_limited_caller_is_not_told_it_is_unverified(
     private, public = keys
     payload = _events(_post(public, caller_token=_token(private)).text)[-1][1]
     assert payload["reason"] == "rate_limited"
+
+
+def test_the_disclosing_tier_is_told_to_name_what_it_was_given(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Measured 2026-09-20: the first version sent the identifiers and never
+    # mentioned them, because nothing asked it to. The reader chose to
+    # disclose and got the aggregate summary back -- disclosure with no
+    # benefit, which is worse than not offering the choice.
+    _with_not_found_spy(monkeypatch)
+    sent: list[Any] = []
+
+    class _Recording(_Counter):
+        async def astream(self, messages: Any) -> AsyncIterator[Any]:
+            sent.append(messages)
+            async for chunk in super().astream(messages):
+                yield chunk
+
+    private, public = keys
+    for tier, expected in (("identifiers", True), ("aggregate", False)):
+        sent.clear()
+        recording = _Recording()
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(
+                "api.analysis_summary.get_llm",
+                lambda *a, _r=recording, **k: _r,
+            )
+            _post(public, caller_token=_token(private), disclosure=tier)
+        told = "Name them" in json.dumps(sent, default=str)
+        assert told is expected, f"{tier}: instruction to name identifiers {told}"

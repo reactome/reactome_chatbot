@@ -81,6 +81,9 @@ def prompt_input(payload: dict[str, Any]) -> dict[str, Any]:
             for p in pathways
         ],
     }
+    # Stated rather than left for the model to notice, because "nothing went
+    # wrong" is the case a model most readily embellishes into a caveat.
+    out["all_identifiers_matched"] = unmatched == 0
     for optional in ("resourceSummary", "speciesSummary", "warnings", "expression"):
         if optional in payload:
             out[optional] = payload[optional]
@@ -97,6 +100,40 @@ VERDICT_INSTRUCTION = {
     "has_findings": "Describe the pathways that pass correction. Distinguish "
     "significance before and after correction wherever you mention it.",
 }
+
+#: Always appended. The aggregate result carries how many identifiers were
+#: *not* found and nothing at all about how many were submitted -- the
+#: denominator lives only behind `/found/all`, which returns the reader's own
+#: identifiers and is therefore the disclosing tier.
+#:
+#: So a proportion cannot be derived, and asking for one would produce the
+#: same class of invention as D9's "12 significant out of 1280". The reader
+#: knows how many they submitted; the count alone is useful to them.
+UNMATCHED_INSTRUCTION = (
+    "The data gives how many identifiers were NOT found and does not give how "
+    "many were submitted. State the count. Never state a proportion, a "
+    "percentage, or how many were found -- none of those are derivable. Use "
+    "`resourceSummary` and `speciesSummary` to say what the likely cause is: "
+    "identifiers resolving through a single resource suggests an identifier "
+    "type Reactome does not index, and pathways concentrated in one species "
+    "suggests the wrong species was analysed."
+)
+
+#: Appended only when the reader chose the disclosing tier and unmatched
+#: identifiers were actually retrieved.
+#:
+#: Without it the tier is the worst of both: their identifiers are sent to a
+#: model provider and the summary says exactly what the aggregate one said.
+#: Measured 2026-09-20 -- the first version sent the names and never
+#: mentioned them, because nothing asked it to. A disclosure has to buy the
+#: reader something or it should not be offered.
+NAMED_UNMATCHED_INSTRUCTION = (
+    "`identifiers_not_found_names` lists identifiers the reader submitted "
+    "that Reactome did not match, because they asked for them. Name them, and "
+    "say what their form suggests -- a gene symbol Reactome does not carry, an "
+    "identifier from a resource it does not index, an obsolete or misspelled "
+    "symbol. Only comment on the ones listed; the list may be truncated."
+)
 
 #: Appended whenever the count is a lower bound. Separate from the verdict
 #: because it is about what the *data* omits rather than what it shows.
