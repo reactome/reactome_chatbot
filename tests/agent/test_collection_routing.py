@@ -10,12 +10,15 @@ nothing may narrow a source that has no collections.
 import asyncio
 from typing import Any, cast
 
+import pytest
 from langchain_core.runnables import RunnableConfig
 
 from agent.profiles.react_to_me import ReactToMeGraphBuilder, ReactToMeState
 from agent.tasks.intent_classifier import QueryIntent, build_classifier_message
-from retrievers.csv_chroma import selected_collections
+from retrievers.csv_chroma import resolve_collections, selected_collections
 from retrievers.reactome.metadata_info import reactome_descriptions_info
+
+ALL = sorted(reactome_descriptions_info)
 
 
 def test_an_omitted_selection_means_every_collection() -> None:
@@ -135,3 +138,32 @@ def test_a_state_without_the_field_searches_everything() -> None:
     del state["collections"]
     asyncio.run(_builder(rag, "reactome").generate_answer(state, RunnableConfig()))
     assert rag.seen == [[]], "a pre-routing checkpoint must not crash or narrow"
+
+
+def test_an_unreachable_mcp_is_not_reported_as_a_transient_failure() -> None:
+    # `get_mcp_tools` remembers a failed start, so every later call returns
+    # None too and a retry could never succeed. Marking this transient would
+    # buy the sweep a second attempt guaranteed to fail. Pinned because the
+    # absence of the flag here reads like an oversight.
+    import agent.profiles.react_to_me as profile
+
+    rag = _RecordingRag()
+    builder = _builder(rag, "reactome")
+
+    async def _no_tools() -> None:
+        return None
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(profile, "get_mcp_tools", _no_tools)
+        state = _state("live", [])
+        state["active_sources"] = ["live"]
+        result = asyncio.run(
+            builder._answer_from_live_services(state, RunnableConfig())
+        )
+
+    assert result.get("live_tool_failed") is not True
+    # Either representation means "search everything": the fallback sets an
+    # empty selection explicitly, and `resolve_collections` widens both empty
+    # and absent to every collection. Asserting the meaning, not the shape.
+    assert rag.seen, "the fallback never reached retrieval"
+    assert resolve_collections(rag.seen[0], ALL) == ALL
