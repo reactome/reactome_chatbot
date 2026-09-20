@@ -198,6 +198,15 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         """
         tools = await get_mcp_tools()
         if not tools:
+            # Deliberately NOT reported as an upstream failure, and this is
+            # the kind of omission that looks like a bug later.
+            #
+            # `get_mcp_tools` returns None both when no server is configured
+            # and when starting one failed -- and it *remembers* the failure,
+            # so every later call returns None too. A retry could therefore
+            # never succeed, and marking this transient would buy a second
+            # attempt guaranteed to fail. It is a persistent condition, so the
+            # sweep should fail loudly on it rather than retry (Principle IV).
             logger.warning(
                 "Question routed to live lookup but no MCP tools are available; "
                 "falling back to retrieval."
