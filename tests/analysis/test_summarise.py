@@ -192,3 +192,21 @@ def test_the_model_is_told_not_to_repeat_our_field_names() -> None:
 
     assert "Never use the word 'fragile'" in STATISTICS_INSTRUCTION
     assert "internal labels" in STATISTICS_INSTRUCTION
+
+
+def test_the_fragility_threshold_discriminates_on_realistic_inputs() -> None:
+    # A flag that fires on everything is as useless as one that never fires,
+    # and this one fired on 12 of 12 pathways for a four-identifier analysis.
+    # Measured against beta: a hundred-gene analysis flags 0 of 12, with
+    # found counts of 13 to 67. Both ends pinned here with those real shapes.
+    tiny = _payload(1e-9, 1e-8, 1e-7)
+    for pathway in tiny["pathways"]:
+        pathway["entities"].update({"found": 2, "total": 4})
+    realistic = _payload(1e-9, 1e-8, 1e-7)
+    for pathway, found in zip(realistic["pathways"], (31, 17, 13), strict=True):
+        pathway["entities"].update({"found": found, "total": 164})
+
+    tiny_flags = [p["fragile"] for p in prompt_input(tiny)["pathways"]]
+    real_flags = [p["fragile"] for p in prompt_input(realistic)["pathways"]]
+    assert all(tiny_flags), "a hit on two entities must be flagged"
+    assert not any(real_flags), "ordinary hits must not all be flagged"

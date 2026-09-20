@@ -16,10 +16,22 @@ FDR_THRESHOLD = 0.05
 
 
 #: Below this many matched entities, a pathway's p-value rests on so little
-#: that it should not be read as evidence however small it is. Reactome's own
-#: user guide makes this point and it is the single thing a reader most often
-#: gets wrong -- a pathway with 2 of 3 entities found looks like a perfect hit
-#: and is nearly meaningless.
+#: that it should not be read as evidence however small it is -- a pathway
+#: with 2 of 3 entities found looks like a perfect hit and is nearly
+#: meaningless.
+#:
+#: **Five is chosen, not derived.** An earlier version of this comment said
+#: Reactome's user guide makes the point; it may, but nobody checked before
+#: writing that, so the claim is withdrawn rather than left cited. The
+#: number comes from this feature's own spec, which uses 2 of 3 as its
+#: example of what is not evidence, and from wanting a margin above it.
+#: Setting it properly is a curator's judgement, not a programmer's.
+#:
+#: It does discriminate, which is the part that was measured. Against beta on
+#: 2026-09-20: a four-identifier analysis flagged 12 of 12 shown pathways
+#: (found counts of 2), and a hundred-gene analysis flagged 0 of 12 (found
+#: counts 13 to 67). So it fires on the inputs where a hit really does rest
+#: on nothing and stays quiet on ordinary ones.
 #:
 #: Computed here rather than left to the model. Handed a small p-value and a
 #: small count and asked to be careful, a model describes the p-value.
