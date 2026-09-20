@@ -81,7 +81,8 @@ comparable time, and a caller must be able to ignore it safely.
 
 ```
 event: start
-data: {"release": 97, "analysis_type": "OVERREPRESENTATION", "cached": false}
+data: {"release": 97, "analysis_type": "OVERREPRESENTATION", "cached": false,
+       "disclosure": "aggregate"}
 
 event: token
 data: {"text": "Of the 312 pathways hit, four remain significant after "}
@@ -102,6 +103,21 @@ never an error code, so the analysis page cannot be broken by this service.
 `SourcesSectionStripper` exists because that duplicate cost the website a
 pattern it could not write correctly. This endpoint's prompt is its own, so
 the right fix here is not to ask for one in the first place.
+
+**`disclosure` on `start` is the tier the summary was actually built from**,
+which is not always the one requested. If `identifiers` was asked for and the
+unmatched identifiers could not be retrieved, the summary is the aggregate one
+and this says `aggregate`.
+
+Without it the reader chooses to disclose, the lookup fails, and they are
+handed the other summary with nothing to distinguish it -- disclosure with no
+benefit, and no way for the interface to say so. A caller should surface the
+difference rather than silently presenting an aggregate summary as the
+disclosing one.
+
+Nothing to disclose is **not** a failed disclosure: a result where every
+identifier matched reports `identifiers`, because the tier was honoured and
+there was simply nothing to retrieve.
 
 `cached` on `start` says whether this text was generated now or reused. It exists
 because the interface must not imply determinism it does not have: a reader who

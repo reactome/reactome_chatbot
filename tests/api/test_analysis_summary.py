@@ -383,3 +383,51 @@ def test_the_disclosing_tier_is_told_to_name_what_it_was_given(
             _post(public, caller_token=_token(private), disclosure=tier)
         told = "Name them" in json.dumps(sent, default=str)
         assert told is expected, f"{tier}: instruction to name identifiers {told}"
+
+
+def test_a_disclosure_that_could_not_be_honoured_is_reported(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The failure path of the bug this phase fixed. The reader chose to
+    # disclose, the lookup failed, and they got the aggregate summary with
+    # nothing saying the disclosure had not happened -- disclosure with no
+    # benefit again, arriving down the error path instead of the prompt.
+    async def _fails(_token: str, **_kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr("api.analysis_summary.fetch_not_found", _fails)
+    private, public = keys
+    start = _events(
+        _post(public, caller_token=_token(private), disclosure="identifiers").text
+    )[0][1]
+    assert start["disclosure"] == "aggregate", "the caller was not told"
+
+
+def test_the_applied_disclosure_matches_the_request_when_it_is_honoured(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _with_not_found_spy(monkeypatch)
+    private, public = keys
+    for tier in ("aggregate", "identifiers"):
+        start = _events(
+            _post(public, caller_token=_token(private), disclosure=tier).text
+        )[0][1]
+        assert start["disclosure"] == tier
+
+
+def test_nothing_to_disclose_is_not_a_failed_disclosure(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A result where every identifier matched has nothing to retrieve. That
+    # is the disclosing tier honoured, not denied -- reporting it as a
+    # downgrade would tell the reader something untrue.
+    async def _empty(_token: str, **_kwargs: Any) -> list[str]:
+        return []
+
+    monkeypatch.setattr("api.analysis_summary.fetch_not_found", _empty)
+    monkeypatch.setitem(RESULT, "identifiersNotFound", 0)
+    private, public = keys
+    start = _events(
+        _post(public, caller_token=_token(private), disclosure="identifiers").text
+    )[0][1]
+    assert start["disclosure"] == "identifiers"
