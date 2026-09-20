@@ -1,5 +1,6 @@
 import asyncio
 import csv
+import os
 from collections.abc import Coroutine, Iterable
 from contextvars import ContextVar
 from pathlib import Path
@@ -52,6 +53,52 @@ def chroma_settings() -> chromadb.config.Settings:
     there, in a bundle it should never have opened.
     """
     return chromadb.config.Settings(anonymized_telemetry=False)
+
+
+ALTERNATES_ENV = "QUERY_EXPANSION_ALTERNATES"
+DEFAULT_ALTERNATES = 4
+
+
+def expansion_alternates() -> int:
+    """How many alternate questions to retrieve for, besides the original.
+
+    Measured 2026-09-20 over six tracked questions (spec 010, T020):
+
+    | alternates | expand | retrieve | total | documents kept |
+    |---|---|---|---|---|
+    | 4 (default) | 1.27s | 1.22s | 2.49s | baseline |
+    | 2 | 1.26s | 0.65s | 1.92s | 84% |
+    | 1 | 1.38s | 0.57s | 1.95s | 77% |
+    | 0 | 0.00s | 0.31s | 0.31s | 71% |
+
+    **The expansion call costs about 1.27s whatever it returns**, so trimming
+    the count saves only fan-out; the cost goes away only at zero. With zero,
+    `answer-sweep` was 13/13 and ran in 79s against about 150s.
+
+    The default is unchanged regardless. Thirteen questions establish that the
+    answers we track do not need expansion; they do not establish that recall
+    is unaffected in general, and expansion exists for the questions nobody
+    wrote a test for. This is a switch and a measurement, not a verdict.
+
+    An unparseable or negative value falls back to the default loudly, rather
+    than silently disabling a recall mechanism.
+    """
+    raw = os.getenv(ALTERNATES_ENV, "").strip()
+    if not raw:
+        return DEFAULT_ALTERNATES
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning(
+            "%s=%r is not a number; using %d", ALTERNATES_ENV, raw, DEFAULT_ALTERNATES
+        )
+        return DEFAULT_ALTERNATES
+    if value < 0:
+        logger.warning(
+            "%s=%d is negative; using %d", ALTERNATES_ENV, value, DEFAULT_ALTERNATES
+        )
+        return DEFAULT_ALTERNATES
+    return value
 
 
 multi_query_prompt = PromptTemplate(
@@ -418,9 +465,12 @@ class HybridRetriever(BaseRetriever):
         is appended AFTER the generated ones: RRF breaks ties by first
         appearance, so reordering here would silently change the ranking.
         """
-        queries = self.query_expander.invoke(
-            {"question": query}, config={"callbacks": run_manager.get_child()}
-        )
+        wanted = expansion_alternates()
+        queries: list[str] = []
+        if wanted:
+            queries = self.query_expander.invoke(
+                {"question": query}, config={"callbacks": run_manager.get_child()}
+            )[:wanted]
         if self.include_original:
             queries.append(query)
         return unique_documents(self.retrieve_documents(queries, run_manager))
@@ -429,12 +479,31 @@ class HybridRetriever(BaseRetriever):
         self, query: str, *, run_manager: AsyncCallbackManagerForRetrieverRun
     ) -> list[Document]:
         """Async twin of the above; must agree with it document for document."""
-        queries = await self.query_expander.ainvoke(
-            {"question": query}, config={"callbacks": run_manager.get_child()}
+        queries = await self._expand(
+            query,
+            lambda: self.query_expander.ainvoke(
+                {"question": query}, config={"callbacks": run_manager.get_child()}
+            ),
         )
+        return unique_documents(await self.aretrieve_documents(queries, run_manager))
+
+    async def _expand(self, query: str, call: Any) -> list[str]:
+        """The queries to retrieve for, honouring the configured count.
+
+        At zero the expansion call is skipped entirely rather than made and
+        discarded -- that call is the larger half of the cost, and making it
+        anyway would keep the expense while losing the benefit.
+
+        The original is appended LAST, as it always was: RRF breaks ties by
+        first appearance, so reordering silently changes the ranking.
+        """
+        wanted = expansion_alternates()
+        queries: list[str] = []
+        if wanted:
+            queries = (await call())[:wanted]
         if self.include_original:
             queries.append(query)
-        return unique_documents(await self.aretrieve_documents(queries, run_manager))
+        return queries
 
     def weighted_reciprocal_rank(
         self, doc_lists: list[list[Document]]

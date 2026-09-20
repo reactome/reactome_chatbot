@@ -126,3 +126,46 @@ An endpoint that answers correctly and slowly, streaming, with verification. Not
 against nothing, and is otherwise idle on this. p50 15.2s is too slow to ship to
 users and entirely good enough to integrate against. The latency work is real and
 separate, and spec 009 plus query-expansion reduction are its two known levers.
+
+## Query expansion, measured 2026-09-20 (T020)
+
+The task said "reduce query expansion from 5 variants". The premise was
+wrong, and the measurement is the useful part.
+
+| alternates | expansion call | retrieval | total | documents kept |
+|---|---|---|---|---|
+| 4 (default) | 1.27s | 1.22s | **2.49s** | baseline |
+| 2 | 1.26s | 0.65s | 1.92s | 84% |
+| 1 | 1.38s | 0.57s | 1.95s | 77% |
+| 0 | 0.00s | 0.31s | **0.31s** | 71% |
+
+**The expansion call costs about 1.27s whatever it returns.** Trimming four
+variants to two saves fan-out only -- about 0.57s of a 2.49s stage. The whole
+cost goes away only by not making the call, which is a different change from
+the one the task described.
+
+With expansion off, `answer-sweep` passed **13/13 in 79s**, against roughly
+150s with it on. That is the largest single latency lever found so far, and
+it bears on T022.
+
+### Two things about how this was measured
+
+The first attempt varied the count by editing the prompt to ask for "exactly
+N". The model obeyed at 2 and **ignored 1 and 0, producing four either way**,
+so those rows silently re-measured the baseline -- visible only because the
+number of queries actually asked was recorded alongside the timings. The
+count is now enforced in code, which removes the model's obedience from the
+experiment and is also how the feature is implemented.
+
+Document overlap is not quality. 71% of baseline documents at zero alternates
+says three-quarters of the retrieved set is unchanged; it says nothing about
+whether the quarter that changed mattered.
+
+### Why the default is unchanged
+
+Thirteen tracked questions establish that *those* answers do not need
+expansion. They do not establish that recall is unaffected in general, and
+expansion exists for the questions nobody wrote a test for. So this ships as
+`QUERY_EXPANSION_ALTERNATES` with the default at 4 -- a switch and a
+measurement, not a verdict. Trying 0 on beta, where the sweep and the routing
+probe both run on every deploy, is the cheap way to learn more.
