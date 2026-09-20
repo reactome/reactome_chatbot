@@ -245,3 +245,66 @@ preprocessing, so a sequencing confound would have shown up there and did not.
    calls.
 3. **The answer model, 0.84s** -- not worth attention on these numbers, which
    is exactly why the discrepancy above matters.
+
+## T020c -- does a search-page question need all four preprocessing calls?
+
+Measured 2026-09-20. The answer is yes for three of them, and "not for the
+reason you would guess" for the fourth.
+
+### The rephraser is not a no-op without history
+
+It exists to resolve a follow-up against chat history, and the search page
+sends one question on a fresh thread. The obvious conclusion is that it does
+nothing there. Measured over the fifteen tracked questions with empty
+history, it **changed 14 of 15**:
+
+- "Which release of Reactome is this?" -> "Which version of Reactome is
+  currently available?"
+- "What does CDK5 phosphorylate in Alzheimer disease?" -> "What are the
+  substrates that CDK5 phosphorylates in the context of..."
+
+That is query normalisation, not follow-up resolution -- real work that feeds
+retrieval and intent classification. Removing it is a retrieval-quality
+change, not a plumbing one.
+
+### With it bypassed, the sweep still passes -- and latency barely moves
+
+`answer-sweep` was 13/13 with the rephraser replaced by a pass-through
+(precondition asserted: bypassed 13 times). But first token p50 went to
+**2.97s with both this and query expansion disabled, against 2.73s with
+expansion disabled alone.** No better, and inside the noise.
+
+### Why removing a 0.88s call saved 0.07s
+
+The arithmetic that predicted ~0.8s was wrong, and the error is worth
+recording because it is easy to repeat.
+
+Preprocessing runs two rounds. Round one is `max(rephrase, language)` and
+round two is `max(safety, intent)`. Median call times are rephrase 0.88s,
+language 0.81s, safety 0.70s, intent 0.93s. So round one costs 0.88s with the
+rephraser and **0.81s without it** -- language detection is nearly as slow, and
+it was hiding behind the rephraser the whole time.
+
+Bypassing the call does not remove the round. The saving needs the rounds
+**restructured**: with no rephrasing, `rephrased_input` is just `user_input`,
+so safety and intent no longer depend on round one and all three calls can run
+together -- 0.93s instead of 1.74s. That is the ~0.8s, and it requires a code
+change this measurement did not make.
+
+### So, for FR-005a
+
+**2s to first token is not reachable by removing these two calls.** Expansion
+off gets p50 to 2.73s; adding rephrase-off does not improve it, and the tail
+returns (max 11.31s). Restructuring preprocessing into one round is worth
+about 0.8s more on paper, which would put p50 near 2s -- on paper, and against
+a tail that neither change addresses.
+
+### What this does not establish
+
+Both levers pass the same thirteen questions, and that is now being asked to
+carry a lot. Each alone keeps the sweep green; together they keep it green;
+none of that shows recall is unaffected, and removing *two* recall mechanisms
+on one thin evidence base compounds the risk rather than adding to the
+confidence. The rephraser rewriting 14 of 15 questions is the concrete reason
+to be careful: whatever those rewrites are worth, the sweep is not what
+measures it.
