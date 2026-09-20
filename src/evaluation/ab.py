@@ -17,7 +17,16 @@ node inside it. Both looked like ordinary results. Each arm must declare a
 `precondition`, and `run` refuses to report a comparison whose precondition
 did not hold rather than printing numbers that mean nothing.
 
-**3. A percentile the sample cannot support.** p90 from fifteen samples is
+**3. A precondition that cannot fail.** The check above is only worth the
+discrimination in it: `lambda: True` passes every time and reads like a guard.
+So after each sample the *other* arms' preconditions are evaluated against the
+configuration that is actually active, and if one of them also holds, the two
+preconditions do not tell the arms apart and the comparison is refused. This
+is the same rule the rest of the repository learned the hard way -- an
+assertion that something is absent proves nothing until the same check has
+shown it can be present.
+
+**4. A percentile the sample cannot support.** p90 from fifteen samples is
 about the second-highest value. `Summary` reports p50 with min and max, and
 says so, instead of implying a tail estimate that is not there.
 """
@@ -52,10 +61,17 @@ class Arm(Generic[T]):
     precondition: Callable[[], bool]
     samples: list[float] = field(default_factory=list)
     precondition_failures: int = 0
+    #: Times another arm's precondition also held under this arm's
+    #: configuration, meaning the two do not discriminate.
+    indiscriminate: int = 0
 
     @property
     def held(self) -> bool:
-        return self.precondition_failures == 0 and bool(self.samples)
+        return (
+            self.precondition_failures == 0
+            and self.indiscriminate == 0
+            and bool(self.samples)
+        )
 
 
 @dataclass
@@ -78,6 +94,12 @@ class Summary:
                 note = (
                     f"   PRECONDITION FAILED on {arm.precondition_failures} "
                     f"of {len(values)} samples -- this comparison means nothing"
+                )
+            elif arm.indiscriminate:
+                note = (
+                    f"   PRECONDITION DOES NOT DISCRIMINATE: another arm's held "
+                    f"under this one's configuration on {arm.indiscriminate} "
+                    f"samples, so it cannot tell the arms apart"
                 )
             elif len(values) < ADVISORY_MIN_SAMPLES:
                 note = f"   (n={len(values)}, small; treat the median loosely)"
@@ -107,15 +129,25 @@ async def run(
     """
     if len(arms) < 2:
         raise ValueError("an A/B comparison needs at least two arms")
+    if any(arm.samples for arm in arms):
+        # Re-using arms silently mixes two runs into one distribution, and the
+        # result looks like an ordinary noisy measurement.
+        raise ValueError("these arms already hold samples; build fresh ones")
     cases = list(cases)
     for repeat in range(repeats):
         for index, case in enumerate(cases):
-            ordered = list(arms)
-            if (repeat + index) % 2:
-                ordered.reverse()
+            # Rotate rather than reverse: with more than two arms, reversing
+            # leaves the middle one always in the middle.
+            offset = (repeat + index) % len(arms)
+            ordered = arms[offset:] + arms[:offset]
             for arm in ordered:
                 arm.apply()
                 arm.samples.append(await measure(case, arm.name))
                 if not arm.precondition():
                     arm.precondition_failures += 1
+                    continue
+                # The configuration for `arm` is still active, so any other
+                # arm whose precondition also holds is not distinguishing.
+                if any(other is not arm and other.precondition() for other in arms):
+                    arm.indiscriminate += 1
     return Summary(arms)
