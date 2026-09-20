@@ -46,14 +46,22 @@ a deleted one, and that the same token returns the same text.
 
 ## Phase 4: User Story 2 — Why were my identifiers not found? (P2)
 
+**A constraint measured 2026-09-20 that changes scenario 1.** The aggregate
+result carries `identifiersNotFound` and **nothing about how many identifiers
+were submitted** — the denominator lives only behind `/token/{token}/found/all`,
+which returns the reader's own identifiers and is therefore the disclosing
+tier. So the proportion the scenario asks for is not derivable at the default
+tier, and asking for one would invent a statistic the way D9 describes. The
+count is reported instead; the reader knows what they submitted.
+
 **Goal**: A reader learns why identifiers went unmatched and whether the result can be trusted.
 
 **Independent test**: Submit a token from an analysis with a deliberate identifier mismatch; the summary reports the proportion and names the likely cause.
 
-- [ ] T017 [US2] Include `identifiersNotFound`, `pathwaysFound` and `resourceSummary` in the aggregate prompt input in `src/analysis/summarise.py`, which together explain most mismatches without disclosing anything
-- [ ] T018 [US2] Add the `identifiers` tier in `src/analysis/disclosure.py`, fetching `GET /token/{token}/notFound` only when the request asked for it
-- [ ] T019 [P] [US2] Test in `tests/analysis/test_disclosure.py` that the `identifiers` tier is never reached without an explicit request, by asserting the not-found call is not made under the aggregate tier
-- [ ] T020 [US2] Test that a result with every identifier found produces a summary that says so rather than inventing a problem, in `tests/analysis/test_summarise.py` (spec US2 scenario 2)
+- [x] T017 [US2] Include `identifiersNotFound`, `pathwaysFound` and `resourceSummary` in the aggregate prompt input in `src/analysis/summarise.py`, which together explain most mismatches without disclosing anything
+- [x] T018 [US2] Add the `identifiers` tier in `src/analysis/disclosure.py`, fetching `GET /token/{token}/notFound` only when the request asked for it
+- [x] T019 [P] [US2] Test (in tests/api/test_analysis_summary.py, on the served path) that the `identifiers` tier is never reached without an explicit request, by asserting the not-found call is not made under the aggregate tier
+- [x] T020 [US2] Test that a result with every identifier found produces a summary that says so rather than inventing a problem, in `tests/analysis/test_summarise.py` (spec US2 scenario 2)
 
 ## Phase 5: User Story 3 — What do these numbers mean? (P3)
 
