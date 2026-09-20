@@ -465,43 +465,63 @@ class HybridRetriever(BaseRetriever):
         is appended AFTER the generated ones: RRF breaks ties by first
         appearance, so reordering here would silently change the ranking.
         """
-        wanted = expansion_alternates()
-        queries: list[str] = []
-        if wanted:
-            queries = self.query_expander.invoke(
+        expanded = (
+            self.query_expander.invoke(
                 {"question": query}, config={"callbacks": run_manager.get_child()}
-            )[:wanted]
-        if self.include_original:
-            queries.append(query)
-        return unique_documents(self.retrieve_documents(queries, run_manager))
+            )
+            if expansion_alternates()
+            else None
+        )
+        return unique_documents(
+            self.retrieve_documents(self._queries(query, expanded), run_manager)
+        )
 
     async def _aget_relevant_documents(
         self, query: str, *, run_manager: AsyncCallbackManagerForRetrieverRun
     ) -> list[Document]:
         """Async twin of the above; must agree with it document for document."""
-        queries = await self._expand(
-            query,
-            lambda: self.query_expander.ainvoke(
+        expanded = (
+            await self.query_expander.ainvoke(
                 {"question": query}, config={"callbacks": run_manager.get_child()}
-            ),
+            )
+            if expansion_alternates()
+            else None
         )
-        return unique_documents(await self.aretrieve_documents(queries, run_manager))
+        return unique_documents(
+            await self.aretrieve_documents(self._queries(query, expanded), run_manager)
+        )
 
-    async def _expand(self, query: str, call: Any) -> list[str]:
-        """The queries to retrieve for, honouring the configured count.
+    def _queries(self, query: str, expanded: list[str] | None) -> list[str]:
+        """The queries to retrieve for, from whatever the expander returned.
 
-        At zero the expansion call is skipped entirely rather than made and
-        discarded -- that call is the larger half of the cost, and making it
-        anyway would keep the expense while losing the benefit.
+        Shared by the sync and async paths deliberately. They are separate
+        implementations of the same retrieval and this file already carries a
+        note about them drifting -- but `test_sync_async_equivalence` drives
+        `retrieve_documents` directly, *below* this step, so a divergence here
+        would be invisible to the test written to catch exactly that.
 
-        The original is appended LAST, as it always was: RRF breaks ties by
-        first appearance, so reordering silently changes the ranking.
+        At zero alternates the caller skips the expansion call rather than
+        making it and discarding the result: it is the larger half of the
+        cost, and discarding would keep the expense, lose the benefit, and
+        look identical in every other measurement.
+
+        **Never returns an empty list.** With `include_original=False` -- the
+        default on `from_subdirectory` -- and no alternates, the obvious
+        assembly yields no queries and retrieval silently returns nothing. A
+        retriever that finds nothing reads exactly like a question with no
+        answer, which is the worst available way for this to fail.
+
+        The original goes LAST, as it always did: RRF breaks ties by first
+        appearance, so reordering silently changes the ranking.
         """
         wanted = expansion_alternates()
-        queries: list[str] = []
-        if wanted:
-            queries = (await call())[:wanted]
-        if self.include_original:
+        queries = list(expanded[:wanted]) if (expanded and wanted) else []
+        if not queries and not self.include_original:
+            logger.warning(
+                "no expanded queries and include_original is off; retrieving "
+                "for the original question rather than for nothing"
+            )
+        if self.include_original or not queries:
             queries.append(query)
         return queries
 

@@ -8,6 +8,7 @@ is unaffected in general.
 """
 
 import asyncio
+from pathlib import Path
 
 import pytest
 
@@ -40,8 +41,15 @@ def test_a_bad_value_falls_back_loudly_rather_than_disabling_recall(
 ) -> None:
     # The dangerous direction: a typo must not silently turn expansion off,
     # because nothing downstream would look any different.
+    #
+    # "Loudly" is asserted, not just implied. The first version of this test
+    # checked only the fallback value and would have passed against a silent
+    # one -- the same vacuous shape that bit the collection guards.
     monkeypatch.setenv(ALTERNATES_ENV, raw)
-    assert expansion_alternates() == DEFAULT_ALTERNATES
+    with caplog.at_level("WARNING"):
+        assert expansion_alternates() == DEFAULT_ALTERNATES
+    if raw.strip():
+        assert ALTERNATES_ENV in caplog.text, "fell back without saying so"
 
 
 class _Expander:
@@ -53,6 +61,12 @@ class _Expander:
         return [f"alt {i}" for i in range(4)]
 
 
+def _retriever(include_original: bool = True) -> HybridRetriever:
+    retriever = HybridRetriever.__new__(HybridRetriever)
+    object.__setattr__(retriever, "include_original", include_original)
+    return retriever
+
+
 def _expand(
     count: str | None, monkeypatch: pytest.MonkeyPatch
 ) -> tuple[list[str], int]:
@@ -60,13 +74,11 @@ def _expand(
         monkeypatch.delenv(ALTERNATES_ENV, raising=False)
     else:
         monkeypatch.setenv(ALTERNATES_ENV, count)
-    retriever = HybridRetriever.__new__(HybridRetriever)
-    object.__setattr__(retriever, "include_original", True)
     expander = _Expander()
-    queries = asyncio.run(
-        retriever._expand("the question", lambda: expander.ainvoke(None))
-    )
-    return queries, expander.calls
+    expanded = None
+    if expansion_alternates():
+        expanded = asyncio.run(expander.ainvoke(None))
+    return _retriever()._queries("the question", expanded), expander.calls
 
 
 def test_the_original_question_is_always_asked_and_always_last(
@@ -99,3 +111,28 @@ def test_a_lower_count_truncates_rather_than_trusting_the_prompt(
     queries, calls = _expand("2", monkeypatch)
     assert queries == ["alt 0", "alt 1", "the question"]
     assert calls == 1
+
+
+def test_no_expansion_and_no_original_still_asks_something(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # `include_original=False` is `from_subdirectory`'s default, so this
+    # combination is reachable. The obvious assembly produces no queries at
+    # all and retrieval silently returns nothing -- which reads exactly like
+    # a question that has no answer, the worst available way to fail.
+    monkeypatch.setenv(ALTERNATES_ENV, "0")
+    with caplog.at_level("WARNING"):
+        queries = _retriever(include_original=False)._queries("the question", None)
+    assert queries == ["the question"]
+    assert "rather than for nothing" in caplog.text
+
+
+def test_the_sync_and_async_paths_cannot_disagree_about_queries() -> None:
+    # They are separate implementations of the same retrieval, and this is
+    # the one step `test_sync_async_equivalence` structurally cannot cover:
+    # it drives `retrieve_documents` directly, below expansion. Asserting the
+    # source rather than the behaviour, because the behaviour is only equal
+    # while the code is shared -- which is the thing worth pinning.
+    source = Path("src/retrievers/csv_chroma.py").read_text()
+    assert source.count("self._queries(query, expanded)") == 2
+    assert source.count("def _queries") == 1
