@@ -239,3 +239,19 @@ def test_no_type_instruction_claims_another_types_reading() -> None:
     assert "orthology" not in TYPE_INSTRUCTION["EXPRESSION"]
     assert "columns" not in TYPE_INSTRUCTION["SPECIES_COMPARISON"]
     assert "columns" not in TYPE_INSTRUCTION["OVERREPRESENTATION"]
+
+
+def test_expression_columns_have_one_stable_reference_form() -> None:
+    # The website holds the real column labels and we never do, so it
+    # substitutes them into our prose -- which only works if our wording is
+    # fixed. They said they would rather show labels alongside than splice
+    # on brittle matching, so the wording is pinned instead: `column 1`,
+    # `column 2`, numbered from one.
+    from analysis.summarise import TYPE_INSTRUCTION
+
+    expression = TYPE_INSTRUCTION["EXPRESSION"]
+    assert "`column 1`" in expression
+    assert "numbered from one" in expression
+    assert "in no other form" in expression
+    # And the forms that would break their matching are named as wrong.
+    assert "The first column" in expression

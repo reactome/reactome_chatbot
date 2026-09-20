@@ -9,10 +9,11 @@ so is the LLM, because what is asserted here is refusal, event shape, and that
 no model call happens without a person -- none of which depends on content.
 """
 
+import asyncio
 import json
 import time
-from collections.abc import AsyncIterator
-from typing import Any
+from collections.abc import AsyncGenerator, AsyncIterator
+from typing import Any, cast
 
 import jwt
 import pytest
@@ -23,7 +24,7 @@ from fastapi.testclient import TestClient
 
 from analysis.client import Fetched
 from analysis.store import SummaryStore
-from api.analysis_summary import router
+from api.analysis_summary import SummaryRequest, analysis_summary, router
 from util.caller_token import DEFAULT_AUDIENCE
 from util.rate_limit import SlidingWindowLimiter
 
@@ -607,3 +608,102 @@ def test_a_deleted_result_is_reported_even_when_a_summary_is_stored(
         _events(_post(public, caller_token=_token(private)).text)[-1][1]["state"]
         == "gone"
     )
+
+
+class _HangingModel(_Counter):
+    """Stands in for a model that has stopped answering."""
+
+    async def astream(self, _messages: Any) -> AsyncIterator[Any]:
+        self.calls += 1
+        yield type("Chunk", (), {"content": "starting"})()
+        # Finite, so a regression fails in five seconds rather than hanging
+        # the suite for the full timeout.
+        await asyncio.sleep(5)
+        yield type("Chunk", (), {"content": "never arrives"})()
+
+
+def test_a_stuck_model_still_ends_the_stream(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # T034. FR-008 says a failure must be a terminal state the caller can
+    # render, never a broken panel -- which means never an open connection
+    # either. An analysis page must not hang because this service did.
+    monkeypatch.setattr("api.analysis_summary.get_llm", lambda *a, **k: _HangingModel())
+    monkeypatch.setattr("api.analysis_summary.SUMMARY_TIMEOUT_SECONDS", 0.25)
+    private, public = keys
+
+    started = time.monotonic()
+    response = _post(public, caller_token=_token(private))
+    elapsed = time.monotonic() - started
+
+    assert response.status_code == 200
+    assert _events(response.text)[-1][1]["state"] == "failed"
+    assert elapsed < 2, f"stream ran {elapsed:.1f}s; the bound did not fire"
+
+
+def test_a_stuck_summary_is_not_stored(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The partial text of a timed-out generation must not become the summary
+    # served forever after. `put` refuses empty text, but this one is not
+    # empty -- it is worse, being a plausible fragment that ends mid-sentence.
+    store = SummaryStore()
+    monkeypatch.setattr("api.analysis_summary._store", store)
+    monkeypatch.setattr("api.analysis_summary.get_llm", lambda *a, **k: _HangingModel())
+    monkeypatch.setattr("api.analysis_summary.SUMMARY_TIMEOUT_SECONDS", 0.25)
+    private, public = keys
+    _post(public, caller_token=_token(private))
+    assert len(store) == 0, "a truncated summary was stored"
+
+
+def test_an_abandoned_summary_stream_is_recorded(
+    keys: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # T035. A caller that hangs up mid-summary leaves no other trace: the
+    # request 200s, tokens flow, and then nothing more happens -- identical
+    # to a healthy stream in every signal. The website already hit this on
+    # the answer route, where a keystroke unmounted their panel mid-answer.
+    #
+    # Driven through the response iterator rather than a client, because the
+    # point is to close it mid-stream and a TestClient will not.
+    from types import SimpleNamespace
+
+    class _SlowModel(_Counter):
+        async def astream(self, _messages: Any) -> AsyncIterator[Any]:
+            self.calls += 1
+            for index in range(50):
+                await asyncio.sleep(0.01)
+                yield type("Chunk", (), {"content": f"t{index} "})()
+
+    monkeypatch.setattr("api.analysis_summary.get_llm", lambda *a, **k: _SlowModel())
+    private, public = keys
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(caller_token_key=public))
+    )
+
+    async def drive() -> None:
+        response = await analysis_summary(
+            SummaryRequest(
+                token="MjAyNjA5MTkxODExNDJfMTE",
+                caller_token=_token(private),
+                disclosure="aggregate",
+            ),
+            request,  # type: ignore[arg-type]
+        )
+        iterator = cast("AsyncGenerator[str, None]", response.body_iterator)
+        seen = 0
+        async for _chunk in iterator:
+            seen += 1
+            if seen == 4:
+                break
+        await iterator.aclose()
+
+    with caplog.at_level("INFO", logger="api.analysis_summary"):
+        asyncio.run(drive())
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any(
+        "abandoned" in message for message in messages
+    ), f"no record of the abandoned stream; logged: {messages}"

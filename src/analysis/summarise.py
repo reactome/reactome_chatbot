@@ -162,8 +162,13 @@ TYPE_INSTRUCTION = {
         "highlighted pathways behave *across* those columns -- rising, "
         "falling, mixed -- rather than treating the result as a single "
         "enrichment. **The columns are unlabelled here and you must not "
-        "guess what they are**: say 'the first column' and so on, never a "
-        "condition, timepoint or sample name."
+        "guess what they are**: never a condition, timepoint or sample name. "
+        "Refer to them in exactly this form -- `column 1`, `column 2`, "
+        "numbered from one in the order the values appear -- and in no other "
+        "form, because the interface holds the real labels and substitutes "
+        "them by matching that exact wording. 'The first column' or 'the "
+        "leftmost sample' will not be matched and will reach the reader as "
+        "written."
     ),
     "SPECIES_COMPARISON": (
         "This is a species comparison. The findings are **inferred by "
