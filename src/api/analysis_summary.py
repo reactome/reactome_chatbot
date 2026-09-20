@@ -141,6 +141,9 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
 
                 payload = for_tier(fetched.result, body.disclosure)
                 model_input = prompt_input(payload)
+                # Which tier the answer was actually built from, which is
+                # not always the one asked for.
+                applied: Tier = body.disclosure
                 if body.disclosure == "identifiers":
                     # The only place this service asks for the reader's own
                     # identifiers, reached only because they chose it. A
@@ -149,6 +152,20 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
                     unmatched = await fetch_not_found(body.token)
                     if unmatched:
                         model_input["identifiers_not_found_names"] = unmatched
+                    elif model_input.get("identifiers_not_found"):
+                        # There were unmatched identifiers and we could not
+                        # retrieve them. The summary is therefore the
+                        # aggregate one, and saying so is the whole point:
+                        # this is the same "disclosure with no benefit" the
+                        # tier was just fixed for, arriving down the failure
+                        # path instead. A reader who chose to disclose and
+                        # silently got the other summary has been told
+                        # nothing and given nothing.
+                        applied = "aggregate"
+                        logger.warning(
+                            "identifier tier requested but the not-found "
+                            "lookup returned nothing; serving aggregate"
+                        )
                 release = await current_release()
                 yield _sse(
                     "start",
@@ -159,6 +176,10 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
                         # Reported rather than omitted, because the interface
                         # must not imply a determinism this does not have.
                         "cached": False,
+                        # What the summary was built from. Equal to the
+                        # request's `disclosure` except when the disclosing
+                        # tier could not be honoured.
+                        "disclosure": applied,
                     },
                 )
 
