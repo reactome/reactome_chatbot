@@ -22,6 +22,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from analysis.client import Fetched
+from analysis.store import SummaryStore
 from api.analysis_summary import router
 from util.caller_token import DEFAULT_AUDIENCE
 from util.rate_limit import SlidingWindowLimiter
@@ -85,6 +86,11 @@ def wired(monkeypatch: pytest.MonkeyPatch) -> _Counter:
         "api.analysis_summary._limiter",
         SlidingWindowLimiter(limit=10_000, window=600.0),
     )
+    # A private store per test. It is module state that outlives a request by
+    # design, so without this one test serves another its cached summary and
+    # the model is never called -- which looks like the feature being broken
+    # and is the tests interfering.
+    monkeypatch.setattr("api.analysis_summary._store", SummaryStore())
     monkeypatch.setattr("api.analysis_summary.get_llm", lambda *a, **k: counter)
     monkeypatch.setattr(
         "api.analysis_summary.resolve_llm_model", lambda _c: ("openai", "m", None)
@@ -470,3 +476,74 @@ def test_each_type_gets_its_own_reading_on_the_served_path(
     prompt = json.dumps(sent, default=str)
     assert expected in prompt, f"{analysis_type} was not given its own reading"
     assert forbidden not in prompt, f"{analysis_type} was given another's"
+
+
+def _prose(response: Any) -> str:
+    return "".join(
+        payload["text"] for kind, payload in _events(response.text) if kind == "token"
+    )
+
+
+def test_a_second_request_is_byte_identical_and_calls_no_model(
+    keys: tuple[str, str], wired: _Counter
+) -> None:
+    # FR-014 on the served path. The generator is not deterministic, so if
+    # the second request reached it the text would differ -- which is why
+    # the assertion is on the bytes and the call count together.
+    private, public = keys
+    first = _post(public, caller_token=_token(private))
+    calls_after_first = wired.calls
+    second = _post(public, caller_token=_token(private))
+
+    assert _prose(first) == _prose(second)
+    assert _prose(first), "no prose was produced, so this proves nothing"
+    assert wired.calls == calls_after_first, "the model ran again"
+    assert _events(first.text)[0][1]["cached"] is False
+    assert _events(second.text)[0][1]["cached"] is True
+
+
+def test_a_release_change_regenerates(
+    keys: tuple[str, str], wired: _Counter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The service deletes results on a release, so a summary from the old one
+    # describes something that no longer exists.
+    private, public = keys
+    _post(public, caller_token=_token(private))
+    before = wired.calls
+
+    async def _next_release() -> str:
+        return "98"
+
+    monkeypatch.setattr("api.analysis_summary.current_release", _next_release)
+    second = _post(public, caller_token=_token(private))
+    assert _events(second.text)[0][1]["cached"] is False
+    assert wired.calls == before + 1
+
+
+def test_the_two_tiers_do_not_share_a_cached_summary(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Serving the aggregate summary to someone who chose to disclose, or the
+    # disclosing one to someone who did not, are both failures -- and the
+    # second is a disclosure nobody asked for.
+    _with_not_found_spy(monkeypatch)
+    private, public = keys
+    _post(public, caller_token=_token(private), disclosure="aggregate")
+    start = _events(
+        _post(public, caller_token=_token(private), disclosure="identifiers").text
+    )[0][1]
+    assert start["cached"] is False, "the disclosing tier reused the aggregate summary"
+
+
+def test_citations_come_back_with_a_cached_summary(keys: tuple[str, str]) -> None:
+    # A reused summary that lost its chips would look like a summary citing
+    # nothing, and the caller cannot tell that from a result with no pathways.
+    private, public = keys
+    first = _post(public, caller_token=_token(private))
+    second = _post(public, caller_token=_token(private))
+
+    def cited(response: Any) -> list[str]:
+        return [p["st_id"] for k, p in _events(response.text) if k == "citation"]
+
+    assert cited(second) == cited(first)
+    assert cited(second), "no citations at all"

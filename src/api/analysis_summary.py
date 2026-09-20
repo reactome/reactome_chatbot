@@ -28,6 +28,7 @@ from agent.graph import resolve_llm_model
 from agent.models import get_llm
 from analysis.client import current_release, fetch_not_found, fetch_result
 from analysis.disclosure import Tier, for_tier
+from analysis.store import SummaryStore
 from analysis.summarise import (
     INEXACT_COUNT_INSTRUCTION,
     NAMED_UNMATCHED_INSTRUCTION,
@@ -50,6 +51,10 @@ SUMMARY_TIMEOUT_SECONDS = 120.0
 #: Bounded for the same reason the answer endpoint is: a stuck upstream must
 #: not hold a connection open.
 _limiter = limiter_from_env()
+
+#: Process-local, lost on deploy (research D4). Module state so it outlives
+#: a request, as the limiter does.
+_store = SummaryStore()
 
 SYSTEM_PROMPT = """
 You explain a completed Reactome pathway-analysis result to the researcher who
@@ -169,15 +174,19 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
                             "lookup returned nothing; serving aggregate"
                         )
                 release = await current_release()
+                # Keyed on the tier that *applied*, not the one requested: a
+                # disclosure that could not be honoured produced an aggregate
+                # summary, and storing it under `identifiers` would serve it
+                # back later as though the identifiers had been used.
+                cached = _store.get(body.token, release, applied) if release else None
                 yield _sse(
                     "start",
                     {
                         "release": release,
                         "analysis_type": model_input.get("analysis_type"),
-                        # No store yet (Phase 7), so nothing is ever reused.
-                        # Reported rather than omitted, because the interface
-                        # must not imply a determinism this does not have.
-                        "cached": False,
+                        # Stability is reuse, not determinism (FR-015). This
+                        # is how the interface knows which it is looking at.
+                        "cached": cached is not None,
                         # What the summary was built from. Equal to the
                         # request's `disclosure` except when the disclosing
                         # tier could not be honoured.
@@ -188,15 +197,26 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
                 # From the result, never from the model's prose. An invented
                 # or mismatched identifier is impossible by construction
                 # rather than by checking afterwards (SC-003).
-                for pathway in model_input["pathways"]:
-                    if pathway.get("st_id"):
-                        yield _sse(
-                            "citation",
-                            {
-                                "st_id": pathway["st_id"],
-                                "display_name": pathway.get("name") or pathway["st_id"],
-                            },
-                        )
+                citations: tuple[tuple[str, str], ...] = (
+                    cached.citations
+                    if cached
+                    else tuple(
+                        (p["st_id"], p.get("name") or p["st_id"])
+                        for p in model_input["pathways"]
+                        if p.get("st_id")
+                    )
+                )
+                for st_id, display_name in citations:
+                    yield _sse(
+                        "citation", {"st_id": st_id, "display_name": display_name}
+                    )
+
+                if cached:
+                    # Byte-identical, and in one event: re-streaming it token
+                    # by token would imitate generation that is not happening.
+                    yield _sse("token", {"text": cached.text})
+                    yield _done("summarised", time.monotonic() - started)
+                    return
 
                 provider, model, base_url = resolve_llm_model(None)
                 llm = get_llm(provider, model, base_url=base_url, request_timeout=90.0)
@@ -220,10 +240,16 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
                         f"Data:\n{json.dumps(model_input, default=str)}",
                     ),
                 ]
+                produced: list[str] = []
                 async for chunk in llm.astream(messages):
                     text = getattr(chunk, "content", "")
                     if isinstance(text, str) and text:
+                        produced.append(text)
                         yield _sse("token", {"text": text})
+                if release:
+                    _store.put(
+                        body.token, release, applied, "".join(produced), citations
+                    )
                 state = "summarised"
         except (asyncio.CancelledError, GeneratorExit):
             logger.info(

@@ -87,6 +87,28 @@ than surprising.
 rejected as a blocker disproportionate to the first increment; noting it as
 follow-up work is enough.
 
+**Built 2026-09-20, and the follow-up is now open rather than implied.**
+`SummaryStore` holds summaries in process, bounded at 512 entries, evicting
+the least recently used. So:
+
+- a summary survives a reload and not a deploy
+- beta deploys often, so most readers will regenerate at some point
+- `cached` on `start` is what makes that honest rather than surprising, and
+  is the reason FR-015 exists alongside FR-014
+
+**The durable store is the open piece.** It needs somewhere to put it —
+`POSTGRES_LANGGRAPH_DB` is unset on beta and LangGraph already falls back to
+`MemorySaver`, so there is no existing home to reuse. Anyone picking this up
+should treat "summaries vanish on deploy" as a known state, not a bug.
+
+Two decisions inside the store worth not reversing by accident. An **empty
+summary is never stored**: a failed or abandoned generation leaves no text,
+and storing it would serve the emptiness back forever as though it were the
+answer, indistinguishable from a result with nothing to say. And eviction
+**drops the oldest rather than refusing the newest**, because a reader whose
+summary was evicted simply regenerates, where refusing new entries would
+quietly stop the feature working for everyone after the first few hundred.
+
 ## D5 — What "an option that discloses no identifiers" means, precisely
 
 **Decision**: Two disclosure tiers, defined by field rather than by intention.
