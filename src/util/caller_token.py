@@ -142,3 +142,63 @@ def verify(token: str, verifying_key: str, *, audience: str | None = None) -> di
         ) from exc
     except jwt.InvalidTokenError as exc:
         raise TokenRejectedError(f"invalid token: {type(exc).__name__}") from exc
+
+
+# --- human presence, for the analysis-summary endpoint ----------------------
+#
+# A stricter bar than `verify`, and deliberately separate from it. `verify`
+# asserts *caller identity*: this request came from the Reactome website's
+# server. It says nothing about a person, and the search path it was built for
+# has no human gate at all.
+#
+# Summarising discloses a user's own uploaded analysis to a model provider, and
+# at the disclosing tier that includes the identifiers they submitted. So the
+# bar is evidence that a person is present -- and the choice of disclosure tier
+# is only meaningful if a person made it. A bot holding a forwarded analysis
+# link consenting on the user's behalf is worse than offering no choice,
+# because it looks like one.
+#
+# Agreed with the website 2026-09-19 (specs/011, research D6). They mint these
+# only when their Turnstile-backed identity cookie validated on that request.
+
+#: Seconds. Inclusive: `now - human_iat <= 1800` accepts, 1801 refuses.
+#:
+#: Whole seconds on purpose. This was first agreed as "1800.000 accepted,
+#: 1800.001 refused", which `human_iat` cannot represent -- it is epoch
+#: seconds, derived from a cookie expiry minus a constant TTL, so it arrives
+#: already rounded. A sub-second edge is a boundary neither side can be on,
+#: tested against a clock finer than the value. Effective precision is one
+#: second: a challenge solved 1800.4s ago presents as 1800 and is accepted.
+HUMAN_MAX_AGE_SECONDS = 1800
+
+
+def human_presence_reason(claims: dict, now: float) -> str | None:
+    """None when a person is vouched for; otherwise why not.
+
+    The reason is for the caller's interface -- "failed" is not something a
+    panel can say to a person, and `stale_human` is the only refusal a reader
+    can act on by re-verifying.
+
+    `human` is absent rather than false when the check failed, by agreement, so
+    a missing claim and a failed check are indistinguishable here. That is
+    intended: this side should not be able to tell them apart, and nothing
+    should come to depend on the difference.
+    """
+    if claims.get("human") is not True:
+        return "no_human"
+    issued = claims.get("human_iat")
+    if not isinstance(issued, int | float) or isinstance(issued, bool):
+        return "no_human"
+    # Whole seconds on both sides, matching the website's
+    # `nowSeconds - floor(solvedAt/1000) <= 1800`. With a float clock the
+    # inclusive bound is unreachable: a claim issued exactly 1800s ago is
+    # 1800.0003s old by the time it is checked, and "inclusive" would be a
+    # boundary no request can be on. Caught by the test that pins the edge.
+    if int(now) - int(issued) > HUMAN_MAX_AGE_SECONDS:
+        return "stale_human"
+    # A claim from the future is a clock disagreement, not evidence. Allowed a
+    # little slack rather than refused outright, since a refusal here would be
+    # unactionable for the reader.
+    if int(issued) - int(now) > 60:
+        return "no_human"
+    return None

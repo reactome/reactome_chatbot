@@ -198,3 +198,36 @@ apply to neither or to both.
 **Rationale**: GSA is a separate service on a different host with its own result
 shape. Recognising it costs one field check and prevents the worst outcome — a
 confident summary of a result we do not actually model.
+
+## D9 -- a truncated result invites a statistic the result does not contain
+
+Found on 2026-09-19 by calling the real model with a real result, after every
+stubbed test passed.
+
+The payload is bounded to the top twelve pathways of a possible 1,280. The
+first prompt input reported `pathways_significant: 12` beside
+`pathways_total: 1280`, and the model wrote:
+
+> "The analysis identified a total of 12 significant pathways out of 1280
+> pathways assessed."
+
+Which is false. Twelve were *sent*, all twelve passed, so the true count is at
+least twelve and unknown above. FR-002 says never state a statistic the result
+does not contain, and the result does not contain this one -- the truncation
+created the false impression, not the model.
+
+**Decision**: the prompt input distinguishes `pathways_shown` from
+`pathways_total`, reports `significant_among_shown`, and carries
+`significant_count_is_exact`. The count is exact only when a non-significant
+pathway appears among those shown -- which, in a list ordered by p-value,
+means everything below it is non-significant too. **The ordering is checked
+rather than assumed**, because relying on another service's default sort is
+how a claim like this goes quietly wrong. When the count is a lower bound the
+model is told so explicitly, and the system prompt forbids the claim outright.
+
+Re-run against the real model: the sentence is gone.
+
+**The general shape is worth keeping.** Bounding a payload for cost is not
+neutral -- it changes what the data appears to say, and a model will read the
+appearance. Any future truncation here needs the same treatment: say what was
+omitted, or say that the derived number is a bound.

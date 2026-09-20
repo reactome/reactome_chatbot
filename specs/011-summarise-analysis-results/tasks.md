@@ -15,20 +15,20 @@ a deleted one, and that the same token returns the same text.
 
 ## Phase 1: Setup
 
-- [ ] T001 Create `src/analysis/` with an `__init__.py`, separate from `src/agent/` because nothing here touches the graph or retrieval
-- [ ] T002 [P] Create `tests/analysis/` with an `__init__.py` alongside the existing `tests/api/`
-- [ ] T003 Record the beta Analysis Service base URL in configuration rather than a literal, defaulting to beta and never production, in `src/analysis/client.py`
+- [x] T001 Create `src/analysis/` with an `__init__.py`, separate from `src/agent/` because nothing here touches the graph or retrieval
+- [x] T002 [P] Create `tests/analysis/` **without** an `__init__.py`. The task said to add one "alongside the existing `tests/api/`" and that premise was wrong: no test directory in this repository has one. Adding it put `tests/analysis` on `sys.path` as the top-level `analysis` package, shadowing `src/analysis`, and every import failed. Test basenames must also be unique for the same reason: `test_client.py` collided with `tests/reactome_mcp/test_client.py`, so this one is `test_analysis_client.py`
+- [x] T003 Record the beta Analysis Service base URL in configuration rather than a literal, defaulting to beta and never production, in `src/analysis/client.py`
 
 ## Phase 2: Foundational (blocking)
 
 **These block every user story. Nothing below Phase 2 can be built without them.**
 
-- [ ] T004 Write the disclosure allow-list in `src/analysis/disclosure.py`: name every field of an `AnalysisResult` that may be sent under the `aggregate` tier, as an allow-list rather than a denial, so a new field from the Analysis Service is excluded by default
-- [ ] T005 [P] Test the allow-list in `tests/analysis/test_disclosure.py` by **recording the outbound request body** and asserting `summary.fileName`, `summary.sampleName` and `expression.columnNames` never appear — not by reading the summary and seeing nothing alarming. These three are user-supplied free text and are the reason the tier is an allow-list (research D5)
-- [ ] T006 Fetch a result by token in `src/analysis/client.py`, with a browser-like `User-Agent`, because the site's automation blocking returns a 403 with an HTML body to library user-agents and it looks exactly like an auth failure
-- [ ] T007 [P] Test in `tests/analysis/test_client.py` that 404 yields `not_found`, **410 yields `gone`** and **500 also yields `not_found`**, as measured: a malformed token returns 500, which the OpenAPI does not document, and treating it as a service fault would produce a `failed` state or a retry loop against a service that will answer identically every time (research D2)
-- [ ] T008 Read the current release from `GET /database/version` in `src/analysis/client.py`, deriving it rather than hardcoding it, because it is both the reported release and the cache-invalidation key (Principle V)
-- [ ] T009 Detect a ReactomeGSA result from `gsaMethod`/`gsaToken` in `src/analysis/client.py` and return `unsupported`, so a result we do not model is never summarised confidently (research D8)
+- [x] T004 Write the disclosure allow-list in `src/analysis/disclosure.py`: name every field of an `AnalysisResult` that may be sent under the `aggregate` tier, as an allow-list rather than a denial, so a new field from the Analysis Service is excluded by default
+- [x] T005 [P] Test the allow-list in `tests/analysis/test_disclosure.py` by **recording the outbound request body** and asserting `summary.fileName`, `summary.sampleName` and `expression.columnNames` never appear — not by reading the summary and seeing nothing alarming. These three are user-supplied free text and are the reason the tier is an allow-list (research D5)
+- [x] T006 Fetch a result by token in `src/analysis/client.py`, with a browser-like `User-Agent`, because the site's automation blocking returns a 403 with an HTML body to library user-agents and it looks exactly like an auth failure
+- [x] T007 [P] Test in `tests/analysis/test_client.py` that 404 yields `not_found`, **410 yields `gone`** and **500 also yields `not_found`**, as measured: a malformed token returns 500, which the OpenAPI does not document, and treating it as a service fault would produce a `failed` state or a retry loop against a service that will answer identically every time (research D2)
+- [x] T008 Read the current release from `GET /database/version` in `src/analysis/client.py`, deriving it rather than hardcoding it, because it is both the reported release and the cache-invalidation key (Principle V). **That endpoint answers text/plain and rejects `Accept: application/json` with 406** -- found by calling beta, after every mocked test passed
+- [x] T009 Detect a ReactomeGSA result from `gsaMethod`/`gsaToken` in `src/analysis/client.py` and return `unsupported`, so a result we do not model is never summarised confidently (research D8)
 
 ## Phase 3: User Story 1 — What does my result say? (P1)
 
@@ -36,13 +36,13 @@ a deleted one, and that the same token returns the same text.
 
 **Independent test**: Submit a known token; the summary names the pathways the result ranks highest, describes significance the result supports, and cites each by stable id.
 
-- [ ] T010 [US1] Build the prompt input from an aggregate result in `src/analysis/summarise.py`: top pathways with their `found`/`total`/`ratio`/`pValue`/`fdr`, the analysis type, species, and the service's own `warnings`
-- [ ] T011 [P] [US1] Test in `tests/analysis/test_summarise.py` that a result where nothing passes FDR produces prompt input that says so, so the model is never handed a "top pathway" framing for a null result (FR-004)
-- [ ] T012 [US1] Emit pathway citations as `st_id` events reusing the answer endpoint's citation shape, in `src/api/analysis_summary.py`
-- [ ] T013 [US1] Add the SSE endpoint in `src/api/analysis_summary.py` per [contracts/summary_endpoint.md](./contracts/summary_endpoint.md): `start` with release and analysis type, `token`, `citation`, `done`
-- [ ] T014 [US1] Mount the router in `bin/chat-fastapi.py` and add its prefix to the captcha exemption, as the answer endpoint's is
-- [ ] T015 [US1] Test over HTTP on the real mounted app in `tests/api/test_analysis_summary.py`, not by calling the handler — mounting order and middleware interact only on the served path (Principle I), which is where spec 010's route check found what isolated tests could not
-- [ ] T016 [P] [US1] Test that every `st_id` a summary cites appears in that result's `pathways[]`, mechanically rather than by reading, in `tests/api/test_analysis_summary.py`, so an invented or mismatched identifier fails (SC-003)
+- [x] T010 [US1] Build the prompt input from an aggregate result in `src/analysis/summarise.py`: top pathways with their `found`/`total`/`ratio`/`pValue`/`fdr`, the analysis type, species, and the service's own `warnings`
+- [x] T011 [P] [US1] Test in `tests/analysis/test_summarise.py` that a result where nothing passes FDR produces prompt input that says so, so the model is never handed a "top pathway" framing for a null result (FR-004)
+- [x] T012 [US1] Emit pathway citations as `st_id` events reusing the answer endpoint's citation shape, in `src/api/analysis_summary.py`
+- [x] T013 [US1] Add the SSE endpoint in `src/api/analysis_summary.py` per [contracts/summary_endpoint.md](./contracts/summary_endpoint.md): `start` with release and analysis type, `token`, `citation`, `done`
+- [x] T014 [US1] Mount the router in `bin/chat-fastapi.py` and add its prefix to the captcha exemption, as the answer endpoint's is
+- [x] T015 [US1] Test over HTTP on the real mounted app in `tests/api/test_analysis_summary.py`, not by calling the handler — mounting order and middleware interact only on the served path (Principle I), which is where spec 010's route check found what isolated tests could not
+- [x] T016 [P] [US1] Test that every `st_id` a summary cites appears in that result's `pathways[]`, mechanically rather than by reading, in `tests/api/test_analysis_summary.py`, so an invented or mismatched identifier fails (SC-003)
 
 ## Phase 4: User Story 2 — Why were my identifiers not found? (P2)
 
@@ -94,10 +94,10 @@ for the answer route only. A summary route must exist before any claim can be
 carried. Everything in this phase can be built and tested before that lands.
 
 - [x] T031 Agree with the website session how human presence is asserted — `human`, `human_iat` and `subject` claims on the caller token, minted only when their Turnstile-backed identity cookie validated. They proposed gating on the analysis token instead and withdrew it: a token proves an analysis happened, not that a person is present, and tokens travel in pasted URLs
-- [ ] T031a Verify `human_iat` against a **30-minute** freshness bound in `src/util/caller_token.py`, refusing an older one. They refuse to mint past the same bound, so it fails at both ends rather than relying on either alone
-- [ ] T031b Key the rate limiter on `subject` when present, falling back to the caller identity, in `src/api/analysis_summary.py` — per-person throttling rather than per-proxy-address. Also limit per analysis token: twenty summaries of one analysis is not a scientist
-- [ ] T031c Test that a `human` claim with a stale `human_iat` is refused with **zero model calls**, in `tests/api/test_analysis_summary.py` — the freshness bound is the half most likely to be dropped, because the claim being present looks like success
-- [ ] T032 [US1] Verify the assertion in `src/util/caller_token.py` once T031 is agreed, refusing before any model call
+- [x] T031a Verify `human_iat` against a **30-minute** freshness bound in `src/util/caller_token.py`, refusing an older one. They refuse to mint past the same bound, so it fails at both ends rather than relying on either alone. **Compared in whole seconds** (`int(now) - int(issued)`), matching their `nowSeconds - floor(solvedAt/1000)`: with a float clock the inclusive bound is unreachable, because a claim issued exactly 1800s ago is 1800.0003s old when checked. Caught by the test pinning the edge
+- [x] T031b Key the rate limiter on `human_sub` when present, falling back to the caller identity, in `src/api/analysis_summary.py` — per-person throttling rather than per-proxy-address. Also limit per analysis token: twenty summaries of one analysis is not a scientist
+- [x] T031c Test that a `human` claim with a stale `human_iat` is refused with **zero model calls**, in `tests/api/test_analysis_summary.py` — the freshness bound is the half most likely to be dropped, because the claim being present looks like success
+- [x] T032 [US1] Verify the assertion in `src/util/caller_token.py` -- `human_presence_reason` checks `human` and a 30-minute `human_iat`, refusing before any model call
 - [ ] T033 [P] Test that a request without the assertion is refused and makes **zero model calls**, counted on a patched graph rather than inferred from timing, in `tests/api/test_analysis_summary.py` (SC-004)
 
 ## Phase 9: Polish
