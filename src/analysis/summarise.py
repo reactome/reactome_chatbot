@@ -15,9 +15,25 @@ from typing import Any
 FDR_THRESHOLD = 0.05
 
 
+#: Below this many matched entities, a pathway's p-value rests on so little
+#: that it should not be read as evidence however small it is. Reactome's own
+#: user guide makes this point and it is the single thing a reader most often
+#: gets wrong -- a pathway with 2 of 3 entities found looks like a perfect hit
+#: and is nearly meaningless.
+#:
+#: Computed here rather than left to the model. Handed a small p-value and a
+#: small count and asked to be careful, a model describes the p-value.
+FRAGILE_BELOW_FOUND = 5
+
+
 def _significant(pathway: dict[str, Any]) -> bool:
     fdr = pathway.get("entities", {}).get("fdr")
     return isinstance(fdr, int | float) and fdr <= FDR_THRESHOLD
+
+
+def _fragile(pathway: dict[str, Any]) -> bool:
+    found = pathway.get("entities", {}).get("found")
+    return isinstance(found, int) and found < FRAGILE_BELOW_FOUND
 
 
 def prompt_input(payload: dict[str, Any]) -> dict[str, Any]:
@@ -77,6 +93,9 @@ def prompt_input(payload: dict[str, Any]) -> dict[str, Any]:
                 "p_value": p.get("entities", {}).get("pValue"),
                 "fdr": p.get("entities", {}).get("fdr"),
                 "significant": _significant(p),
+                # True when the hit rests on too few entities to be evidence,
+                # whatever the p-value says.
+                "fragile": _fragile(p),
             }
             for p in pathways
         ],
@@ -117,6 +136,23 @@ UNMATCHED_INSTRUCTION = (
     "identifiers resolving through a single resource suggests an identifier "
     "type Reactome does not index, and pathways concentrated in one species "
     "suggests the wrong species was analysed."
+)
+
+#: Always appended. Both halves are things a model will otherwise get wrong
+#: in the same direction -- towards overstating a finding.
+STATISTICS_INSTRUCTION = (
+    "When you call a pathway significant, say whether that is before or after "
+    "multiple-testing correction; `significant` in the data is after. A "
+    "pathway with a small p-value that does not pass correction is not a "
+    "finding, and saying so is more useful than omitting it. "
+    "Where `fragile` is true the hit rests on fewer than "
+    f"{FRAGILE_BELOW_FOUND} matched entities. Explain that in the reader's "
+    "terms using that pathway's own found and total counts -- a small p-value "
+    "on three entities is not evidence however small it is. **Never use the "
+    "word 'fragile' or any other field name from the data**: these are "
+    "internal labels, and a reader should be told what the counts mean, not "
+    "what we called it. Explain what the numbers mean for this result, never "
+    "in general."
 )
 
 #: Appended only when the reader chose the disclosing tier and unmatched
