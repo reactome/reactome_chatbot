@@ -172,61 +172,76 @@ probe both run on every deploy, is the cheap way to learn more.
 
 ## T022 -- is 2s/10s reachable? Measured 2026-09-20
 
-Re-measured because the recorded number has been wrong three times, and
-because T020 moved one of the blocks. Taken on `astream_answer`, the path the
-endpoint uses, over five questions x three runs per arm. Wall clock to the
-first `token` event is recorded independently of the phase timings, so the
-breakdown has to account for the total rather than being assumed to.
+Re-measured because the recorded number has been wrong three times. Taken on
+`astream_answer`, the path the endpoint uses. The two arms are **interleaved**,
+alternating which goes first, and the number of queries actually asked is
+recorded so "expansion off" is shown rather than assumed. n=25 per arm.
 
 | | default | expansion off |
 |---|---|---|
-| preprocess | 1.77s | 1.65s |
-| retrieval | 2.84s | 0.26s |
-| answer model (residual) | 0.66s | 0.90s |
-| **first token, p50** | **5.27s** | **2.81s** |
-| first token, p90 | 10.57s | 3.81s |
-| **complete, p50** | **9.64s** | **7.04s** |
+| queries per retrieval | 5 | 1 |
+| preprocess | 1.58s | 1.65s |
+| retrieval | 3.15s | 0.29s |
+| answer model (residual) | 0.84s | 0.79s |
+| **first token, p50** | **5.57s** | **2.73s** |
+| first token, min–max | 2.26s – 11.44s | 2.36s – 5.59s |
+| **complete, p50** | **8.90s** | **7.16s** |
 
 ### The plain answer
 
-**10s complete is met**, at 9.64s p50 today and 7.04s with expansion off.
+**10s complete is met**, at 8.90s p50 today and 7.16s with expansion off.
 
-**2s to first token is not met**, either way, and is not close on the default
-path. Disabling query expansion gets it to 2.81s -- still short, but the same
-order as the target rather than double it.
+**2s to first token is not met**, either way. Disabling query expansion gets
+p50 to 2.73s -- short of the target but the same order as it rather than
+double. So FR-005a stays a target with a named blocker.
 
-So FR-005a stays a target with a named blocker. What changed is which blocker.
+### The tail is the finding, not the median
+
+The default path's **best** case is 2.26s and its worst is 11.44s -- a fivefold
+spread. Disabling expansion barely moves the best case (2.36s) and halves the
+worst (5.59s).
+
+So expansion does not make a typical request slow; it makes the slow requests
+much slower. A target quoted at p50 would hide that entirely, and the panel
+renders progressively, so the tail is the part a reader actually notices. Any
+future latency requirement should be stated at a high percentile.
+
+Reported as min–max rather than p90: at n=25 a p90 is little more than the
+second-highest sample, and the first attempt quoted one from n=15, where it
+was barely more than the maximum.
 
 ### A number I cannot reconcile
 
 The previous record has the answer model's time to first token at **6.1s**,
-"the largest block left". This measurement puts it at **0.66s**, and retrieval
-at 2.84s is now the largest block.
+"the largest block left". This puts it at **0.84s**, with retrieval the
+largest at 3.15s.
 
-I can offer the mechanism but not the proof. My figure is a *residual* --
-first token minus preprocess minus retrieval -- so it absorbs anything
-unattributed, which if anything biases it upward, not down. The two
-measurements disagree by a factor of nine and only one of them can be right
-about today's code. Stated as unreconciled rather than quietly replacing the
-old number, because "the answer model is the problem" has been steering this
-spec's priorities and it now looks wrong.
+My figure is a *residual* -- first token minus preprocess minus retrieval --
+so it absorbs anything unattributed, which biases it upward, not down. It is
+also stable across both arms (0.84s and 0.79s) where the arms differ hugely in
+retrieval, which is what a real per-call cost looks like rather than a
+measurement artefact.
 
-### The variance matters more than the median
+They disagree by a factor of seven and only one can describe today's code.
+Stated as unreconciled rather than quietly replacing the old number, because
+"the answer model is the problem" has been steering this spec's priorities.
 
-p90 first token is **10.57s** on the default path against a 5.27s median.
-Disabling expansion collapses that to 3.81s. A target quoted at p50 hides
-this: one request in ten currently waits twice the median, and the panel is
-rendering progressively, so that wait is visible. Any future latency
-requirement should be stated at p90.
+### What the interleaving showed
 
-### What would have to change, in the order the measurement suggests
+The first attempt ran the arms in sequence, default first, so warming would
+have favoured expansion-off. Interleaving changed the conclusion not at all,
+and the internal check for it is `preprocess`: it is 1.58s and 1.65s across
+arms that differ tenfold in retrieval, and expansion cannot affect
+preprocessing, so a sequencing confound would have shown up there and did not.
 
-1. **Retrieval, 2.84s** -- the largest block, and 2.58s of it is query
+### What would have to change, in measured order
+
+1. **Retrieval, 3.15s** -- the largest block, and 2.86s of it is query
    expansion. `QUERY_EXPANSION_ALTERNATES=0` removes it today and is one
-   variable to revert. What it costs in recall is unmeasured beyond thirteen
-   tracked questions (T020).
-2. **Preprocessing, 1.77s** -- whether a search-page question needs all four
+   variable to revert. Its recall cost is unmeasured beyond thirteen tracked
+   questions (T020).
+2. **Preprocessing, 1.58s** -- whether a search-page question needs all four
    calls is still open (T020c). The two rounds removed the waiting, not the
    calls.
-3. **The answer model, 0.66s** -- no longer worth attention on these numbers,
-   which is exactly why the discrepancy above matters.
+3. **The answer model, 0.84s** -- not worth attention on these numbers, which
+   is exactly why the discrepancy above matters.
