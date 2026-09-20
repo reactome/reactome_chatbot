@@ -44,6 +44,12 @@ ENTITY_FIELDS: tuple[str, ...] = (
     "curatedFound",
     "interactorsFound",
     "resource",
+    # Per-pathway expression values, one per column. Aggregated across the
+    # pathway's entities rather than the reader's raw measurements, and the
+    # data model puts them in the aggregate tier -- but they are only
+    # interpretable *with* `expression.columnNames`, which is user-supplied
+    # text and never sent. Numbers without labels, which is the point.
+    "exp",
 )
 
 PATHWAY_FIELDS: tuple[str, ...] = ("stId", "name", "species", "inDisease")

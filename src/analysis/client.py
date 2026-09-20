@@ -81,15 +81,32 @@ def _headers(accept: str = "application/json") -> dict[str, str]:
 VERSION_ACCEPT = "text/plain, */*"
 
 
+#: The analysis types this service does not model. Read from the API's own
+#: enum on 2026-09-20 -- `ExternalAnalysisSummary.type` is
+#: SPECIES_COMPARISON, OVERREPRESENTATION, EXPRESSION, GSA_REGULATION,
+#: GSA_STATISTICS, GSVA -- rather than guessed at, because the first version
+#: recognised GSA by its `gsaMethod` field alone and a result carrying the
+#: type without that field would have been summarised confidently. That is
+#: precisely the outcome D8 exists to prevent.
+GSA_TYPES = frozenset({"GSA_REGULATION", "GSA_STATISTICS", "GSVA"})
+
+
 def is_gsa(result: dict[str, Any]) -> bool:
     """A ReactomeGSA result, which this does not model and will not summarise.
 
     GSA is a separate service on a different host with its own result shape.
-    Recognising it costs one field check and prevents the worst outcome: a
-    confident summary of something we do not actually understand.
+    Recognising it prevents the worst outcome: a confident summary of
+    something we do not actually understand.
+
+    Two independent signals, because either alone has a gap. The fields catch
+    a result whose type is unset or new; the type catches one that carries no
+    `gsaMethod`. Neither is known to be sufficient on its own and there is no
+    cost to checking both.
     """
     summary = result.get("summary") or {}
-    return bool(summary.get("gsaMethod") or summary.get("gsaToken"))
+    if summary.get("gsaMethod") or summary.get("gsaToken"):
+        return True
+    return str(summary.get("type") or "").upper() in GSA_TYPES
 
 
 async def fetch_result(

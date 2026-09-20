@@ -32,6 +32,7 @@ from analysis.summarise import (
     INEXACT_COUNT_INSTRUCTION,
     NAMED_UNMATCHED_INSTRUCTION,
     STATISTICS_INSTRUCTION,
+    TYPE_INSTRUCTION,
     UNMATCHED_INSTRUCTION,
     VERDICT_INSTRUCTION,
     prompt_input,
@@ -202,6 +203,11 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
                 instruction = VERDICT_INSTRUCTION[model_input["verdict"]]
                 if not model_input["significant_count_is_exact"]:
                     instruction = f"{instruction} {INEXACT_COUNT_INSTRUCTION}"
+                by_type = TYPE_INSTRUCTION.get(
+                    str(model_input.get("analysis_type") or "").upper()
+                )
+                if by_type:
+                    instruction = f"{instruction} {by_type}"
                 instruction = f"{instruction} {STATISTICS_INSTRUCTION}"
                 instruction = f"{instruction} {UNMATCHED_INSTRUCTION}"
                 if model_input.get("identifiers_not_found_names"):
