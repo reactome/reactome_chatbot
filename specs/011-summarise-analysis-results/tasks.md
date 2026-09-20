@@ -65,13 +65,24 @@ count is reported instead; the reader knows what they submitted.
 
 ## Phase 5: User Story 3 — What do these numbers mean? (P3)
 
+**Fragility is computed in code, not asked for in the prompt.** A hit resting
+on fewer than five matched entities is flagged per pathway, because a model
+handed a tiny p-value and a tiny count describes the p-value. The threshold is
+on the *count*, not the ratio: 2 of 3 looks perfect by ratio and is nearly
+meaningless, 40 of 200 looks poor and is real evidence.
+
+**No per-pathway request parameter was added.** US3's independent test implies
+one, but the website has not asked for it and every shown pathway already
+carries its own counts, so the explanation is per-pathway without new contract
+surface.
+
 **Goal**: The statistics are explained using the reader's own numbers.
 
 **Independent test**: Ask about one pathway in a result; the explanation uses that pathway's counts, not generic definitions.
 
-- [ ] T021 [US3] Carry per-pathway counts into the prompt input for a named pathway in `src/analysis/summarise.py`
-- [ ] T022 [P] [US3] Test that a pathway significant by p-value but not by FDR is described as distinguishing the two, in `tests/analysis/test_summarise.py` (spec US3 scenario 2)
-- [ ] T023 [P] [US3] Test that a pathway with very few found entities is described as fragile, using its actual counts, in `tests/analysis/test_summarise.py` (spec US3 scenario 1)
+- [x] T021 [US3] Carry per-pathway counts into the prompt input for a named pathway in `src/analysis/summarise.py`
+- [x] T022 [P] [US3] Test that a pathway significant by p-value but not by FDR is described as distinguishing the two, in `tests/analysis/test_summarise.py` (spec US3 scenario 2)
+- [x] T023 [P] [US3] Test that a pathway with very few found entities is described as fragile, using its actual counts, in `tests/analysis/test_summarise.py` (spec US3 scenario 1)
 
 ## Phase 6: User Story 4 — Readings specific to the analysis type (P4)
 

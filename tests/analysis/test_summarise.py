@@ -1,9 +1,11 @@
 """What the model is told about a result, before any model is involved."""
 
+from typing import Any
+
 from analysis.summarise import VERDICT_INSTRUCTION, prompt_input
 
 
-def _payload(*fdrs: float) -> dict[str, object]:
+def _payload(*fdrs: float) -> dict[str, Any]:
     return {
         "summary": {"type": "OVERREPRESENTATION"},
         "pathways_total": len(fdrs),
@@ -59,7 +61,7 @@ def test_a_pathway_exactly_on_the_threshold_counts_as_significant() -> None:
 def test_a_missing_fdr_is_not_significant() -> None:
     # Absence is normal in this API; it must never read as passing.
     payload = _payload(0.01)
-    del payload["pathways"][0]["entities"]["fdr"]  # type: ignore[index]
+    del payload["pathways"][0]["entities"]["fdr"]
     assert prompt_input(payload)["significant_among_shown"] == 0
 
 
@@ -121,3 +123,72 @@ def test_unmatched_identifiers_are_reported_as_a_count_not_a_proportion() -> Non
     assert "Never state a proportion" in UNMATCHED_INSTRUCTION
     # Nothing in the payload lets a proportion be computed.
     assert not any("submitted" in k or "total_identifiers" in k for k in out)
+
+
+def test_a_hit_resting_on_few_entities_is_flagged_fragile() -> None:
+    # US3 scenario 1, and the thing the spec says readers most often get
+    # wrong: "a pathway with 2 of 3 entities found is not strong evidence".
+    # Computed here because a model handed a tiny p-value and a tiny count
+    # describes the p-value.
+    payload = _payload(1e-9)
+    payload["pathways"][0]["entities"].update({"found": 2, "total": 3})
+    out = prompt_input(payload)
+    assert out["pathways"][0]["fragile"] is True
+    assert out["pathways"][0]["significant"] is True
+
+
+def test_a_well_supported_hit_is_not_flagged_fragile() -> None:
+    # A flag that is always true would pass the test above and say nothing.
+    payload = _payload(1e-9)
+    payload["pathways"][0]["entities"].update({"found": 40, "total": 120})
+    pathways: list[dict[str, Any]] = prompt_input(payload)["pathways"]
+    assert pathways[0]["fragile"] is False
+
+
+def test_the_fragility_threshold_is_on_the_count_not_the_ratio() -> None:
+    # 2 of 3 looks like a perfect hit by ratio and is nearly meaningless;
+    # 40 of 200 looks poor by ratio and is real evidence. The ratio is the
+    # misleading number here, so the flag deliberately ignores it.
+    ratio_perfect = _payload(1e-9)
+    ratio_perfect["pathways"][0]["entities"].update({"found": 2, "total": 3})
+    ratio_poor = _payload(1e-9)
+    ratio_poor["pathways"][0]["entities"].update({"found": 40, "total": 200})
+    pathways: list[dict[str, Any]] = prompt_input(ratio_perfect)["pathways"]
+    assert pathways[0]["fragile"] is True
+    poor: list[dict[str, Any]] = prompt_input(ratio_poor)["pathways"]
+    assert poor[0]["fragile"] is False
+
+
+def test_significant_before_correction_is_distinguishable_from_after() -> None:
+    # US3 scenario 2. Both numbers are present per pathway and `significant`
+    # is defined as after correction, so the two can be told apart rather
+    # than the model choosing which it means.
+    from analysis.summarise import STATISTICS_INSTRUCTION
+
+    payload = _payload(0.2)
+    payload["pathways"][0]["entities"]["pValue"] = 0.001
+    out = prompt_input(payload)
+    pathway = out["pathways"][0]
+    assert pathway["p_value"] == 0.001
+    assert pathway["fdr"] == 0.2
+    assert pathway["significant"] is False
+    assert "before or after" in STATISTICS_INSTRUCTION
+    assert "is after" in STATISTICS_INSTRUCTION
+
+
+def test_a_pathway_with_no_found_count_is_not_called_fragile() -> None:
+    # Absence is normal in this API and must not read as a finding either way.
+    payload = _payload(1e-9)
+    del payload["pathways"][0]["entities"]["found"]
+    pathways: list[dict[str, Any]] = prompt_input(payload)["pathways"]
+    assert pathways[0]["fragile"] is False
+
+
+def test_the_model_is_told_not_to_repeat_our_field_names() -> None:
+    # Measured against a real result: the summary said "these pathways are
+    # classified as fragile", handing the reader an internal label instead of
+    # the reason. The flag is ours; the explanation is theirs.
+    from analysis.summarise import STATISTICS_INSTRUCTION
+
+    assert "Never use the word 'fragile'" in STATISTICS_INSTRUCTION
+    assert "internal labels" in STATISTICS_INSTRUCTION

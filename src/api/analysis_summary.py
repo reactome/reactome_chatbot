@@ -31,6 +31,7 @@ from analysis.disclosure import Tier, for_tier
 from analysis.summarise import (
     INEXACT_COUNT_INSTRUCTION,
     NAMED_UNMATCHED_INSTRUCTION,
+    STATISTICS_INSTRUCTION,
     UNMATCHED_INSTRUCTION,
     VERDICT_INSTRUCTION,
     prompt_input,
@@ -201,6 +202,7 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
                 instruction = VERDICT_INSTRUCTION[model_input["verdict"]]
                 if not model_input["significant_count_is_exact"]:
                     instruction = f"{instruction} {INEXACT_COUNT_INSTRUCTION}"
+                instruction = f"{instruction} {STATISTICS_INSTRUCTION}"
                 instruction = f"{instruction} {UNMATCHED_INSTRUCTION}"
                 if model_input.get("identifiers_not_found_names"):
                     instruction = f"{instruction} {NAMED_UNMATCHED_INSTRUCTION}"
