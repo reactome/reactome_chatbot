@@ -547,3 +547,63 @@ def test_citations_come_back_with_a_cached_summary(keys: tuple[str, str]) -> Non
 
     assert cited(second) == cited(first)
     assert cited(second), "no citations at all"
+
+
+def test_a_cached_disclosing_summary_does_not_refetch_the_identifiers(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The first version looked the cache up *after* the disclosure fetch, so
+    # every reload of an already-summarised analysis went and asked the
+    # Analysis Service for the reader's identifiers again and discarded
+    # them. Pointless, and on the one endpoint where pointless requests are
+    # worth avoiding.
+    asked = _with_not_found_spy(monkeypatch)
+    private, public = keys
+    _post(public, caller_token=_token(private), disclosure="identifiers")
+    assert len(asked) == 1
+    second = _post(public, caller_token=_token(private), disclosure="identifiers")
+    assert _events(second.text)[0][1]["cached"] is True
+    assert len(asked) == 1, "a cached summary refetched the user's identifiers"
+
+
+def test_a_failed_disclosure_does_not_poison_later_requests(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A request whose disclosure failed stores an aggregate summary under
+    # `aggregate`. The next disclosing request must miss and try again,
+    # rather than being served that fallback forever -- which is why the
+    # lookup uses the requested tier and the write uses the applied one.
+    failing = {"on": True}
+
+    async def _sometimes(_token: str, **_kwargs: Any) -> list[str] | None:
+        return None if failing["on"] else ["SMITH_LAB_SECRET_GENE_001"]
+
+    monkeypatch.setattr("api.analysis_summary.fetch_not_found", _sometimes)
+    private, public = keys
+    first = _post(public, caller_token=_token(private), disclosure="identifiers")
+    assert _events(first.text)[0][1]["disclosure"] == "aggregate"
+
+    failing["on"] = False
+    second = _post(public, caller_token=_token(private), disclosure="identifiers")
+    assert _events(second.text)[0][1]["cached"] is False, "served the fallback"
+    assert _events(second.text)[0][1]["disclosure"] == "identifiers"
+
+
+def test_a_deleted_result_is_reported_even_when_a_summary_is_stored(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The result is fetched on every request, before the cache is consulted,
+    # and that is what keeps `gone` correct: a release deletes the analysis,
+    # and a reader must be told to re-run rather than handed a confident
+    # summary of something that no longer exists.
+    private, public = keys
+    _post(public, caller_token=_token(private))
+
+    async def _gone(_token: str) -> Fetched:
+        return Fetched("gone")
+
+    monkeypatch.setattr("api.analysis_summary.fetch_result", _gone)
+    assert (
+        _events(_post(public, caller_token=_token(private)).text)[-1][1]["state"]
+        == "gone"
+    )

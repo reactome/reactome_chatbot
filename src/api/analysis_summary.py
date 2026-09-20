@@ -148,37 +148,49 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
 
                 payload = for_tier(fetched.result, body.disclosure)
                 model_input = prompt_input(payload)
-                # Which tier the answer was actually built from, which is
-                # not always the one asked for.
+                release = await current_release()
+
+                # Looked up BEFORE the disclosure fetch, and under the tier
+                # the reader *asked* for. The first version looked it up
+                # after, so a cache hit on the disclosing tier still went and
+                # fetched the reader's identifiers and then discarded them --
+                # a pointless request to the endpoint that returns their data,
+                # on every reload of a summary we already had.
+                #
+                # Stored under the tier that *applied*, which is not always
+                # the same. The asymmetry is deliberate: a request whose
+                # disclosure failed stores an aggregate summary under
+                # `aggregate`, so the next disclosing request misses and gets
+                # another chance at the identifiers rather than being served
+                # the fallback forever.
+                cached = (
+                    _store.get(body.token, release, body.disclosure)
+                    if release
+                    else None
+                )
+
+                # Which tier the answer was actually built from.
                 applied: Tier = body.disclosure
-                if body.disclosure == "identifiers":
+                if cached is None and body.disclosure == "identifiers":
                     # The only place this service asks for the reader's own
-                    # identifiers, reached only because they chose it. A
-                    # separate call taking a separate decision, never a flag
-                    # with a default, and never on the aggregate path.
+                    # identifiers, reached only because they chose it and
+                    # only when there is nothing to reuse. A separate call
+                    # taking a separate decision, never a flag with a
+                    # default, and never on the aggregate path.
                     unmatched = await fetch_not_found(body.token)
                     if unmatched:
                         model_input["identifiers_not_found_names"] = unmatched
                     elif model_input.get("identifiers_not_found"):
                         # There were unmatched identifiers and we could not
-                        # retrieve them. The summary is therefore the
-                        # aggregate one, and saying so is the whole point:
-                        # this is the same "disclosure with no benefit" the
-                        # tier was just fixed for, arriving down the failure
-                        # path instead. A reader who chose to disclose and
-                        # silently got the other summary has been told
-                        # nothing and given nothing.
+                        # retrieve them, so the summary is the aggregate one.
+                        # Saying so is the point: a reader who chose to
+                        # disclose and silently got the other summary has
+                        # been told nothing and given nothing.
                         applied = "aggregate"
                         logger.warning(
                             "identifier tier requested but the not-found "
                             "lookup returned nothing; serving aggregate"
                         )
-                release = await current_release()
-                # Keyed on the tier that *applied*, not the one requested: a
-                # disclosure that could not be honoured produced an aggregate
-                # summary, and storing it under `identifiers` would serve it
-                # back later as though the identifiers had been used.
-                cached = _store.get(body.token, release, applied) if release else None
                 yield _sse(
                     "start",
                     {
