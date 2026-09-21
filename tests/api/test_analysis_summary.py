@@ -121,7 +121,9 @@ def _client(public_pem: str) -> TestClient:
     return TestClient(app)
 
 
-def _token(private_pem: str, **claims: object) -> str:
+def _token(private_pem: str, omit: tuple[str, ...] = (), **claims: object) -> str:
+    """`omit` removes a claim entirely, which is different from setting it to
+    None -- and the difference is the whole point of the absence cases."""
     payload: dict[str, object] = {
         "iss": "reactome-website",
         "aud": DEFAULT_AUDIENCE,
@@ -131,6 +133,8 @@ def _token(private_pem: str, **claims: object) -> str:
         "human_iat": int(time.time()) - 10,
     }
     payload.update(claims)
+    for key in omit:
+        payload.pop(key, None)
     return jwt.encode(payload, private_pem, algorithm="EdDSA")
 
 
@@ -747,3 +751,42 @@ def test_expression_values_reach_the_model_on_the_served_path(
     # this assertion first passed review while testing nothing.
     assert "expression_columns" in prompt
     assert re.search(r'expression_columns\\?":\s*3', prompt), prompt[-200:]
+
+
+@pytest.mark.parametrize(
+    ("omit", "claims", "expected_log"),
+    [
+        # Absent, which is what the website's hand-built claim effectively
+        # was: they sent `subject` and `solvedAt`, so neither agreed claim
+        # was there at all.
+        (("human",), {}, "no `human` claim present"),
+        ((), {"human": "yes"}, "present but not true"),
+        (("human_iat",), {"human": True}, "no `human_iat`"),
+        ((), {"human": True, "human_iat": "solvedAt"}, "not a number"),
+    ],
+)
+def test_the_specific_presence_failure_is_logged_but_never_returned(
+    keys: tuple[str, str],
+    caplog: pytest.LogCaptureFixture,
+    omit: tuple[str, ...],
+    claims: dict[str, Any],
+    expected_log: str,
+) -> None:
+    # The caller gets a coarse `no_human` whatever went wrong, so this side
+    # cannot be probed for what a valid claim looks like. The cost of that
+    # was paid on 2026-09-21: the website hand-built a claim with their
+    # cookie's field names, got `no_human` twice, and nearly concluded our
+    # gate was rejecting their valid tokens.
+    #
+    # So the distinction lives in the log. Both halves are asserted, because
+    # either alone is the bug: a coarse log is undiagnosable and a detailed
+    # response is a probe.
+    private, public = keys
+    with caplog.at_level("INFO", logger="api.analysis_summary"):
+        response = _post(public, caller_token=_token(private, omit=omit, **claims))
+
+    payload = _events(response.text)[-1][1]
+    assert payload["reason"] == "no_human"
+    logged = " ".join(r.getMessage() for r in caplog.records)
+    assert expected_log in logged, f"not diagnosable from the log: {logged}"
+    assert expected_log not in response.text, "the detail reached the caller"

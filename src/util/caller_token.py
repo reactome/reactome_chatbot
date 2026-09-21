@@ -172,6 +172,36 @@ def verify(token: str, verifying_key: str, *, audience: str | None = None) -> di
 HUMAN_MAX_AGE_SECONDS = 1800
 
 
+def human_presence_detail(claims: dict) -> str:
+    """Why the presence claim failed, **for our logs only**.
+
+    The reason returned to the caller is deliberately coarse: `no_human`
+    whether the claim was absent, malformed or from the future, so this side
+    cannot be used to probe what a valid claim looks like.
+
+    That coarseness has a cost, and it was paid on 2026-09-21. The website
+    hand-built a test claim using their cookie's internal field names
+    (`subject`, `solvedAt`) rather than the agreed JWT claims, got `no_human`
+    twice, and was one step from concluding this gate was rejecting their
+    valid tokens. Two identical wrong answers read as a finding rather than
+    as one mistake made twice.
+
+    So the distinction lives here, in the log, where an integrator's "we get
+    no_human" can be answered by looking rather than by guessing. Never put
+    this in the response.
+    """
+    if "human" not in claims:
+        return "no `human` claim present"
+    if claims.get("human") is not True:
+        return f"`human` present but not true ({claims.get('human')!r})"
+    if "human_iat" not in claims:
+        return "`human` true but no `human_iat`"
+    issued = claims.get("human_iat")
+    if not isinstance(issued, int | float) or isinstance(issued, bool):
+        return f"`human_iat` is not a number ({type(issued).__name__})"
+    return "`human_iat` is in the future; clocks disagree"
+
+
 def human_presence_reason(claims: dict, now: float) -> str | None:
     """None when a person is vouched for; otherwise why not.
 
