@@ -133,8 +133,8 @@ carried. Everything in this phase can be built and tested before that lands.
 
 - [x] T034 [P] Bound the summary in `src/api/analysis_summary.py` as the answer endpoint is, so a stuck upstream cannot hold a connection. **The bound existed since Phase 3 and was untested until now**; the test also pins that a truncated summary is never stored, which would otherwise be served forever
 - [x] T035 [P] Log an abandoned summary stream in `src/api/analysis_summary.py`, as the answer endpoint does, so a caller that starts summaries it does not want is visible
-- [ ] T036 Run the [quickstart](./quickstart.md) scenarios against beta with a real analysis token and record the outcome, including first-token timing
-- [ ] T037 Tell the website session the endpoint exists, what it does not yet do, and the `gone` outcome they must handle — only once it is live on beta, not when it merges
+- [x] T036 Run the [quickstart](./quickstart.md) scenarios against beta with a real analysis token and record the outcome, including first-token timing. **Seven of nine pass on image `cc4315c`; two cannot be constructed** (a null result, a ReactomeGSA analysis — the `gone` token turned out to be constructible from the timestamp the token encodes) and the quickstart says so rather than marking them skipped. First token 1.8s and 2.0s on two runs of a single token — two samples, not a distribution
+- [x] T037 Told the website session on 2026-09-21, once it was live on beta (image `cc4315c`) rather than when it merged. Sent: the three terminal states they must handle (`gone` distinct from `not_found`, `unsupported` for the three ReactomeGSA types, `refused` with its `reason`), the three scenarios that could not be verified live and are unit-tested only, and that summaries are lost on deploy by design
 
 ## Dependencies
 
