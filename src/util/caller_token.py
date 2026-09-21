@@ -172,6 +172,55 @@ def verify(token: str, verifying_key: str, *, audience: str | None = None) -> di
 HUMAN_MAX_AGE_SECONDS = 1800
 
 
+def human_presence_detail(claims: dict, now: float) -> str:
+    """Why the presence claim failed, **for our logs only**.
+
+    The reason returned to the caller is deliberately coarse: `no_human`
+    whether the claim was absent, malformed or from the future, so this side
+    cannot be used to probe what a valid claim looks like.
+
+    That coarseness has a cost, and it was paid on 2026-09-21. The website
+    hand-built a test claim using their cookie's internal field names
+    (`subject`, `solvedAt`) rather than the agreed JWT claims, got `no_human`
+    twice, and was one step from concluding this gate was rejecting their
+    valid tokens.
+
+    Takes the same `now` as `human_presence_reason`, because the two must
+    agree about the present as well as about the causes. Two identical wrong answers read as a finding rather than
+    as one mistake made twice.
+
+    So the distinction lives here, in the log, where an integrator's "we get
+    no_human" can be answered by looking rather than by guessing. Never put
+    this in the response.
+    """
+    if "human" not in claims:
+        return "no `human` claim present"
+    if claims.get("human") is not True:
+        # Truncated: this is a signed claim so the value is the website's,
+        # but an unbounded repr in a log line is a bad habit to keep.
+        return f"`human` present but not true ({claims.get('human')!r:.80})"
+    if "human_iat" not in claims:
+        return "`human` true but no `human_iat`"
+    issued = claims.get("human_iat")
+    if not isinstance(issued, int | float) or isinstance(issued, bool):
+        return f"`human_iat` is not a number ({type(issued).__name__})"
+    # The same clock the reason used. Taking `time()` here instead was an
+    # inconsistency that only showed when a caller supplied a different
+    # `now` -- the two functions disagreeing about the present, in the
+    # function written to stop them disagreeing.
+    if int(issued) > int(now) + 60:
+        return "`human_iat` is in the future; clocks disagree"
+    # Reached only if `human_presence_reason` has grown a `no_human` branch
+    # this function does not know about. Saying so is the honest answer; the
+    # previous version returned the clock message as a catch-all, which would
+    # have sent an integrator confidently after the wrong cause -- the exact
+    # failure this whole function exists to prevent, one level in.
+    return (
+        "no known cause matched; human_presence_detail is out of step with "
+        "human_presence_reason"
+    )
+
+
 def human_presence_reason(claims: dict, now: float) -> str | None:
     """None when a person is vouched for; otherwise why not.
 

@@ -38,7 +38,12 @@ from analysis.summarise import (
     VERDICT_INSTRUCTION,
     prompt_input,
 )
-from util.caller_token import TokenRejectedError, human_presence_reason, verify
+from util.caller_token import (
+    TokenRejectedError,
+    human_presence_detail,
+    human_presence_reason,
+    verify,
+)
 from util.logging import logging
 from util.rate_limit import identity_of, limiter_from_env
 
@@ -123,7 +128,14 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
     # Stricter than the answer endpoint, and checked before any model call.
     presence = human_presence_reason(claims, time.time())
     if presence:
-        return _refusal(presence, presence)
+        # The caller gets the coarse reason; the log gets the specific one,
+        # so an integrator's "we get no_human" is answerable by looking.
+        detail = (
+            human_presence_detail(claims, time.time())
+            if presence == "no_human"
+            else presence
+        )
+        return _refusal(presence, detail)
 
     if body.disclosure not in IMPLEMENTED_TIERS:
         return _refusal("unsupported_tier", f"tier {body.disclosure} is not built")
