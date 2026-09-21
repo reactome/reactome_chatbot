@@ -16,7 +16,7 @@ user's own dataset name and their column headers, and the measured example's
 headers were patient identifiers (`P1`..`P4` under a `patient.id` factor).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 #: Columns of the pathway table that may be shown to a model. Everything
@@ -75,7 +75,14 @@ class GsaResult:
     browser_links: list[tuple[str, str]]
     #: The raw table, kept verbatim for the file so a researcher gets every
     #: column rather than the six a model is allowed.
-    raw_table: str
+    #:
+    #: `repr=False` is load-bearing. A dataclass's generated `__repr__`
+    #: includes every field, and this one is ~500 KB in a real run, so a
+    #: `logger.debug("%s", result)`, an exception context, or a failing
+    #: test's output would print the entire pathway table into a log. The
+    #: care taken over what reaches a *model* is wasted if the same content
+    #: reaches a *log file* by default.
+    raw_table: str = field(repr=False)
 
     @property
     def significant(self) -> list[Pathway]:
@@ -153,8 +160,27 @@ def for_model(result: GsaResult, *, top: int = DEFAULT_TOP) -> dict[str, Any]:
     pathways, 412 significant" without having seen 2,679 of anything.
     """
     ranked = sorted(result.pathways, key=lambda p: (p.fdr, p.p_value))[:top]
+
+    # A result with no pathways is not an analysis that found nothing -- it
+    # is an analysis whose table did not arrive, which is what a failed or
+    # half-written result looks like. Reporting `0` with
+    # `counts_are_exact: True` invites a model to tell the user their data
+    # contained no enriched pathways, which is a confident answer to a
+    # question nobody managed to ask. Say "no result" instead.
+    if not result.pathways:
+        return {
+            "release": result.release,
+            "no_result": True,
+            "counts_are_exact": False,
+            "pathway_count": 0,
+            "significant_count": 0,
+            "showing": 0,
+            "top_pathways": [],
+        }
+
     return {
         "release": result.release,
+        "no_result": False,
         "pathway_count": len(result.pathways),
         "significant_count": len(result.significant),
         "counts_are_exact": True,
@@ -169,8 +195,28 @@ def for_model(result: GsaResult, *, top: int = DEFAULT_TOP) -> dict[str, Any]:
             }
             for p in ranked
         ],
-        "browser_links": [url for _, url in result.browser_links],
     }
+
+
+def for_user(result: GsaResult) -> list[tuple[str, str]]:
+    """Links for the chat to show the user. **Not for the model.**
+
+    The Pathway Browser URL embeds the analysis token:
+
+        https://reactome.org/PathwayBrowser/#/DTAB=AN&ANALYSIS=MjAyNj...
+
+    Anyone holding that token can fetch the whole result back from the
+    service -- including `mappings`, which is the user's own gene
+    identifiers, and `fold_changes`, whose columns are their samples. So
+    the link is a *capability*, not a citation.
+
+    `for_model` used to include it. Stripping user content from the payload
+    and then handing over a key that retrieves it is not protection; it is
+    the same content by a longer route. The user should absolutely see this
+    link -- it is how they view their own result properly -- so the chat
+    renders it and the model never receives it.
+    """
+    return list(result.browser_links)
 
 
 def as_tsv(result: GsaResult) -> str:

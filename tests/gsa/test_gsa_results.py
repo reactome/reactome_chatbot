@@ -130,3 +130,64 @@ def test_the_file_keeps_every_column(parsed: gsa_results.GsaResult) -> None:
     header = gsa_results.as_tsv(parsed).splitlines()[0].split("\t")
     assert set(gsa_results.MODEL_COLUMNS).issubset(header)
     assert {"MeanAbsT0", "MeanWeightT0", "av_foldchange"}.issubset(header)
+
+
+def test_the_result_does_not_print_its_table(parsed: gsa_results.GsaResult) -> None:
+    """A dataclass repr includes every field by default.
+
+    The table is ~500 KB in a real run, so one `logger.debug("%s", result)`
+    or one exception context would put the whole thing in a log. Care over
+    what reaches a model is wasted if the same content reaches a log file
+    for free.
+    """
+    printed = repr(parsed)
+    assert "raw_table" not in printed
+    assert "MeanWeightT0" not in printed  # a column only the raw table has
+
+
+def test_an_empty_result_is_not_reported_as_an_exact_zero() -> None:
+    """The failure mode that reads like an answer.
+
+    A result whose table did not arrive has no pathways. Reporting that as
+    `pathway_count: 0, counts_are_exact: True` invites a summary saying the
+    user's data contained no enriched pathways -- a confident answer to a
+    question nobody managed to ask.
+    """
+    empty = gsa_results.parse({"release": "97", "method_name": "padog", "results": []})
+    view = gsa_results.for_model(empty)
+
+    assert view["no_result"] is True
+    assert view["counts_are_exact"] is False
+
+
+def test_a_real_result_is_not_flagged_as_missing(parsed: gsa_results.GsaResult) -> None:
+    # The control: without it, `no_result: True` on everything would pass
+    # the test above and break the feature.
+    view = gsa_results.for_model(parsed)
+    assert view["no_result"] is False
+    assert view["counts_are_exact"] is True
+    assert view["pathway_count"] == 6
+
+
+def test_the_analysis_token_never_reaches_the_model(
+    parsed: gsa_results.GsaResult,
+) -> None:
+    """The Pathway Browser link is a capability, not a citation.
+
+    Its URL embeds the analysis token, and anyone holding that token can
+    fetch the whole result back -- including `mappings`, the user's own gene
+    identifiers. Stripping user content from the payload and then sending a
+    key that retrieves it is the same disclosure by a longer route.
+    """
+    view = json.dumps(gsa_results.for_model(parsed))
+    assert "ANALYSIS=" not in view
+    assert "PathwayBrowser" not in view
+    assert "reactome.org" not in view
+
+
+def test_the_user_still_gets_the_link(parsed: gsa_results.GsaResult) -> None:
+    # Withholding it from the model must not withhold it from the person.
+    # It is how they see their own result properly.
+    links = gsa_results.for_user(parsed)
+    assert links
+    assert any("PathwayBrowser" in url for _, url in links)
