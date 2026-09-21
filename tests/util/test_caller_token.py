@@ -26,6 +26,8 @@ from util.caller_token import (
     KEY_PATH_ENV,
     TokenRejectedError,
     expected_audience,
+    human_presence_detail,
+    human_presence_reason,
     load_verifying_key,
     verify,
 )
@@ -202,3 +204,57 @@ def test_the_key_is_read_from_the_configured_path(
     path = tmp_path / "public.pem"
     path.write_text(public_pem)
     assert load_verifying_key(str(path)).startswith("-----BEGIN PUBLIC KEY-----")
+
+
+def test_every_no_human_cause_has_a_matching_detail() -> None:
+    """The two functions must agree on what produces `no_human`.
+
+    They are separate, with nothing linking them. The detail function used to
+    end with the clock message as a catch-all, so a new `no_human` branch in
+    `human_presence_reason` would have been reported confidently as a clock
+    disagreement -- sending an integrator after the wrong cause, which is the
+    failure the detail exists to prevent.
+
+    Enumerated rather than asserted in prose, so adding a cause without a
+    detail fails here.
+    """
+    now = 1_700_000_000
+    causes: list[dict[str, object]] = [
+        {},
+        {"human": False},
+        {"human": "yes"},
+        {"human": True},
+        {"human": True, "human_iat": None},
+        {"human": True, "human_iat": "solvedAt"},
+        {"human": True, "human_iat": True},
+        {"human": True, "human_iat": now + 3600},
+    ]
+    for claims in causes:
+        assert human_presence_reason(claims, now) == "no_human", claims
+        detail = human_presence_detail(claims, now)
+        assert "out of step" not in detail, f"no detail for {claims}: {detail}"
+
+
+def test_a_long_human_value_is_not_logged_whole() -> None:
+    # A signed claim, so the value is the website's -- but an unbounded repr
+    # in a log line is a habit worth not having.
+    detail = human_presence_detail({"human": "x" * 5000}, 1_700_000_000)
+    assert len(detail) < 200
+
+
+def test_the_detail_admits_when_it_has_no_cause_rather_than_inventing_one() -> None:
+    """Called on claims that are not a failure, it must say so.
+
+    This is the guard the enumeration above cannot provide. That test checks
+    every *known* cause has a detail, which passes just as well if the
+    function ends with a plausible catch-all -- and a catch-all is exactly
+    the bug: a new `no_human` branch would then be reported confidently as
+    whatever the last line happens to say.
+
+    A valid claim reaches the end of the function, so it is the one input
+    that distinguishes an honest fallback from a confident one.
+    """
+    now = 1_700_000_000
+    valid = {"human": True, "human_iat": now - 10}
+    assert human_presence_reason(valid, now) is None
+    assert "out of step" in human_presence_detail(valid, now)

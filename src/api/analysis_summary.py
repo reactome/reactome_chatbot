@@ -130,7 +130,11 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
     if presence:
         # The caller gets the coarse reason; the log gets the specific one,
         # so an integrator's "we get no_human" is answerable by looking.
-        detail = human_presence_detail(claims) if presence == "no_human" else presence
+        detail = (
+            human_presence_detail(claims, time.time())
+            if presence == "no_human"
+            else presence
+        )
         return _refusal(presence, detail)
 
     if body.disclosure not in IMPLEMENTED_TIERS:
