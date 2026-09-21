@@ -10,6 +10,7 @@ carries the user's own row identifiers.
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -19,12 +20,13 @@ FIXTURE = Path(__file__).parent / "result_fixture.json"
 
 
 @pytest.fixture
-def raw() -> dict:
-    return json.loads(FIXTURE.read_text())
+def raw() -> dict[str, Any]:
+    loaded: dict[str, Any] = json.loads(FIXTURE.read_text())
+    return loaded
 
 
 @pytest.fixture
-def parsed(raw: dict) -> gsa_results.GsaResult:
+def parsed(raw: dict[str, Any]) -> gsa_results.GsaResult:
     return gsa_results.parse(raw)
 
 
@@ -63,7 +65,7 @@ def test_model_view_is_ranked_by_significance(parsed: gsa_results.GsaResult) -> 
     assert fdrs == sorted(fdrs)
 
 
-def test_a_non_numeric_fdr_does_not_rank_first(raw: dict) -> None:
+def test_a_non_numeric_fdr_does_not_rank_first(raw: dict[str, Any]) -> None:
     # Measured behaviour elsewhere in Reactome: "NA" appears in numeric
     # columns. float() raises, and a default of 0.0 would sort it to the top
     # as the most significant result in the analysis.
@@ -87,7 +89,7 @@ def test_never_sent_fields_are_absent_by_name(
     assert field not in json.dumps(gsa_results.for_model(parsed))
 
 
-def test_no_user_content_reaches_the_model(raw: dict) -> None:
+def test_no_user_content_reaches_the_model(raw: dict[str, Any]) -> None:
     """The test that matters: a marker planted in every user-supplied place
     must not appear anywhere in the model's view.
 
@@ -103,7 +105,7 @@ def test_no_user_content_reaches_the_model(raw: dict) -> None:
     assert marker not in view
 
 
-def test_the_marker_test_can_fail(raw: dict) -> None:
+def test_the_marker_test_can_fail(raw: dict[str, Any]) -> None:
     """The control for the test above.
 
     An absence assertion proves nothing until the same construction has been
