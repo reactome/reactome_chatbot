@@ -131,8 +131,16 @@ Measured on 2026-09-21, the service distinguishes three ages rather than two:
 
 | token timestamp | response |
 |---|---|
-| 2026-09-12 and earlier | 404 |
-| **2026-09-14 onward** | **410** |
+| 2026-09-13 00:00:01 and earlier | 404 |
+| **2026-09-13 12:00:00 onward** | **410** |
+
+**It is a rolling cutoff measured in time, not a date boundary.** The two
+readings above are the same calendar day: one second past midnight is 404 and
+noon is 410, so the window is roughly the last eight days and it slides
+forward continuously. The website session independently confirmed the same
+behaviour on production, and found the boundary a day earlier than a first
+sample here had suggested — which is the argument for deriving it rather than
+quoting it.
 
 So there is a retention window in which a result deleted by a release is
 still *remembered as deleted*, and anything older is simply unknown. A token
@@ -146,7 +154,17 @@ python -c "import base64; print(base64.b64encode(b'20260915120000_1').decode())"
 
 This matters beyond ticking the scenario off. The `gone` path would otherwise
 have been first exercised for real during a release, which is the worst
-moment to discover a handling bug in it -- and the window moves, so the
-timestamp above will eventually fall out of it and start returning 404.
-Anyone re-running this should find the current boundary rather than reuse
-that token.
+moment to discover a handling bug in it.
+
+**Bisect for the boundary at run time; never hardcode a token.** The cutoff
+slides forward daily, so any fixed timestamp eventually falls out of the
+window and starts returning 404 -- and a test that does that does not fail,
+it quietly starts asserting `not_found` while still passing. That is the same
+shape as everything else this feature has had to guard against: a check that
+goes on passing after it has stopped testing the thing.
+
+The assumption worth naming, because it cost more than the boundary did: this
+scenario was recorded as untestable on the belief that only the service can
+mint a token. That was never decided or written down anywhere, and it was
+load-bearing for a plan in which `gone` would first be exercised by a curator
+during a release. Nothing about it looked like a question.
