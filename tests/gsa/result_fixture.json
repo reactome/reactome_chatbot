@@ -1,0 +1,33 @@
+{
+ "release": "97",
+ "method_name": "padog",
+ "results": [
+  {
+   "name": "melanoma",
+   "pathways": "Pathway\tName\tDirection\tFDR\tPValue\tNGenes\tMeanAbsT0\tMeanWeightT0\tav_foldchange\nR-HSA-176417\tPhosphorylation of Emi1\tDown\t1e-05\t0.001\t6\t5.8688267847137405\t5.0890032000411685\t-0.823247774951112\nR-HSA-69481\tG2/M Checkpoints\tDown\t1e-05\t0.006\t132\t6.223467132558967\t2.530308576586947\t-0.30499714859719396\nR-HSA-68881\tMitotic Metaphase/Anaphase Transition\tDown\t0.001\t0.008\t2\t4.045413186464432\t3.892355916421484\t-0.9074415514449177\nR-HSA-9839923\tDengue Virus Infection\tDown\t0.001\t0.003\t327\t4.906607633776362\t3.0380303853953463\t-0.157866405311507\nR-HSA-3700989\tTranscriptional Regulation by TP53\tDown\t0.001\t0.008\t342\t3.7316284909879025\t2.0425949256767058\t-0.04056302612315259\nR-HSA-9609690\tHCMV Early Events\tDown\t0.001\t0.014\t83\t4.520669578004483\t0.32774621918271796\t-0.3689377510074243",
+   "fold_changes": "GENE\tPATIENT_001_TUMOUR\nENSG00000000419\t-0.8231\n"
+  }
+ ],
+ "reactome_links": [
+  {
+   "url": "https://reactome.org/PathwayBrowser/#/DTAB=AN&ANALYSIS=MjAyNjA5MjExOTMyNTlfNjExMTE%3D",
+   "name": "Gene Set Analysis Summary",
+   "token": "MjAyNjA5MjExOTMyNTlfNjExMTE%3D",
+   "description": "Overview over all submitted datasets showing significantly and non-significantly up- and down- regulated pathways"
+  }
+ ],
+ "mappings": [
+  {
+   "identifier": "ENSG00000131089",
+   "mapped_to": [
+    "O43307"
+   ]
+  },
+  {
+   "identifier": "PATIENT_001_GENE",
+   "mapped_to": [
+    "P00001"
+   ]
+  }
+ ]
+}
