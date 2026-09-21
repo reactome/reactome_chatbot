@@ -11,6 +11,7 @@ no model call happens without a person -- none of which depends on content.
 
 import asyncio
 import json
+import re
 import time
 from collections.abc import AsyncGenerator, AsyncIterator
 from typing import Any, cast
@@ -29,6 +30,11 @@ from util.caller_token import DEFAULT_AUDIENCE
 from util.rate_limit import SlidingWindowLimiter
 
 PREFIX = "/chat/guest/api"
+
+# Shaped like a real analysis token. S106 flags any string passed to an
+# argument named `token`; an analysis token addresses a user's result but is
+# not a credential.
+SAMPLE_TOKEN = "MjAyNjA5MTkxODExNDJfMTE"  # noqa: S105
 
 RESULT: dict[str, Any] = {
     "summary": {"type": "OVERREPRESENTATION", "fileName": "smith_unpublished.txt"},
@@ -686,7 +692,7 @@ def test_an_abandoned_summary_stream_is_recorded(
     async def drive() -> None:
         response = await analysis_summary(
             SummaryRequest(
-                token="MjAyNjA5MTkxODExNDJfMTE",
+                token=SAMPLE_TOKEN,
                 caller_token=_token(private),
                 disclosure="aggregate",
             ),
@@ -707,3 +713,37 @@ def test_an_abandoned_summary_stream_is_recorded(
     assert any(
         "abandoned" in message for message in messages
     ), f"no record of the abandoned stream; logged: {messages}"
+
+
+def test_expression_values_reach_the_model_on_the_served_path(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # End to end, because the bug lived in the join between two layers that
+    # each had passing tests: the allow-list kept `exp` and `prompt_input`
+    # dropped it. Asserted on what the model receives, which is the only
+    # place the join is visible.
+    monkeypatch.setitem(RESULT["summary"], "type", "EXPRESSION")
+    monkeypatch.setitem(RESULT["pathways"][0]["entities"], "exp", [0.7, 0.25, 0.25])
+    monkeypatch.setitem(RESULT["pathways"][1]["entities"], "exp", [1.1, -0.4, 2.0])
+    sent: list[Any] = []
+
+    class _Recording(_Counter):
+        async def astream(self, messages: Any) -> AsyncIterator[Any]:
+            sent.append(messages)
+            async for chunk in super().astream(messages):
+                yield chunk
+
+    recording = _Recording()
+    private, public = keys
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr("api.analysis_summary.get_llm", lambda *a, **k: recording)
+        _post(public, caller_token=_token(private))
+
+    assert sent, "the model was never called, so this proves nothing"
+    prompt = json.dumps(sent, default=str)
+    assert "0.25" in prompt, "the per-column values never reached the model"
+    # The payload is JSON inside JSON, so the inner quotes are escaped.
+    # Matching on the unescaped form silently never matches -- which is how
+    # this assertion first passed review while testing nothing.
+    assert "expression_columns" in prompt
+    assert re.search(r'expression_columns\\?":\s*3', prompt), prompt[-200:]

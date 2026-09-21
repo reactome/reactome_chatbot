@@ -108,6 +108,18 @@ def prompt_input(payload: dict[str, Any]) -> dict[str, Any]:
                 # True when the hit rests on too few entities to be evidence,
                 # whatever the p-value says.
                 "fragile": _fragile(p),
+                # The per-column values, in column order. Carried explicitly
+                # because the allow-list keeping them is not the same as the
+                # prompt receiving them -- they were allow-listed and dropped
+                # here, so the expression reading asked the model to describe
+                # behaviour across columns using data it had never been
+                # given, and it invented both the trends and a fourth column
+                # of a three-column analysis.
+                **(
+                    {"exp": p["entities"]["exp"]}
+                    if isinstance(p.get("entities", {}).get("exp"), list)
+                    else {}
+                ),
             }
             for p in pathways
         ],
@@ -115,6 +127,14 @@ def prompt_input(payload: dict[str, Any]) -> dict[str, Any]:
     # Stated rather than left for the model to notice, because "nothing went
     # wrong" is the case a model most readily embellishes into a caveat.
     out["all_identifiers_matched"] = unmatched == 0
+
+    # How many columns there are, stated rather than left to be counted off
+    # an array. A model asked to describe behaviour across columns will name
+    # one that does not exist -- measured: a three-column analysis was
+    # summarised as rising "from column 1 to column 4".
+    columns = {len(p["exp"]) for p in out["pathways"] if isinstance(p.get("exp"), list)}
+    if len(columns) == 1:
+        out["expression_columns"] = columns.pop()
     for optional in ("resourceSummary", "speciesSummary", "warnings", "expression"):
         if optional in payload:
             out[optional] = payload[optional]
@@ -163,12 +183,15 @@ TYPE_INSTRUCTION = {
         "falling, mixed -- rather than treating the result as a single "
         "enrichment. **The columns are unlabelled here and you must not "
         "guess what they are**: never a condition, timepoint or sample name. "
+        "Each pathway's `exp` holds its value per column, in order, and "
+        "`expression_columns` says how many there are. **Those are the only "
+        "columns that exist** -- never mention a column number beyond it, "
+        "and never describe a trend you cannot read off `exp`. "
         "Refer to them in exactly this form -- `column 1`, `column 2`, "
-        "numbered from one in the order the values appear -- and in no other "
-        "form, because the interface holds the real labels and substitutes "
-        "them by matching that exact wording. 'The first column' or 'the "
-        "leftmost sample' will not be matched and will reach the reader as "
-        "written."
+        "numbered from one -- and in no other form, because the interface "
+        "holds the real labels and substitutes them by matching that exact "
+        "wording. 'The first column' or 'the leftmost sample' will not be "
+        "matched and will reach the reader as written."
     ),
     "SPECIES_COMPARISON": (
         "This is a species comparison. The findings are **inferred by "
