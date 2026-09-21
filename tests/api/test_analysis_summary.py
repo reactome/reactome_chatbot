@@ -167,7 +167,7 @@ def test_a_verified_human_caller_gets_a_summary(keys: tuple[str, str]) -> None:
     assert "citation" in kinds
     assert "token" in kinds
     start = events[0][1]
-    assert start["release"] == "97"
+    assert start["release"] == 97
     assert start["analysis_type"] == "OVERREPRESENTATION"
     assert start["cached"] is False
     assert events[-1][1]["state"] == "summarised"
@@ -790,3 +790,32 @@ def test_the_specific_presence_failure_is_logged_but_never_returned(
     logged = " ".join(r.getMessage() for r in caplog.records)
     assert expected_log in logged, f"not diagnosable from the log: {logged}"
     assert expected_log not in response.text, "the detail reached the caller"
+
+
+def test_release_is_a_number_as_the_answer_endpoint_sends_it(
+    keys: tuple[str, str],
+) -> None:
+    # The Analysis Service answers `/database/version` as text, so this
+    # arrived as a string while `/api/answer` sends an int -- the same field
+    # in the same event shape with a different type on each endpoint. A
+    # consumer required a number, got null, and did not notice, because null
+    # is legitimate here.
+    private, public = keys
+    start = _events(_post(public, caller_token=_token(private)).text)[0][1]
+    assert start["release"] == 97
+    assert isinstance(start["release"], int)
+
+
+def test_a_non_numeric_release_is_null_rather_than_a_string(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Null is already a legitimate value for this field, so degrading to it
+    # keeps the type honest. Emitting the raw string would put a second type
+    # back on the wire for the case nobody tests.
+    async def _odd() -> str:
+        return "97-beta"
+
+    monkeypatch.setattr("api.analysis_summary.current_release", _odd)
+    private, public = keys
+    start = _events(_post(public, caller_token=_token(private)).text)[0][1]
+    assert start["release"] is None

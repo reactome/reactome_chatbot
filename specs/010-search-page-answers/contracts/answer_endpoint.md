@@ -64,6 +64,17 @@ data: {"state": "answered", "seconds": 8.4}
 
 `state` is one of `answered`, `nothing_found`, `refused`, `failed`.
 
+> **This endpoint does not require a human-presence claim and
+> `/api/analysis-summary` does.** A caller token without one gets a full
+> answer here and `no_human` there. Deliberate: this returns public pathway
+> text, that one returns a reader's own uploaded analysis.
+>
+> **`/api/analysis-summary` uses different names for the same ideas**:
+> `summarised` for success and `not_found` for the empty case. The event
+> shapes are nearly identical, so do not reuse one state list for both — a
+> consumer did, and a correct summary rendered as a truncated failure. See
+> `specs/011-summarise-analysis-results/contracts/summary_endpoint.md`.
+
 ### Why citations are separate events
 
 So the website renders links in its own style. Returning prose with embedded HTML

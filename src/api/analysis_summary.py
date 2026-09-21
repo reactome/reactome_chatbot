@@ -91,6 +91,22 @@ class SummaryRequest(BaseModel):
     disclosure: Tier
 
 
+def _as_number(release: str | None) -> int | None:
+    """The release as a number, or None if it is not one.
+
+    Kept separate from the storage key, which stays the raw string: the key
+    only has to be stable, while the contract field has to match the other
+    endpoint's type.
+    """
+    if release is None:
+        return None
+    try:
+        return int(release)
+    except ValueError:
+        logger.warning("release %r is not a number; reporting null", release)
+        return None
+
+
 def _sse(event: str, payload: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
 
@@ -206,7 +222,14 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
                 yield _sse(
                     "start",
                     {
-                        "release": release,
+                        # A number, matching `/api/answer`'s `release`. The
+                        # Analysis Service answers `/database/version` as
+                        # text, so this arrives as a string and went out as
+                        # one -- the same field in the same event shape with
+                        # a different type on each endpoint. A consumer that
+                        # required a number got null and did not notice,
+                        # because null is a legitimate value here.
+                        "release": _as_number(release),
                         "analysis_type": model_input.get("analysis_type"),
                         # Stability is reuse, not determinism (FR-015). This
                         # is how the interface knows which it is looking at.
