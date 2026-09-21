@@ -133,7 +133,7 @@ carried. Everything in this phase can be built and tested before that lands.
 
 - [x] T034 [P] Bound the summary in `src/api/analysis_summary.py` as the answer endpoint is, so a stuck upstream cannot hold a connection. **The bound existed since Phase 3 and was untested until now**; the test also pins that a truncated summary is never stored, which would otherwise be served forever
 - [x] T035 [P] Log an abandoned summary stream in `src/api/analysis_summary.py`, as the answer endpoint does, so a caller that starts summaries it does not want is visible
-- [ ] T036 Run the [quickstart](./quickstart.md) scenarios against beta with a real analysis token and record the outcome, including first-token timing
+- [x] T036 Run the [quickstart](./quickstart.md) scenarios against beta with a real analysis token and record the outcome, including first-token timing. **Six of nine pass on image `cc4315c`; three cannot be constructed** (a null result, a pre-release token, a ReactomeGSA analysis) and the quickstart says so rather than marking them skipped. First token **1.8s**
 - [ ] T037 Tell the website session the endpoint exists, what it does not yet do, and the `gone` outcome they must handle — only once it is live on beta, not when it merges
 
 ## Dependencies

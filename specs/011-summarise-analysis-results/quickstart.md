@@ -48,7 +48,7 @@ Expect `database/version` to match the release in the summary's `start` event.
 |---|---|---|
 | 1 | a token whose top pathways pass FDR | summary names those pathways, cites each by stable id |
 | 2 | a list that hits nothing significant | summary says nothing passes correction; no p-value presented as a finding |
-| 3 | mostly unmatched identifiers | summary reports the proportion and points at identifier type or species |
+| 3 | mostly unmatched identifiers | summary reports the **count** and points at identifier type or species. Not the proportion: the aggregate result has no submitted-total in it, so a percentage would be invented (Phase 4) |
 | 4 | `disclosure: aggregate` | the user's identifiers, filename, sample name and column labels appear in no outbound request |
 | 5 | same token requested twice | byte-identical summary, `cached: true` on the second |
 | 6 | an expired token | `state: not_found` |
@@ -75,3 +75,49 @@ Mechanical checks first, because they do not need judgement:
 Then a curator reads a handful spanning strong, weak and empty results and says
 whether each conveys how much to trust it. That is SC-006 and it cannot be
 automated.
+
+## Run against beta, 2026-09-21
+
+Image `cc4315c`, release 97, inside the container -- the deployed code, the
+installed bundle and the real Analysis Service. The caller-token check is
+exercised separately over HTTP, because this service holds only the public
+half of the keypair by design and cannot mint one to drive the full route.
+
+| # | outcome |
+|---|---|
+| 1 | **pass** — summarised, 12 citations, every one present in the result, first token **1.8s** |
+| 3 | **pass** — count reported, no invented percentage |
+| 4 | **pass** — three aggregate payloads checked, including the expression one carrying `Patient_001_tumour`; no forbidden field and no user label in any of them. The disclosing payload *does* carry the names, so the check is not passing because nothing was sent |
+| 5 | **pass** — second request `cached: true` and byte-identical |
+| 6 | **pass** — unknown token gives `not_found` |
+| 9 | **pass** — verified over HTTP on the deployed route: no caller token gives `refused` / `no_caller`, HTTP 200 |
+
+Also checked, beyond the table: an `EXPRESSION` result referred to `column 1`,
+`column 2`, `column 3` and no other form, and the `identifiers` tier named the
+reader's unmatched identifiers.
+
+**Three scenarios were not run, and the reason is that they cannot be
+constructed here rather than that they were skipped.**
+
+- **2, nothing significant** — needs an identifier list that hits no pathway
+  past correction. Every list tried produced significant hits, and inventing
+  one by editing a result would test the code against a fixture rather than
+  the service. Covered by unit tests on the verdict instead.
+- **7, `gone`** — needs a token issued before the current release. Release 97
+  has already deleted those, so one cannot be made on demand. The mapping is
+  unit-tested; the live behaviour will first be observable at the next
+  release.
+- **8, ReactomeGSA** — needs a GSA analysis, which is a different service.
+  Detection is unit-tested against all three GSA type values.
+
+Scenario 5 across a restart is expected to fail until a durable store exists
+(research D4), and was not attempted for that reason.
+
+**The first run of scenario 4 proved nothing**, and the correction is worth
+keeping because the mistake is easy to repeat. The disclosure check ran
+before the expression summary, so the payload carrying the column labels --
+the strongest disclosure risk in the feature -- was not among those examined.
+It passed by ordering rather than by evidence. The check now runs last, over
+every aggregate payload produced, and asserts in the other direction too:
+the disclosing tier's payload must contain the names, or a clean aggregate
+check might only mean nothing was ever sent.
