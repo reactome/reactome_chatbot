@@ -104,6 +104,13 @@ never an error code, so the analysis page cannot be broken by this service.
 pattern it could not write correctly. This endpoint's prompt is its own, so
 the right fix here is not to ask for one in the first place.
 
+**Expression summaries refer to columns as `column 1`, `column 2`**, numbered
+from one in the order the values appear, and in no other form. The labels are
+user-supplied text this service never receives, so the caller is the only side
+that can name them -- and can only substitute them into the prose if the
+wording is fixed. Anything else ("the first column", "the leftmost sample")
+reaches the reader as written.
+
 **`disclosure` on `start` is the tier the summary was actually built from**,
 which is not always the one requested. If `identifiers` was asked for and the
 unmatched identifiers could not be retrieved, the summary is the aggregate one

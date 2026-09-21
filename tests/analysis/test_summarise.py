@@ -239,3 +239,61 @@ def test_no_type_instruction_claims_another_types_reading() -> None:
     assert "orthology" not in TYPE_INSTRUCTION["EXPRESSION"]
     assert "columns" not in TYPE_INSTRUCTION["SPECIES_COMPARISON"]
     assert "columns" not in TYPE_INSTRUCTION["OVERREPRESENTATION"]
+
+
+def test_expression_columns_have_one_stable_reference_form() -> None:
+    # The website holds the real column labels and we never do, so it
+    # substitutes them into our prose -- which only works if our wording is
+    # fixed. They said they would rather show labels alongside than splice
+    # on brittle matching, so the wording is pinned instead: `column 1`,
+    # `column 2`, numbered from one.
+    from analysis.summarise import TYPE_INSTRUCTION
+
+    expression = TYPE_INSTRUCTION["EXPRESSION"]
+    assert "`column 1`" in expression
+    assert "numbered from one" in expression
+    assert "in no other form" in expression
+    # And the forms that would break their matching are named as wrong.
+    assert "The first column" in expression
+
+
+def test_expression_values_reach_the_prompt_not_just_the_allow_list() -> None:
+    # The bug this pins: `exp` was allow-listed in `disclosure.py` and then
+    # dropped by `prompt_input`, so the expression reading asked the model to
+    # describe behaviour across columns using data it had never been given.
+    # Measured against a real three-column analysis, it invented the trends
+    # and a fourth column.
+    #
+    # Both layers had tests and both passed. Neither tested the path between
+    # them, which is where the data was lost.
+    payload = _payload(1e-9, 1e-8)
+    for pathway, values in zip(
+        payload["pathways"], ([0.7, 0.25, 0.25], [1.1, -0.4, 2.0]), strict=True
+    ):
+        pathway["entities"]["exp"] = values
+    out = prompt_input(payload)
+    assert out["pathways"][0]["exp"] == [0.7, 0.25, 0.25]
+    assert out["pathways"][1]["exp"] == [1.1, -0.4, 2.0]
+
+
+def test_the_column_count_is_stated_rather_than_counted_off_an_array() -> None:
+    # A model asked to describe behaviour across columns will name one that
+    # does not exist. Stating the count is the same fix as D9's: if a number
+    # can be derived wrongly, derive it here.
+    payload = _payload(1e-9)
+    payload["pathways"][0]["entities"]["exp"] = [0.7, 0.25, 0.25]
+    assert prompt_input(payload)["expression_columns"] == 3
+
+
+def test_no_column_count_is_claimed_when_the_pathways_disagree() -> None:
+    # Inventing a count from inconsistent data would be the same error one
+    # level up. Absent is correct; a guess is not.
+    payload = _payload(1e-9, 1e-8)
+    payload["pathways"][0]["entities"]["exp"] = [0.7, 0.25]
+    payload["pathways"][1]["entities"]["exp"] = [1.1, -0.4, 2.0]
+    assert "expression_columns" not in prompt_input(payload)
+
+
+def test_a_result_with_no_expression_values_claims_no_columns() -> None:
+    assert "expression_columns" not in prompt_input(_payload(1e-9))
+    assert "exp" not in prompt_input(_payload(1e-9))["pathways"][0]

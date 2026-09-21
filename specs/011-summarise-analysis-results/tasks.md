@@ -127,12 +127,12 @@ carried. Everything in this phase can be built and tested before that lands.
 - [x] T031b Key the rate limiter on `human_sub` when present, falling back to the caller identity, in `src/api/analysis_summary.py` — per-person throttling rather than per-proxy-address. Also limit per analysis token: twenty summaries of one analysis is not a scientist
 - [x] T031c Test that a `human` claim with a stale `human_iat` is refused with **zero model calls**, in `tests/api/test_analysis_summary.py` — the freshness bound is the half most likely to be dropped, because the claim being present looks like success
 - [x] T032 [US1] Verify the assertion in `src/util/caller_token.py` -- `human_presence_reason` checks `human` and a 30-minute `human_iat`, refusing before any model call
-- [ ] T033 [P] Test that a request without the assertion is refused and makes **zero model calls**, counted on a patched graph rather than inferred from timing, in `tests/api/test_analysis_summary.py` (SC-004)
+- [x] T033 [P] Test that a request without the assertion is refused and makes **zero model calls**, counted on a patched graph rather than inferred from timing, in `tests/api/test_analysis_summary.py` (SC-004)
 
 ## Phase 9: Polish
 
-- [ ] T034 [P] Bound the summary in `src/api/analysis_summary.py` as the answer endpoint is, so a stuck upstream cannot hold a connection
-- [ ] T035 [P] Log an abandoned summary stream in `src/api/analysis_summary.py`, as the answer endpoint does, so a caller that starts summaries it does not want is visible
+- [x] T034 [P] Bound the summary in `src/api/analysis_summary.py` as the answer endpoint is, so a stuck upstream cannot hold a connection. **The bound existed since Phase 3 and was untested until now**; the test also pins that a truncated summary is never stored, which would otherwise be served forever
+- [x] T035 [P] Log an abandoned summary stream in `src/api/analysis_summary.py`, as the answer endpoint does, so a caller that starts summaries it does not want is visible
 - [ ] T036 Run the [quickstart](./quickstart.md) scenarios against beta with a real analysis token and record the outcome, including first-token timing
 - [ ] T037 Tell the website session the endpoint exists, what it does not yet do, and the `gone` outcome they must handle — only once it is live on beta, not when it merges
 

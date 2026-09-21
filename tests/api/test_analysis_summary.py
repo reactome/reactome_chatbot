@@ -9,10 +9,12 @@ so is the LLM, because what is asserted here is refusal, event shape, and that
 no model call happens without a person -- none of which depends on content.
 """
 
+import asyncio
 import json
+import re
 import time
-from collections.abc import AsyncIterator
-from typing import Any
+from collections.abc import AsyncGenerator, AsyncIterator
+from typing import Any, cast
 
 import jwt
 import pytest
@@ -23,11 +25,16 @@ from fastapi.testclient import TestClient
 
 from analysis.client import Fetched
 from analysis.store import SummaryStore
-from api.analysis_summary import router
+from api.analysis_summary import SummaryRequest, analysis_summary, router
 from util.caller_token import DEFAULT_AUDIENCE
 from util.rate_limit import SlidingWindowLimiter
 
 PREFIX = "/chat/guest/api"
+
+# Shaped like a real analysis token. S106 flags any string passed to an
+# argument named `token`; an analysis token addresses a user's result but is
+# not a credential.
+SAMPLE_TOKEN = "MjAyNjA5MTkxODExNDJfMTE"  # noqa: S105
 
 RESULT: dict[str, Any] = {
     "summary": {"type": "OVERREPRESENTATION", "fileName": "smith_unpublished.txt"},
@@ -607,3 +614,136 @@ def test_a_deleted_result_is_reported_even_when_a_summary_is_stored(
         _events(_post(public, caller_token=_token(private)).text)[-1][1]["state"]
         == "gone"
     )
+
+
+class _HangingModel(_Counter):
+    """Stands in for a model that has stopped answering."""
+
+    async def astream(self, _messages: Any) -> AsyncIterator[Any]:
+        self.calls += 1
+        yield type("Chunk", (), {"content": "starting"})()
+        # Finite, so a regression fails in five seconds rather than hanging
+        # the suite for the full timeout.
+        await asyncio.sleep(5)
+        yield type("Chunk", (), {"content": "never arrives"})()
+
+
+def test_a_stuck_model_still_ends_the_stream(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # T034. FR-008 says a failure must be a terminal state the caller can
+    # render, never a broken panel -- which means never an open connection
+    # either. An analysis page must not hang because this service did.
+    monkeypatch.setattr("api.analysis_summary.get_llm", lambda *a, **k: _HangingModel())
+    monkeypatch.setattr("api.analysis_summary.SUMMARY_TIMEOUT_SECONDS", 0.25)
+    private, public = keys
+
+    started = time.monotonic()
+    response = _post(public, caller_token=_token(private))
+    elapsed = time.monotonic() - started
+
+    assert response.status_code == 200
+    assert _events(response.text)[-1][1]["state"] == "failed"
+    assert elapsed < 2, f"stream ran {elapsed:.1f}s; the bound did not fire"
+
+
+def test_a_stuck_summary_is_not_stored(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The partial text of a timed-out generation must not become the summary
+    # served forever after. `put` refuses empty text, but this one is not
+    # empty -- it is worse, being a plausible fragment that ends mid-sentence.
+    store = SummaryStore()
+    monkeypatch.setattr("api.analysis_summary._store", store)
+    monkeypatch.setattr("api.analysis_summary.get_llm", lambda *a, **k: _HangingModel())
+    monkeypatch.setattr("api.analysis_summary.SUMMARY_TIMEOUT_SECONDS", 0.25)
+    private, public = keys
+    _post(public, caller_token=_token(private))
+    assert len(store) == 0, "a truncated summary was stored"
+
+
+def test_an_abandoned_summary_stream_is_recorded(
+    keys: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # T035. A caller that hangs up mid-summary leaves no other trace: the
+    # request 200s, tokens flow, and then nothing more happens -- identical
+    # to a healthy stream in every signal. The website already hit this on
+    # the answer route, where a keystroke unmounted their panel mid-answer.
+    #
+    # Driven through the response iterator rather than a client, because the
+    # point is to close it mid-stream and a TestClient will not.
+    from types import SimpleNamespace
+
+    class _SlowModel(_Counter):
+        async def astream(self, _messages: Any) -> AsyncIterator[Any]:
+            self.calls += 1
+            for index in range(50):
+                await asyncio.sleep(0.01)
+                yield type("Chunk", (), {"content": f"t{index} "})()
+
+    monkeypatch.setattr("api.analysis_summary.get_llm", lambda *a, **k: _SlowModel())
+    private, public = keys
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(caller_token_key=public))
+    )
+
+    async def drive() -> None:
+        response = await analysis_summary(
+            SummaryRequest(
+                token=SAMPLE_TOKEN,
+                caller_token=_token(private),
+                disclosure="aggregate",
+            ),
+            request,  # type: ignore[arg-type]
+        )
+        iterator = cast("AsyncGenerator[str, None]", response.body_iterator)
+        seen = 0
+        async for _chunk in iterator:
+            seen += 1
+            if seen == 4:
+                break
+        await iterator.aclose()
+
+    with caplog.at_level("INFO", logger="api.analysis_summary"):
+        asyncio.run(drive())
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any(
+        "abandoned" in message for message in messages
+    ), f"no record of the abandoned stream; logged: {messages}"
+
+
+def test_expression_values_reach_the_model_on_the_served_path(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # End to end, because the bug lived in the join between two layers that
+    # each had passing tests: the allow-list kept `exp` and `prompt_input`
+    # dropped it. Asserted on what the model receives, which is the only
+    # place the join is visible.
+    monkeypatch.setitem(RESULT["summary"], "type", "EXPRESSION")
+    monkeypatch.setitem(RESULT["pathways"][0]["entities"], "exp", [0.7, 0.25, 0.25])
+    monkeypatch.setitem(RESULT["pathways"][1]["entities"], "exp", [1.1, -0.4, 2.0])
+    sent: list[Any] = []
+
+    class _Recording(_Counter):
+        async def astream(self, messages: Any) -> AsyncIterator[Any]:
+            sent.append(messages)
+            async for chunk in super().astream(messages):
+                yield chunk
+
+    recording = _Recording()
+    private, public = keys
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr("api.analysis_summary.get_llm", lambda *a, **k: recording)
+        _post(public, caller_token=_token(private))
+
+    assert sent, "the model was never called, so this proves nothing"
+    prompt = json.dumps(sent, default=str)
+    assert "0.25" in prompt, "the per-column values never reached the model"
+    # The payload is JSON inside JSON, so the inner quotes are escaped.
+    # Matching on the unescaped form silently never matches -- which is how
+    # this assertion first passed review while testing nothing.
+    assert "expression_columns" in prompt
+    assert re.search(r'expression_columns\\?":\s*3', prompt), prompt[-200:]
