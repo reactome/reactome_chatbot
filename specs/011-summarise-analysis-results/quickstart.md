@@ -90,6 +90,7 @@ half of the keypair by design and cannot mint one to drive the full route.
 | 4 | **pass** — three aggregate payloads checked, including the expression one carrying `Patient_001_tumour`; no forbidden field and no user label in any of them. The disclosing payload *does* carry the names, so the check is not passing because nothing was sent |
 | 5 | **pass** — second request `cached: true` and byte-identical |
 | 6 | **pass** — unknown token gives `not_found` |
+| 7 | **pass** — a constructed pre-release token gives `gone` on the deployed build |
 | 9 | **pass** — verified over HTTP on the deployed route: no caller token gives `refused` / `no_caller`, HTTP 200 |
 
 Also checked, beyond the table: an `EXPRESSION` result referred to `column 1`,
@@ -103,10 +104,8 @@ constructed here rather than that they were skipped.**
   past correction. Every list tried produced significant hits, and inventing
   one by editing a result would test the code against a fixture rather than
   the service. Covered by unit tests on the verdict instead.
-- **7, `gone`** — needs a token issued before the current release. Release 97
-  has already deleted those, so one cannot be made on demand. The mapping is
-  unit-tested; the live behaviour will first be observable at the next
-  release.
+- ~~**7, `gone`**~~ — **this turned out to be constructible, and now passes.**
+  See below.
 - **8, ReactomeGSA** — needs a GSA analysis, which is a different service.
   Detection is unit-tested against all three GSA type values.
 
@@ -121,3 +120,33 @@ It passed by ordering rather than by evidence. The check now runs last, over
 every aggregate payload produced, and asserts in the other direction too:
 the disclosing tier's payload must contain the names, or a clean aggregate
 check might only mean nothing was ever sent.
+
+### Scenario 7 is constructible after all
+
+An analysis token is base64 of `YYYYMMDDHHMMSS_counter` --
+`MjAyNjA5MTkxODExNDJfMTE=` decodes to `20260919181142_11`. So a token for any
+past moment can be made without the service having issued it.
+
+Measured on 2026-09-21, the service distinguishes three ages rather than two:
+
+| token timestamp | response |
+|---|---|
+| 2026-09-12 and earlier | 404 |
+| **2026-09-14 onward** | **410** |
+
+So there is a retention window in which a result deleted by a release is
+still *remembered as deleted*, and anything older is simply unknown. A token
+inside that window produces a real 410, and the deployed pipeline maps it to
+`gone`:
+
+```
+python -c "import base64; print(base64.b64encode(b'20260915120000_1').decode())"
+# -> MjAyNjA5MTUxMjAwMDBfMQ==   ->  outcome: gone
+```
+
+This matters beyond ticking the scenario off. The `gone` path would otherwise
+have been first exercised for real during a release, which is the worst
+moment to discover a handling bug in it -- and the window moves, so the
+timestamp above will eventually fall out of it and start returning 404.
+Anyone re-running this should find the current boundary rather than reuse
+that token.
