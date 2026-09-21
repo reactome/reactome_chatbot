@@ -27,6 +27,21 @@ identifiers, filenames, sample names or expression column labels.
 
 ### Human presence
 
+**This endpoint requires it and `/api/answer` does not.** A caller token with
+no presence claim gets a full answer from `/api/answer` and `no_human` from
+here. That asymmetry is deliberate and load-bearing — it is why the stricter
+gate can be applied to one route and not the other — and it was not written
+down until the website measured it on 2026-09-21.
+
+The reason is what each endpoint discloses. `/api/answer` returns public
+pathway text, and the search path it serves has no human gate at all; spec
+010's D1 settled that its token asserts *service identity* and deliberately
+says nothing about a person. This endpoint sends a user's own uploaded
+analysis to a model provider, and at the disclosing tier their submitted
+identifiers with it. The choice of what to disclose is only meaningful if a
+person made it.
+
+
 `caller_token` carries three additional claims, minted only when the website's
 Turnstile-backed identity cookie validated on that request:
 
@@ -95,7 +110,20 @@ data: {"state": "summarised", "seconds": 6.2}
 ```
 
 `state` is one of `summarised`, `not_found`, `gone`, `unsupported`, `refused`,
-`failed`. Anything but `summarised` means render no summary. Always HTTP 200 —
+`failed`.
+
+> **These are not `/api/answer`'s state names, and the two are easy to
+> conflate.** That endpoint's success state is `answered` and its empty state
+> is `nothing_found`; this one's are `summarised` and `not_found`. The event
+> shapes are otherwise nearly identical, so a consumer building both panels
+> from one mental model will map a *successful* summary onto an unrecognised
+> state — which, if the fallback is `failed`, renders a complete and correct
+> summary as a truncated failure above and below the text. That happened on
+> 2026-09-21.
+>
+> `release` is a **number** on both, though it reaches this one as text from
+> the Analysis Service and is parsed here. It is null when unparseable, which
+> is a legitimate value on both endpoints. Anything but `summarised` means render no summary. Always HTTP 200 —
 never an error code, so the analysis page cannot be broken by this service.
 
 **No prose source list.** Citations arrive as `citation` events, as on
