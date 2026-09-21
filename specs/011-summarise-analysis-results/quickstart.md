@@ -85,7 +85,7 @@ half of the keypair by design and cannot mint one to drive the full route.
 
 | # | outcome |
 |---|---|
-| 1 | **pass** — summarised, 12 citations, every one present in the result, first token **1.8s** |
+| 1 | **pass** — summarised, 12 citations, every one present in the result. First token **1.8s and 2.0s on two runs of one token**: two samples, not a distribution, and not comparable to the answer endpoint's figures, which are medians over several questions. Quote it as "about two seconds on this token" or measure properly |
 | 3 | **pass** — count reported, no invented percentage |
 | 4 | **pass** — three aggregate payloads checked, including the expression one carrying `Patient_001_tumour`; no forbidden field and no user label in any of them. The disclosing payload *does* carry the names, so the check is not passing because nothing was sent |
 | 5 | **pass** — second request `cached: true` and byte-identical |
