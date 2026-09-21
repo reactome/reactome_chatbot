@@ -163,6 +163,14 @@ it quietly starts asserting `not_found` while still passing. That is the same
 shape as everything else this feature has had to guard against: a check that
 goes on passing after it has stopped testing the thing.
 
+**Two people measured this and agreed, and both were wrong.** One read the
+boundary as 09-13 and the other as 09-14; the answer is that there is no
+boundary day at all. Neither had tested *within* a day, because both were
+picturing a date cutoff and so both asked "which day" rather than "which
+shape". The agreement felt like corroboration and was not — it was two
+measurements taken the same way, and a shared assumption survives any number
+of those. It took testing at a finer grain than the question assumed.
+
 The assumption worth naming, because it cost more than the boundary did: this
 scenario was recorded as untestable on the belief that only the service can
 mint a token. That was never decided or written down anywhere, and it was
