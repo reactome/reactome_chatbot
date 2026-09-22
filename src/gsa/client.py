@@ -105,6 +105,11 @@ def _checked(kind: str, value: str) -> str:
     return value
 
 
+#: Statuses that mean the service has stopped working on it. Listed once so
+#: a loop cannot disagree with the dataclass about what "done" means.
+TERMINAL_STATUSES = frozenset({"complete", "failed"})
+
+
 @dataclass(frozen=True)
 class LoadingStatus:
     """Progress of `POST /data/load`, which is not instant."""
@@ -116,7 +121,11 @@ class LoadingStatus:
 
     @property
     def finished(self) -> bool:
-        return self.status in {"complete", "failed"}
+        return self.status in TERMINAL_STATUSES
+
+    @property
+    def failed(self) -> bool:
+        return self.finished and self.status != "complete"
 
 
 @dataclass(frozen=True)
@@ -146,11 +155,15 @@ class AnalysisStatus:
 
     @property
     def finished(self) -> bool:
-        return self.status in {"complete", "failed"}
+        return self.status in TERMINAL_STATUSES
 
     @property
     def failed(self) -> bool:
-        return self.status == "failed"
+        # Anything terminal that is not success. Derived rather than
+        # `== "failed"`, so a status added to TERMINAL_STATUSES later is
+        # treated as a failure by default instead of being silently
+        # reported as a completed analysis with no results.
+        return self.finished and self.status != "complete"
 
 
 class GsaClient:
