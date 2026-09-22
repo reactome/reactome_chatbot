@@ -4,7 +4,7 @@
 
 **Created**: 2026-09-21
 
-**Status**: Draft
+**Status**: Implemented for uploads; public-dataset path deferred
 
 **Input**: User description: "Run a gene set analysis from an uploaded expression matrix in the chat, and return the pathway results as a downloadable file"
 
@@ -153,3 +153,30 @@ and nothing has been sent to the model.
 - Whether an analysis should survive a chat session ending. Results live
   behind an analysis ID at the service, so resuming is possible; whether it is
   wanted is a product question.
+
+---
+
+## What shipped, 2026-09-22
+
+**User Story 2 (upload) and Story 3 (results without a summary) are done.**
+Story 1 (public datasets by identifier) is built underneath --
+`submit_public_dataset` works and is tested -- but has no chat route yet,
+because reaching it needs the model to choose a dataset and a factor, which
+is a conversation design rather than a plumbing job.
+
+Shipping Story 2 before Story 1 inverts the spec's priorities. The reason is
+that the upload path turned out to be the *simpler* one: a file arrives with
+its own sample names, so there is nothing to search for and nothing to
+disambiguate.
+
+**Nothing reaches OpenAI.** Story 3 was written as "a user who declines the
+summary still gets their results". What shipped is that with no summary at
+all: the result is described from the table and attached as a file, both of
+which are the user's own data returning to the user. `Finished.for_model`
+is computed and sent nowhere. When a summary is added it must be given the
+bounded allow-listed view, behind the existing warning -- not the result.
+
+**FR-006 landed in two places on purpose.** `.chainlit/config.toml` caps
+uploads at 20 MB, and `src/gsa/upload.py` caps them again. The first stops
+a browser sending the file; the second stops the server accepting it. Only
+the second is a guarantee.

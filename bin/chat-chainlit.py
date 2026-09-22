@@ -3,6 +3,7 @@
 # or get_data_layer. Not fixable here; it needs stubs upstream. The file is
 # named with a hyphen, so it cannot be listed in [[tool.mypy.overrides]].
 import os
+from pathlib import Path
 
 import chainlit as cl
 from chainlit.data.base import BaseDataLayer
@@ -16,6 +17,7 @@ from agent.profile_names import ProfileName
 from agent.profiles import get_chat_profiles
 from agent.profiles.base import OutputState
 from agent.registry import get_graph
+from gsa.chainlit_flow import Attachment, matrix_attachment, run_analysis
 from util.chainlit_helpers import (
     PrefixedS3StorageClient,
     is_feature_enabled,
@@ -139,12 +141,69 @@ async def end() -> None:
     await static_messages(config, TriggerEvent.on_chat_end)
 
 
+async def run_gsa_analysis(attachment: Attachment) -> None:
+    """Drive `gsa.chainlit_flow` with this session's chat operations.
+
+    The flow takes these four as arguments so it can be tested without a
+    browser; this is the only place that knows they are Chainlit.
+    """
+    progress = cl.Message(content="Reading your file…")
+    await progress.send()
+
+    async def ask_for_grouping() -> str | None:
+        answer = await cl.AskUserMessage(
+            content="Which group is each sample in?", timeout=600
+        ).send()
+        return (answer or {}).get("output") if answer else None
+
+    async def send(text: str) -> None:
+        await cl.Message(content=text).send()
+
+    async def update_progress(text: str) -> None:
+        progress.content = text
+        await progress.update()
+
+    async def send_file(path: Path) -> None:
+        await cl.Message(
+            content="",
+            elements=[cl.File(name=path.name, path=str(path), display="inline")],
+        ).send()
+
+    # The progress line is removed rather than marked "Done".
+    #
+    # A `finally` that sets "Done." runs on the failure paths too, so a user
+    # whose analysis died would have been told it finished, one line above
+    # the message explaining that it had not. `run_analysis` says what
+    # happened on every path; this only has to stop the spinner.
+    try:
+        await run_analysis(
+            attachment,
+            ask_for_grouping=ask_for_grouping,
+            send=send,
+            update_progress=update_progress,
+            send_file=send_file,
+        )
+    finally:
+        await progress.remove()
+
+
 @cl.on_message
 async def main(message: cl.Message) -> None:
     if await message_rate_limited(config):
         return
 
     await static_messages(config, TriggerEvent.on_message)
+
+    # An attached matrix routes to the analysis flow instead of the graph.
+    #
+    # Not a tool the agent calls: the run takes minutes, which is longer
+    # than a chat turn, and the matrix is over a megabyte, which must never
+    # enter the model's context. A tool call would put the model in the
+    # middle of both problems.
+    attachment = matrix_attachment(getattr(message, "elements", None))
+    if attachment is not None:
+        await run_gsa_analysis(attachment)
+        return
 
     message_count: int = cl.user_session.get("message_count", 0) + 1
     cl.user_session.set("message_count", message_count)
