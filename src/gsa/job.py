@@ -17,6 +17,7 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from gsa import results as gsa_results
 from gsa.client import AnalysisStatus, GsaClient, GsaError
@@ -72,7 +73,7 @@ class Finished:
     """
 
     analysis_id: str
-    for_model: dict[str, object]
+    for_model: dict[str, Any]
     links: list[tuple[str, str]]
     table_path: Path
 

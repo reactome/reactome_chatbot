@@ -33,7 +33,7 @@ edit_message = true
 
 # Authorize users to spontaneously upload files with messages
 [features.spontaneous_file_upload]
-    enabled = false
+    enabled = true
     # Define accepted file types using MIME types
     # Examples:
     # 1. For specific file types:
@@ -43,9 +43,20 @@ edit_message = true
     # 3. For specific file extensions:
     #    accept = { "application/octet-stream" = [".xyz", ".pdb"] }
     # Note: Using "*/*" is not recommended as it may cause browser warnings
-    accept = ["*/*"]
-    max_files = 20
-    max_size_mb = 500
+    # Expression matrices only. "*/*" is what the template ships and it
+    # invites every other kind of file into a chat that can do nothing with
+    # them.
+    accept = { "text/tab-separated-values" = [".tsv", ".txt"], "text/csv" = [".csv"] }
+    max_files = 1
+    # 20, not the template's 500. This host has one 88 GB volume that sits
+    # around 90-95% full, and ~/update-beta-chat.sh refuses to deploy under
+    # 6 GB free -- so a handful of 500 MB uploads would take the chat down
+    # and block the fix. A 16-sample expression matrix is 1.2 MB.
+    #
+    # src/gsa/upload.py enforces the same ceiling again, because this one is
+    # a client-side convenience: Chainlit is what stops the browser sending
+    # it, not what stops the server accepting it.
+    max_size_mb = 20
 
 [features.audio]
     # Sample rate of the audio
