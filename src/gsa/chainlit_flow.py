@@ -92,12 +92,42 @@ async def run_analysis(
     over a file.
     """
     path = Path(attachment.path)
+    try:
+        await _run(
+            attachment, path, ask_for_grouping, send, update_progress, send_file, client
+        )
+    finally:
+        # The upload does not survive this function, whatever happened.
+        #
+        # Each path used to delete it for itself, which covered the ones I
+        # thought of. It did not cover a file Chainlit had not finished
+        # writing (`FileNotFoundError` straight out of `validate`), or an
+        # `AskUserMessage` that times out or is interrupted -- and an
+        # unhandled error is exactly when nobody is around to tidy up.
+        # `discard` is safe to call twice, so the paths that already delete
+        # it can keep doing so.
+        discard(path)
 
+
+async def _run(
+    attachment: Attachment,
+    path: Path,
+    ask_for_grouping: Any,
+    send: Any,
+    update_progress: Any,
+    send_file: Any,
+    client: GsaClient | None,
+) -> None:
     try:
         matrix = validate(path)
     except UploadRejectedError as refusal:
-        discard(path)
         await send(str(refusal))
+        return
+    except OSError:
+        # Unreadable, vanished, or not a file. The user did nothing wrong
+        # that they can act on, so do not describe it as their mistake.
+        logger.exception("could not read an uploaded file")
+        await send("I could not read that file — please try attaching it again.")
         return
 
     await send(chat.describe_matrix(matrix))
@@ -113,7 +143,6 @@ async def run_analysis(
     try:
         grouping = chat.parse_grouping(reply, len(matrix.samples))
     except chat.ReplyUnusableError as unusable:
-        discard(path)
         await send(f"{unusable} Send the file again when you are ready.")
         return
 

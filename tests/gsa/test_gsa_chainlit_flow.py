@@ -14,6 +14,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from gsa import chainlit_flow
 from gsa.client import AnalysisStatus
 from gsa.job import AnalysisFailedError
@@ -213,3 +215,56 @@ class TestTheHappyPath:
         attachment = a_matrix(tmp_path)
         await run(attachment, Chat(), StubClient(), tmp_path / "out")
         assert not Path(attachment.path).exists()
+
+
+class TestTheUploadNeverSurvives:
+    """The file is gone when this function returns, whatever happened.
+
+    Each branch used to delete it for itself, which covered the cases I had
+    thought of and not the ones I had not: a file Chainlit has not finished
+    writing, or an `AskUserMessage` that times out. An unhandled error is
+    precisely when nobody is around to tidy up, and this host has 5 GB free.
+    """
+
+    @asyncio_test
+    async def test_a_file_that_is_not_there_is_reported_not_raised(
+        self, tmp_path: Path
+    ) -> None:
+        missing = Attached(tmp_path / "never-written.tsv")
+        chat_ = Chat()
+
+        await run(missing, chat_, StubClient(), tmp_path / "out")
+
+        assert "could not read that file" in chat_.transcript
+        # And it does not describe it as the user's mistake, because it is
+        # not one they can act on.
+        assert "expression matrix" not in chat_.transcript
+
+    @asyncio_test
+    async def test_an_exception_from_the_question_still_deletes_it(
+        self, tmp_path: Path
+    ) -> None:
+        attachment = a_matrix(tmp_path)
+
+        class Exploding(Chat):
+            async def ask(self) -> str | None:
+                raise TimeoutError("the user never answered")
+
+        with pytest.raises(TimeoutError):
+            await run(attachment, Exploding(), StubClient(), tmp_path / "out")
+
+        assert not Path(attachment.path).exists()
+
+    @asyncio_test
+    async def test_a_binary_file_is_refused_rather_than_crashing(
+        self, tmp_path: Path
+    ) -> None:
+        # Somebody will attach a spreadsheet or an image with a .tsv name.
+        path = tmp_path / "image.tsv"
+        path.write_bytes(bytes(range(256)) * 50)
+        chat_ = Chat()
+
+        await run(Attached(path), chat_, StubClient(), tmp_path / "out")
+
+        assert chat_.said, "it must say something rather than fail silently"
+        assert not path.exists()
