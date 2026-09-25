@@ -25,7 +25,7 @@ Plain JSON, not SSE: minting is a lookup, not a generation.
 
 import os
 import time
-from typing import Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -34,7 +34,14 @@ from pydantic import BaseModel, Field
 from analysis.client import current_release
 from analysis.disclosure import Tier
 from api.analysis_summary import stored_summary
-from handoff.store import DEFAULT_TTL_SECONDS, Handoff, handoffs
+from api.answer_store import StoredAnswer, answers
+from handoff.store import (
+    DEFAULT_TTL_SECONDS,
+    AnalysisHandoff,
+    Handoff,
+    SearchHandoff,
+    handoffs,
+)
 from util.caller_token import (
     TokenRejectedError,
     human_presence_detail,
@@ -51,17 +58,34 @@ router = APIRouter()
 _limiter = limiter_from_env()
 
 
-class HandoffRequest(BaseModel):
-    kind: str = Field(pattern="^analysis$")
+class AnalysisHandoffRequest(BaseModel):
+    kind: Literal["analysis"]
     token: str = Field(min_length=1, max_length=256)
     #: The tier of the summary the reader was shown. Required, no default.
     disclosure: Tier
     caller_token: str = ""
 
 
+class SearchHandoffRequest(BaseModel):
+    kind: Literal["search"]
+    #: From the `done` event of the `/api/answer` stream the page rendered.
+    answer_id: str = Field(min_length=1, max_length=128)
+    caller_token: str = ""
+
+
+HandoffRequest = Annotated[
+    AnalysisHandoffRequest | SearchHandoffRequest, Field(discriminator="kind")
+]
+
+
 def _refuse(status: int, reason: str, log: str) -> JSONResponse:
     logger.info("handoff refused", extra={"reason": reason, "detail": log})
     return JSONResponse(status_code=status, content={"reason": reason})
+
+
+def stored_answer(answer_id: str) -> StoredAnswer | None:
+    """An answer `/api/answer` showed a reader, if it is still kept."""
+    return answers.get(answer_id)
 
 
 def own_chat_path() -> str:
@@ -79,7 +103,13 @@ async def create_handoff(body: HandoffRequest, request: Request) -> JSONResponse
     except TokenRejectedError as rejected:
         return _refuse(403, "no_caller", rejected.reason)
 
-    presence = human_presence_reason(claims, time.time())
+    # Human presence for an analysis only. It releases a reader's own
+    # analysis summary; a search answer is public pathway text, and
+    # `/api/answer` -- which produced it -- deliberately does not require
+    # presence either, so the search page may not have the claim to send.
+    presence = (
+        human_presence_reason(claims, time.time()) if body.kind == "analysis" else None
+    )
     if presence:
         detail = (
             human_presence_detail(claims, time.time())
@@ -93,25 +123,37 @@ async def create_handoff(body: HandoffRequest, request: Request) -> JSONResponse
     if not _limiter.allow(key or identity_of(claims, body.caller_token)):
         return _refuse(429, "rate_limited", "rate limited")
 
-    release = await current_release()
-    if not release:
-        # Summaries are cached per release, so without knowing the release
-        # there is no way to find the one the reader saw. Refusing is the
-        # honest answer; guessing a release could hand off a summary of a
-        # result the Analysis Service has since deleted.
-        return _refuse(503, "no_release", "current release unknown")
-    stored = stored_summary(body.token, release, body.disclosure)
-    if stored is None:
-        # Not generated, evicted, from a previous release, or requested at a
-        # tier the reader never chose. In every case there is nothing the
-        # reader has seen to continue, and generating one here would break
-        # both FR-002 and FR-003.
-        return _refuse(
-            404, "no_summary", f"no stored summary at tier {body.disclosure}"
+    handoff: Handoff
+    if isinstance(body, SearchHandoffRequest):
+        answer = stored_answer(body.answer_id)
+        if answer is None:
+            # Unknown, expired, or never answered: nothing the reader saw.
+            return _refuse(404, "no_answer", "no stored answer for that id")
+        handoff = SearchHandoff(
+            kind="search",
+            question=answer.question,
+            summary=answer.text,
+            citations=answer.citations,
+            created_at=time.time(),
         )
-
-    handoff_id = handoffs.put(
-        Handoff(
+    else:
+        release = await current_release()
+        if not release:
+            # Summaries are cached per release, so without knowing the release
+            # there is no way to find the one the reader saw. Refusing is the
+            # honest answer; guessing a release could hand off a summary of a
+            # result the Analysis Service has since deleted.
+            return _refuse(503, "no_release", "current release unknown")
+        stored = stored_summary(body.token, release, body.disclosure)
+        if stored is None:
+            # Not generated, evicted, from a previous release, or requested at
+            # a tier the reader never chose. In every case there is nothing the
+            # reader has seen to continue, and generating one here would break
+            # both FR-002 and FR-003.
+            return _refuse(
+                404, "no_summary", f"no stored summary at tier {body.disclosure}"
+            )
+        handoff = AnalysisHandoff(
             kind="analysis",
             token=body.token,
             release=release,
@@ -120,7 +162,8 @@ async def create_handoff(body: HandoffRequest, request: Request) -> JSONResponse
             citations=stored.citations,
             created_at=time.time(),
         )
-    )
+
+    handoff_id = handoffs.put(handoff)
     payload: dict[str, Any] = {
         "id": handoff_id,
         "expires_in": int(DEFAULT_TTL_SECONDS),

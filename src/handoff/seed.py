@@ -27,7 +27,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from analysis.client import Fetched, fetch_not_found, fetch_result
 from analysis.disclosure import for_tier
 from analysis.summarise import prompt_input
-from handoff.store import DEFAULT_TTL_SECONDS, Handoff
+from handoff.store import DEFAULT_TTL_SECONDS, AnalysisHandoff, Handoff, SearchHandoff
 
 #: What the reader asked for on the website, stated as what happened.
 HUMAN_TURN = (
@@ -39,7 +39,7 @@ FetchUnmatched = Callable[[str], Awaitable[list[str] | None]]
 
 
 async def analysis_data(
-    handoff: Handoff,
+    handoff: AnalysisHandoff,
     *,
     fetch: FetchResult = fetch_result,
     fetch_unmatched: FetchUnmatched = fetch_not_found,
@@ -62,8 +62,24 @@ async def analysis_data(
     return data
 
 
-def seeded_turn(handoff: Handoff, data: dict[str, Any] | None) -> list[BaseMessage]:
+def _sources(citations: tuple[tuple[str, str], ...]) -> str:
+    lines = [f"- {name} ({identifier})" for identifier, name in citations if identifier]
+    return (
+        ("\n\nSources the answer was based on:\n" + "\n".join(lines)) if lines else ""
+    )
+
+
+def seeded_turn(
+    handoff: Handoff, data: dict[str, Any] | None = None
+) -> list[BaseMessage]:
     """The conversation turn the chat starts from."""
+    if isinstance(handoff, SearchHandoff):
+        # The reader's own search, and the answer the page showed them, with
+        # the sources it cited so a follow-up can be grounded in them.
+        return [
+            HumanMessage(handoff.question),
+            AIMessage(handoff.summary + _sources(handoff.citations)),
+        ]
     if data is None:
         appendix = (
             "\n\n(The analysis result behind this summary is no longer available "
@@ -79,7 +95,13 @@ def seeded_turn(handoff: Handoff, data: dict[str, Any] | None) -> list[BaseMessa
 
 
 def shown_to_reader(handoff: Handoff) -> str:
-    """What the reader sees when the tab opens. Their own summary, verbatim."""
+    """What the reader sees when the tab opens. Their own text, verbatim."""
+    if isinstance(handoff, SearchHandoff):
+        return (
+            f"Continuing from your search: **{handoff.question}**\n\n"
+            f"{handoff.summary}\n\n"
+            "---\nAsk a follow-up question."
+        )
     return (
         "Continuing from your analysis summary:\n\n"
         f"{handoff.summary}\n\n"
@@ -88,8 +110,7 @@ def shown_to_reader(handoff: Handoff) -> str:
 
 
 UNAVAILABLE = (
-    "I couldn't load the summary you came from — the link may have expired "
+    "I couldn't load what you came from — the link may have expired "
     f"(they last {DEFAULT_TTL_SECONDS // 60:.0f} minutes). You can still ask me "
-    "anything here, or go back to the analysis page and choose *Continue in "
-    "chat* again."
+    "anything here, or go back and choose *Continue in chat* again."
 )

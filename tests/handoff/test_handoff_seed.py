@@ -8,7 +8,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from analysis.client import Fetched
 from handoff import seed
-from handoff.store import Handoff, HandoffStore
+from handoff.store import AnalysisHandoff, HandoffStore
 
 RESULT: dict[str, Any] = {
     "summary": {"token": "T", "type": "OVERREPRESENTATION"},
@@ -25,7 +25,7 @@ RESULT: dict[str, Any] = {
 }
 
 
-def handoff(tier: str = "aggregate", **overrides: Any) -> Handoff:
+def handoff(tier: str = "aggregate", **overrides: Any) -> AnalysisHandoff:
     fields: dict[str, Any] = {
         "kind": "analysis",
         "token": "T",
@@ -36,7 +36,7 @@ def handoff(tier: str = "aggregate", **overrides: Any) -> Handoff:
         "created_at": time.time(),
     }
     fields.update(overrides)
-    return Handoff(**fields)
+    return AnalysisHandoff(**fields)
 
 
 class Spy:
@@ -49,7 +49,7 @@ class Spy:
         return self.returns
 
 
-def data_for(h: Handoff, fetch: Spy, unmatched: Spy) -> Any:
+def data_for(h: AnalysisHandoff, fetch: Spy, unmatched: Spy) -> Any:
     return asyncio.run(seed.analysis_data(h, fetch=fetch, fetch_unmatched=unmatched))
 
 
@@ -137,3 +137,47 @@ class TestTheStore:
         ids = [store.put(handoff()) for _ in range(5)]
         assert store.get(ids[0]) is None
         assert store.get(ids[-1]) is not None
+
+
+class TestSearchTurns:
+    def search(self) -> Any:
+        from handoff.store import SearchHandoff
+
+        return SearchHandoff(
+            kind="search",
+            question="what does CDK5 phosphorylate?",
+            summary="CDK5 phosphorylates tau.",
+            citations=(("R-HSA-1", "Apoptosis"), ("", "no identifier")),
+            created_at=time.time(),
+        )
+
+    def test_the_readers_question_is_the_human_turn(self) -> None:
+        # Their own words, not a paraphrase: the rephraser reads history.
+        turn = seed.seeded_turn(self.search())
+        assert isinstance(turn[0], HumanMessage)
+        assert turn[0].content == "what does CDK5 phosphorylate?"
+
+    def test_the_model_turn_is_the_answer_with_its_sources(self) -> None:
+        text = str(seed.seeded_turn(self.search())[1].content)
+        assert text.startswith("CDK5 phosphorylates tau.")
+        assert "Apoptosis (R-HSA-1)" in text
+        # A citation with no identifier cannot be followed, so it is left out
+        # rather than listed as a dead source.
+        assert "no identifier" not in text
+
+    def test_the_reader_sees_their_search_and_answer(self) -> None:
+        shown = seed.shown_to_reader(self.search())
+        assert "what does CDK5 phosphorylate?" in shown
+        assert "CDK5 phosphorylates tau." in shown
+
+
+def test_an_empty_answer_is_never_kept() -> None:
+    # Continuing it would open a chat on nothing and call it the reader's.
+    from api.answer_store import AnswerStore, StoredAnswer
+
+    kept = AnswerStore().put(
+        StoredAnswer(
+            question="q", text="   ", citations=(), release=97, created_at=time.time()
+        )
+    )
+    assert kept is None
