@@ -3,6 +3,7 @@
 # or get_data_layer. Not fixable here; it needs stubs upstream. The file is
 # named with a hyphen, so it cannot be listed in [[tool.mypy.overrides]].
 import os
+import uuid
 from pathlib import Path
 
 import chainlit as cl
@@ -31,7 +32,7 @@ from gsa.chainlit_flow import (
     result_file_kwargs,
     run_analysis,
 )
-from gsa.chat import HOW_TO_RUN_GSA, asks_to_run_gsa
+from gsa.chat import HOW_TO_RUN_GSA, HOW_TO_RUN_GSA_WITH_A_MATRIX, asks_to_run_gsa
 from handoff import seed
 from handoff.store import AnalysisHandoff, handoffs
 from handoff.window import acknowledgement, claimed_id
@@ -274,33 +275,76 @@ def current_thread_id() -> str:
     return str(cl.user_session.get("thread_id") or cl.user_session.get("id"))
 
 
-#: How long the Run / No buttons wait before the offer lapses.
-PROPOSAL_TIMEOUT_SECONDS = 600
+#: Proposals kept per session, so an older proposal's buttons still work.
+MAX_PENDING_PROPOSALS = 5
 
 
-async def confirm_gene_list(identifiers: list[str]) -> bool | None:
-    """Ask before submitting. True to run, False to answer instead, None on no reply.
+async def propose_gene_list(message: cl.Message, identifiers: list[str]) -> None:
+    """Offer to analyse the list; the buttons answer later, without blocking.
 
-    The list is a message of its own because `AskActionMessage` replaces its
-    content with "Selected: ..." once answered, and the reader should keep
-    seeing what was submitted.
+    Not `AskActionMessage`: that disables the message box until the reader
+    clicks, and drops the question if they never do. Here they can click
+    Run, click No, type "yes", or simply type on.
     """
-    await cl.Message(content=gene_list.describe_proposal(identifiers)).send()
-    answer = await cl.AskActionMessage(
-        content="",
-        actions=[
-            cl.Action(name="gene_list", payload={"run": True}, label="Run it"),
-            cl.Action(
-                name="gene_list",
-                payload={"run": False},
-                label="No, answer my question",
-            ),
-        ],
-        timeout=PROPOSAL_TIMEOUT_SECONDS,
+    proposal_id = uuid.uuid4().hex
+    run = cl.Action(name="gene_list_run", payload={"id": proposal_id}, label="Run it")
+    decline = cl.Action(
+        name="gene_list_no",
+        payload={"id": proposal_id},
+        label="No, answer my question",
+    )
+    pending: dict[str, dict] = cl.user_session.get("gene_list_pending") or {}
+    pending[proposal_id] = {
+        "text": message.content,
+        "message_id": message.id,
+        "identifiers": identifiers,
+        "actions": [run, decline],
+    }
+    while len(pending) > MAX_PENDING_PROPOSALS:
+        pending.pop(next(iter(pending)))
+    cl.user_session.set("gene_list_pending", pending)
+    # A typed "yes" means the proposal just made, and only that one.
+    cl.user_session.set("gene_list_latest", proposal_id)
+    await cl.Message(
+        content=gene_list.describe_proposal(identifiers), actions=[run, decline]
     ).send()
-    if answer is None:
-        return None
-    return bool((answer.get("payload") or {}).get("run"))
+
+
+async def take_proposal(proposal_id: str | None) -> dict | None:
+    """Claim a proposal once, and take its buttons away."""
+    pending: dict[str, dict] = cl.user_session.get("gene_list_pending") or {}
+    proposal = pending.pop(proposal_id, None) if proposal_id else None
+    cl.user_session.set("gene_list_pending", pending)
+    if cl.user_session.get("gene_list_latest") == proposal_id:
+        cl.user_session.set("gene_list_latest", None)
+    if proposal is not None:
+        for action in proposal["actions"]:
+            await action.remove()
+    return proposal
+
+
+@cl.action_callback("gene_list_run")
+async def on_gene_list_run(action: cl.Action) -> None:
+    proposal = await take_proposal(action.payload.get("id"))
+    if proposal is None:
+        await cl.Message(content=gene_list.EXPIRED).send()
+        return
+    await run_gene_list_analysis(proposal["text"], proposal["identifiers"])
+
+
+@cl.action_callback("gene_list_no")
+async def on_gene_list_no(action: cl.Action) -> None:
+    proposal = await take_proposal(action.payload.get("id"))
+    if proposal is None:
+        return
+    # Not the full GSA how-to: for "can we do a gsa analysis... TP53, ERBB2"
+    # it ends by offering to analyse the list just declined. Not the model
+    # either: grounded in the website's user guide, it says GSA cannot be
+    # done in this chat -- the bug the how-to exists to fix. Measured both.
+    if asks_to_run_gsa(proposal["text"]):
+        await cl.Message(content=HOW_TO_RUN_GSA_WITH_A_MATRIX).send()
+        return
+    await answer_with_model(proposal["text"], proposal["message_id"])
 
 
 async def run_gene_list_analysis(text: str, identifiers: list[str]) -> None:
@@ -376,46 +420,8 @@ async def on_window_message(message: object) -> None:
     await cl.send_window_message(acknowledgement(handoff_id))
 
 
-@cl.on_message
-async def main(message: cl.Message) -> None:
-    if await message_rate_limited(config):
-        return
-
-    await static_messages(config, TriggerEvent.on_message)
-
-    # An attached matrix routes to the analysis flow instead of the graph.
-    #
-    # Not a tool the agent calls: the run takes minutes, which is longer
-    # than a chat turn, and the matrix is over a megabyte, which must never
-    # enter the model's context. A tool call would put the model in the
-    # middle of both problems.
-    attachment = matrix_attachment(getattr(message, "elements", None))
-    if attachment is not None:
-        await run_gsa_analysis(attachment)
-        return
-
-    # Asked in words rather than by attaching a file. The answer path is
-    # grounded in the user guide, which describes the website's GSA page, so
-    # it said this chat could not do it. Answered here instead -- chat only,
-    # because the same answer path serves the search page, which cannot.
-    # A gene list is not a matrix: run what Reactome runs on a list,
-    # over-representation, rather than explaining how to upload a matrix.
-    # Before the GSA check, because the request that prompted this said "gsa".
-    # It only proposes: the reader sees the identifiers read and chooses, so
-    # a question that merely looks like a request still gets answered.
-    identifiers = gene_list.gene_list_request(message.content or "")
-    if identifiers is not None:
-        choice = await confirm_gene_list(identifiers)
-        if choice is None:
-            return
-        if choice:
-            await run_gene_list_analysis(message.content, identifiers)
-            return
-
-    if asks_to_run_gsa(message.content or ""):
-        await cl.Message(content=HOW_TO_RUN_GSA).send()
-        return
-
+async def answer_with_model(content: str, message_id: str) -> None:
+    """The ordinary turn: the graph answers, streamed, with its sources."""
     message_count: int = cl.user_session.get("message_count", 0) + 1
     cl.user_session.set("message_count", message_count)
 
@@ -431,7 +437,7 @@ async def main(message: cl.Message) -> None:
 
     enable_postprocess: bool = is_feature_enabled(config, "postprocessing")
     result: OutputState = await get_graph().ainvoke(
-        message.content,
+        content,
         chat_profile.lower(),
         callbacks=[chainlit_cb, openai_cb],
         thread_id=thread_id,
@@ -451,4 +457,53 @@ async def main(message: cl.Message) -> None:
 
     await static_messages(config, after_messages=message_count)
 
-    save_openai_metrics(message.id, openai_cb)
+    save_openai_metrics(message_id, openai_cb)
+
+
+@cl.on_message
+async def main(message: cl.Message) -> None:
+    if await message_rate_limited(config):
+        return
+
+    await static_messages(config, TriggerEvent.on_message)
+
+    # An attached matrix routes to the analysis flow instead of the graph.
+    #
+    # Not a tool the agent calls: the run takes minutes, which is longer
+    # than a chat turn, and the matrix is over a megabyte, which must never
+    # enter the model's context. A tool call would put the model in the
+    # middle of both problems.
+    attachment = matrix_attachment(getattr(message, "elements", None))
+    if attachment is not None:
+        await run_gsa_analysis(attachment)
+        return
+
+    # "yes" to the proposal just made is the same as clicking Run. Only the
+    # message straight after it: a "yes" later answers something else.
+    latest = cl.user_session.get("gene_list_latest")
+    cl.user_session.set("gene_list_latest", None)
+    if latest and gene_list.confirms(message.content or ""):
+        proposal = await take_proposal(latest)
+        if proposal is not None:
+            await run_gene_list_analysis(proposal["text"], proposal["identifiers"])
+            return
+
+    # A gene list is not a matrix: offer what Reactome runs on a list,
+    # over-representation, rather than explaining how to upload a matrix.
+    # Before the GSA check, because the request that prompted this said "gsa".
+    # It only proposes; a question that merely looks like a request is one
+    # click from being answered.
+    identifiers = gene_list.gene_list_request(message.content or "")
+    if identifiers is not None:
+        await propose_gene_list(message, identifiers)
+        return
+
+    # Asked in words rather than by attaching a file. The answer path is
+    # grounded in the user guide, which describes the website's GSA page, so
+    # it said this chat could not do it. Answered here instead -- chat only,
+    # because the same answer path serves the search page, which cannot.
+    if asks_to_run_gsa(message.content or ""):
+        await cl.Message(content=HOW_TO_RUN_GSA).send()
+        return
+
+    await answer_with_model(message.content, message.id)

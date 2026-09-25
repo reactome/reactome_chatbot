@@ -207,10 +207,18 @@ def asks_to_run_gsa(text: str) -> bool:
 
 #: The gene-list line promises what `analysis.gene_list` does. It first
 #: pointed at the website, because the chat did not run that analysis yet.
-HOW_TO_RUN_GSA = """Yes — you can run a gene set analysis right here in the chat, using ReactomeGSA.
+#: Uploading a matrix, and nothing else. What "No, answer my question" gets
+#: when the declined message also asked about GSA: the gene-list line
+#: would offer again the analysis the reader has just turned down.
+HOW_TO_RUN_GSA_WITH_A_MATRIX = """Yes — you can run a gene set analysis right here in the chat, using ReactomeGSA.
 
 1. **Attach your expression matrix** with the 📎 button below: a `.tsv` or `.csv` file with genes (or proteins) as rows, samples as columns, and a first row naming the samples. Up to 20 MB.
 2. **Tell me which group each sample is in** when I ask — for example `control, control, treated, treated`.
-3. I'll run the analysis and give you the most significant pathways, a link to view the result in Reactome's Pathway Browser, and the full results table to download. It usually takes a few minutes.
+3. I'll run the analysis and give you the most significant pathways, a link to view the result in Reactome's Pathway Browser, and the full results table to download. It usually takes a few minutes."""
+
+HOW_TO_RUN_GSA = (
+    HOW_TO_RUN_GSA_WITH_A_MATRIX
+    + """
 
 If you only have a **list of genes** rather than measurements for each sample, that's an over-representation analysis instead, and I can run it here too: ask me to analyse them and include the genes in your message — for example *run a pathway analysis on TP53, ERBB2, RUNX2*."""
+)

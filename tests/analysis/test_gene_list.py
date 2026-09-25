@@ -5,6 +5,7 @@ recogniser is a heuristic and a heuristic's failures are in its edges.
 """
 
 import asyncio
+import time
 from collections.abc import Callable
 
 import gene_list_phrases as phrases
@@ -12,8 +13,10 @@ import httpx
 import pytest
 
 from analysis import client as analysis_client
+from analysis.client import MAX_SUBMITTED_IDENTIFIERS
 from analysis.gene_list import (
     MAX_PROPOSED_LISTED,
+    confirms,
     describe_overrepresentation,
     describe_proposal,
     gene_list_request,
@@ -39,6 +42,23 @@ REQUESTS = [
     ),
     *phrases.REVIEW_REQUESTS,
     *phrases.HELD_OUT_REQUESTS,
+    *phrases.SECOND_REVIEW_REQUESTS,
+    *phrases.HELD_OUT_3_REQUESTS,
+    *(
+        (phrases.TRAILING_BASE + tail, ["TP53", "MDM2", "CDKN1A"])
+        for tail in phrases.TRAILING
+    ),
+    (
+        "Run an enrichment on up-regulated genes: TP53, MDM2; down-regulated: MYC, CCND1",
+        ["TP53", "MDM2", "MYC", "CCND1"],
+    ),
+    ("Run ORA on\r\nTP53\r\nMDM2", ["TP53", "MDM2"]),
+    # A list can open the message, in lower case.
+    ("egfr, kras, braf - run ORA on these", ["egfr", "kras", "braf"]),
+    # The verb is not the list's first member.
+    ("submit TLR4, MYD88 for pathway analysis", ["TLR4", "MYD88"]),
+    ("run ORA on TP53\u00a0MDM2\u00a0CDKN1A", ["TP53", "MDM2", "CDKN1A"]),
+    ("run ORA on TP53\uff0cMDM2\uff0cCDKN1A", ["TP53", "MDM2", "CDKN1A"]),
 ]
 
 NOT_REQUESTS = [
@@ -56,7 +76,68 @@ NOT_REQUESTS = [
     "",
     *phrases.REVIEW_QUESTIONS,
     *phrases.HELD_OUT_QUESTIONS,
+    *phrases.SECOND_REVIEW_QUESTIONS,
+    *phrases.HELD_OUT_3_QUESTIONS,
+    "please run GSA on my matrix, columns are sample1, sample2, sample3",
+    "Map EGFR mutations L858R and T790M to pathways",
 ]
+
+
+@pytest.mark.parametrize(("text", "current"), phrases.KNOWN_LIMITS)
+def test_known_limits_are_as_recorded(text: str, current: list[str] | None) -> None:
+    # Wrong, and pinned: if one of these changes, update the record and the
+    # measured rate in gene_list_phrases.py.
+    assert gene_list_request(text) == current
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "run ORA on:\n" + "\n".join(f"GENE{i}" for i in range(8000)),
+        "run ORA on TP53, MDM2" + "\n" * 50_000 + "x",
+        "run ORA on TP53, MDM2" + "?" * 50_000 + "x",
+        "run ORA on: TP53, MDM2" + " " * 50_000 + "!MYC",
+        "run ORA on " + "of " * 15_000 + "TP53, MDM2",
+        "do " + "word " * 11_000 + "analysis on TP53, MDM2",
+        # Over the cap: refused unread, however list-like.
+        "run ORA on: " + "TP53, " * 500_000,
+    ],
+    ids=[
+        "column",
+        "newlines",
+        "question-marks",
+        "spaces",
+        "openers",
+        "request",
+        "huge",
+    ],
+)
+def test_reading_a_message_is_fast_whatever_it_holds(text: str) -> None:
+    # It runs on the event loop every session shares. The first rewrite took
+    # 38 s on a 4,000-line column and 24 s on 40,000 newlines.
+    started = time.perf_counter()
+    gene_list_request(text)
+    assert time.perf_counter() - started < 0.5
+
+
+@pytest.mark.parametrize(
+    "text", ["yes", "Yes please", "ok", "run it", "Go ahead!", "sure."]
+)
+def test_a_typed_yes_confirms(text: str) -> None:
+    assert confirms(text)
+
+
+@pytest.mark.parametrize(
+    "text", ["yes but first explain ORA", "no", "what is TP53?", "", "yesterday"]
+)
+def test_anything_else_does_not(text: str) -> None:
+    assert not confirms(text)
+
+
+def test_the_proposal_says_when_the_list_will_be_cut() -> None:
+    long = describe_proposal([f"G{i}" for i in range(MAX_SUBMITTED_IDENTIFIERS + 1)])
+    assert f"Only the first {MAX_SUBMITTED_IDENTIFIERS:,} will be submitted" in long
+    assert "will be submitted" not in describe_proposal(["TP53", "MDM2"])
 
 
 @pytest.mark.parametrize(("text", "expected"), REQUESTS)
@@ -71,8 +152,8 @@ def test_other_messages_are_left_to_the_model(text: str) -> None:
 
 def test_the_sets_are_the_size_they_claim() -> None:
     # Sized sets are the point: a pass at n=2 says nothing about a rate.
-    assert len(REQUESTS) >= 40
-    assert len(NOT_REQUESTS) >= 70
+    assert len(REQUESTS) >= 100
+    assert len(NOT_REQUESTS) >= 120
 
 
 def test_the_proposal_lists_what_will_be_submitted() -> None:

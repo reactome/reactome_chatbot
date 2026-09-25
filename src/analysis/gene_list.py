@@ -25,7 +25,6 @@ model answers better.
 
 import re
 from dataclasses import dataclass
-from itertools import pairwise
 from typing import Any
 
 from analysis.client import MAX_SUBMITTED_IDENTIFIERS
@@ -48,14 +47,19 @@ _REQUEST = re.compile(
     r"\b(run|perform|carry\s+out|execute|submit|analy[sz]e|map|find"
     r"|do\s+(an?\s+|the\s+|my\s+|some\s+)?([\w-]+\s+){0,3}(analysis|enrichment|ora|gsa|gsea)"
     r"|which\s+(\w+\s+)?pathways|over[\s-]?represented\s+in"
-    r"|enrichment\s+(for|on))\b",
+    r"|enrichment\s+(for|on)|(enrichment|ora|gsea|analysis)\s+please)\b",
     re.IGNORECASE,
 )
 #: A question about something, not a request to compute it.
 _ABOUT = re.compile(
     r"\b(explain\w*|why|how|describe|what\s+(does|is|are|would|do)|difference"
     r"|compar\w*|check\s+if|whether|interpret\w*|understand|discuss|talk\s+about"
-    r"|tell\s+me|summar\w*|meaning|mean|literature|correct)\b",
+    r"|tell\s+me|summar\w*|meaning|mean|literature|correct"
+    # From a second review's fresh questions: prose about genes, not a list.
+    r"|role|relationship|between|shared|(?<![\w-])regulat\w*|involv\w*|papers?|steps"
+    r"|including|mutations?|variants?"
+    # A matrix's columns are samples, for the GSA flow, not identifiers.
+    r"|matrix|columns?)\b",
     re.IGNORECASE,
 )
 
@@ -70,12 +74,14 @@ _ENSEMBL = re.compile(r"\AENS[A-Z]*[GTP]\d{11}\Z")
 _CAPS_SYMBOL = re.compile(r"\A[A-Z][A-Z0-9-]{2,14}\Z")
 #: Any case, with a digit: TP53, Trp53, p53, ERBB2.
 _DIGIT_SYMBOL = re.compile(r"\A[A-Za-z][A-Za-z0-9-]{1,14}\Z")
-#: Any case, no digit -- only inside a list (see `_list_runs`): egfr, kras.
+#: Any case, no digit -- only inside a list (see `_accepted`): egfr, kras.
 _ANY_SYMBOL = re.compile(r"\A[A-Za-z][A-Za-z0-9-]{1,14}\Z")
 #: Shaped like identifiers, but of something else.
 _OTHER_ACCESSIONS = re.compile(
     r"\A(chr[0-9XYM]|rs\d|GS[EM]\d|hg\d|GRCh|v\d|pH\d|Q\d\Z|R-[A-Z]{3}-\d"
-    r"|log\d|COVID|SARS|PMID|HEK\d|MCF\d|HCT\d)",
+    r"|log\d|COVID|SARS|PMID|HEK\d|MCF\d|HCT\d"
+    # Protein variants: G12D, V600E, L858R, T790M.
+    r"|[A-Z]\d{2,4}[A-Z]\Z)",
     re.IGNORECASE,
 )
 
@@ -87,79 +93,192 @@ _NOT_GENES = frozenset(
     THANKS HUMAN MOUSE RAT CELLS CELL NOT ALSO AND OR THE FOR YOU CAN PLEASE
     RUN WITH GENE GENES LIST HELP HOW WHAT WHY THESE THIS THAT MY OUR ME IT
     THEM ON OF IN TO AN IS ARE ALL SOME ANALYSIS ANALYSE ANALYZE ENRICHMENT
-    PATHWAY PATHWAYS PROTEINS PROTEIN IDENTIFIERS FOLLOWING HERE THANK""".split()
+    PATHWAY PATHWAYS PROTEINS PROTEIN IDENTIFIERS FOLLOWING HERE THANK
+    PERFORM SUBMIT MAP FIND DO EXECUTE ETC""".split()
 )
 
 
-def _is_identifier(token: str, *, in_list: bool, shouting: bool) -> bool:
-    if token.upper() in _NOT_GENES or _OTHER_ACCESSIONS.match(token):
-        return False
-    if _UNIPROT.match(token) or _ENSEMBL.match(token):
-        return True
-    if any(c.isdigit() for c in token):
-        return bool(_DIGIT_SYMBOL.match(token))
-    if in_list:
-        return bool(_ANY_SYMBOL.match(token))
-    return not shouting and bool(_CAPS_SYMBOL.match(token))
+#: Longer than any list worth typing (3,000 identifiers of ~15 characters is
+#: 48K). A bound on the work, not a policy: an attached file is the way in
+#: for more.
+MAX_MESSAGE_CHARS = 60_000
 
-
-#: Where a list starts: after a colon, a question mark, a newline, or a
-#: preposition; and a list continues across commas, semicolons, whitespace
-#: and "and"/"or". Anything else -- a full stop, a word that is not an
-#: identifier -- ends it.
-_LIST_START = re.compile(r"[:?\n]|\b(for|on|of|with|genes|proteins)\b", re.IGNORECASE)
-_LIST_GAP = re.compile(
-    r"\A(\s*[,;]?\s*|\s+(and|or)\s+|\s*,\s*(and|or)\s+)\Z", re.IGNORECASE
+#: Words a list follows: "for", "on", "genes", and the request verbs
+#: themselves ("analyze TP53, MDM2").
+_OPENER_WORDS = frozenset(
+    """FOR ON OF WITH GENES PROTEINS LIST THESE FOLLOWING RUN PERFORM SUBMIT
+    ANALYSE ANALYZE MAP FIND""".split()
+)
+#: Joining words, read as part of the gap between two tokens.
+_JOINERS = frozenset({"and", "or"})
+_REQUEST_START = re.compile(
+    r"\A\s*(please\s+)?(run|perform|do|analy[sz]e|submit|execute|map|find)\b",
+    re.IGNORECASE,
+)
+#: List markers people paste: "1. TP53", "2) MDM2", "- CDKN1A", "• BAX".
+_MARKERS = re.compile(r"(?m)^[ \t]*(?:\d{1,4}[.)]|[-*•])[ \t]+")
+_ENSEMBL_VERSION = re.compile(r"\b(ENS[A-Z]*[GTP]\d{11})\.\d+\b")
+# Possessive quantifiers throughout: a gap can be 40,000 newlines long, and
+# `\s*,?\s*` over that backtracks quadratically (measured: 24 s).
+_AND = re.compile(r"\A\s*+,?\s*+(and|or)\s++\Z", re.IGNORECASE)
+_COMMA = re.compile(r"\A[ \t]*+[,;\t|/][ \t]*+\Z")
+_SPACE = re.compile(r"\A[ \t]++\Z")
+_NEWLINE = re.compile(r"\A[ \t]*+[,;]?[ \t]*+\n[ \t]*+\Z")
+_BLANK_LINE = re.compile(r"\n[ \t]*+\n")
+#: Pasted text arrives with Windows line ends, non-breaking spaces, quotes
+#: and full-width commas; each would otherwise end a list.
+_NORMALISE = str.maketrans(
+    {
+        "\r": "\n",
+        "\u00a0": " ",
+        "\uff0c": ",",
+        "\u3001": ",",
+        '"': " ",
+        "'": " ",
+        "\u201c": " ",
+        "\u201d": " ",
+        "\u2018": " ",
+        "\u2019": " ",
+        "`": " ",
+    }
 )
 
 
-def _list_runs(text: str, shouting: bool) -> set[tuple[int, int]]:
-    """Spans of tokens inside a list, where lower-case symbols are accepted.
+def _gap_kind(gap: str) -> str | None:
+    """How two neighbouring tokens are joined; None ends a list.
 
-    A list is two or more identifier-shaped tokens in a row, starting after
-    a list opener. Free text is not a list, so "enrichment for egfr, kras"
-    reads egfr and kras, and "which pathways are enriched" reads nothing.
+    Plain regexes over a gap that is itself bounded by two tokens, so the
+    whole message is scanned once. The first version walked from every
+    opener to the end of the message: a pasted column of 4,000 genes took
+    38 s, on the event loop every session shares.
     """
-    spans: set[tuple[int, int]] = set()
-    for opener in _LIST_START.finditer(text):
-        run: list[tuple[int, int]] = []
-        pos = opener.end()
-        for match in _TOKEN.finditer(text, pos):
-            if not _LIST_GAP.match(text[pos : match.start()]):
+    if _COMMA.match(gap):
+        return "comma"
+    if _NEWLINE.match(gap):
+        return "newline"
+    if _AND.match(gap):
+        return "and"
+    if _SPACE.match(gap):
+        return "space"
+    return None
+
+
+def _strength(token: str) -> str | None:
+    """ "strong" (a digit or an accession format), "caps", "weak", or None."""
+    if token.upper() in _NOT_GENES or _OTHER_ACCESSIONS.match(token):
+        return None
+    if _UNIPROT.match(token) or _ENSEMBL.match(token):
+        return "strong"
+    if any(c.isdigit() for c in token):
+        return "strong" if _DIGIT_SYMBOL.match(token) else None
+    if _CAPS_SYMBOL.match(token):
+        return "caps"
+    # "down-regulated" is a word; HLA-A, in capitals, was caught above.
+    return "weak" if _ANY_SYMBOL.match(token) and "-" not in token else None
+
+
+@dataclass
+class _Run:
+    opened_by_mark: bool
+    tokens: list[tuple[str, str]]  # (token, strength)
+    kind: str | None = None
+    ended_by_and: bool = False
+
+
+def _accepted(run: _Run, *, shouting: bool, pair_ok: bool) -> list[str]:
+    tokens = run.tokens
+    # Space-separated plain words are prose unless a colon, question mark or
+    # newline announced a list: "on TP53 MDM2 using default settings" reads
+    # TP53 and MDM2. Capitals are words too when the whole message is.
+    if not run.opened_by_mark:
+        for index, (_, strength) in enumerate(tokens):
+            if (strength == "weak" and run.kind in (None, "space", "and")) or (
+                strength == "caps" and shouting
+            ):
+                tokens = tokens[:index]
                 break
-            if not _is_identifier(match.group(), in_list=True, shouting=shouting):
-                break
-            run.append(match.span())
-            pos = match.end()
-        separators = {text[a:b] for (_, a), (b, _) in pairwise(run)}
-        # Space-separated lower-case words are prose unless a colon, question
-        # mark or newline opened the list.
-        if len(run) >= MIN_IDENTIFIERS and (
-            opener.group() in ":?\n"
-            or any(s.strip() for s in separators)
-            or "\n" in "".join(separators)
-        ):
-            spans.update(run)
-    return spans
+    if len(tokens) < MIN_IDENTIFIERS:
+        return []
+    # "X and Y" is how prose names two genes; a list says it with commas.
+    if len(tokens) == 2 and run.kind == "and" and not pair_ok:
+        return []
+    return [token for token, _ in tokens]
 
 
 def identifiers_in(text: str, *, shouting: bool = False) -> list[str]:
-    """Identifier-shaped tokens, in order, each once (case-insensitively)."""
-    in_list = _list_runs(text, shouting)
-    seen: set[str] = set()
+    """The identifiers in the lists in a message, in order, each once.
+
+    A list is two or more identifier-shaped tokens joined the same way
+    throughout -- commas, newlines, tabs or spaces, with "and" before the
+    last -- and it starts at the beginning of the message, after a colon,
+    question mark or newline, or after "for", "on", "genes"... A change of
+    separator, a blank line, or a word that is not an identifier ends it,
+    so a trailing sentence is not read as genes.
+    """
+    text = text.replace("\r\n", "\n").translate(_NORMALISE)
+    text = _ENSEMBL_VERSION.sub(r"\1", _MARKERS.sub("", text))
+    pair_ok = "?" not in text and bool(_REQUEST_START.match(text))
     found: list[str] = []
+    run: _Run | None = None
+    previous_end = 0
+    previous_token = ""
+
+    def close() -> None:
+        if run is not None:
+            found.extend(_accepted(run, shouting=shouting, pair_ok=pair_ok))
+
     for match in _TOKEN.finditer(text):
         token = match.group().strip("-")
-        if not token or token.upper() in seen:
-            continue
-        if _is_identifier(token, in_list=match.span() in in_list, shouting=shouting):
+        if token.lower() in _JOINERS:
+            continue  # stays in the gap: "TP53, ERBB2 and RUNX2"
+        gap = text[previous_end : match.start()]
+        previous_end = match.end()
+        if _BLANK_LINE.search(gap):
+            close()
+            run = None
+            if found:
+                # A blank line after a list: what follows is a new paragraph
+                # -- "Best,\nJohn" -- not more genes.
+                break
+        strength = _strength(token) if token else None
+        kind = _gap_kind(gap)
+        # One separator throughout; "and" may join the last one, after which
+        # the list is over.
+        if (
+            run is not None
+            and not run.ended_by_and
+            and strength is not None
+            and kind is not None
+            and (run.kind is None or kind in (run.kind, "and"))
+        ):
+            run.tokens.append((token, strength))
+            run.kind = run.kind or kind
+            run.ended_by_and = kind == "and"
+        else:
+            close()
+            run = None
+            marked = any(c in gap for c in ":?\n")
+            opens = (
+                match.start() == 0 or marked or previous_token.upper() in _OPENER_WORDS
+            )
+            if strength is not None and opens:
+                run = _Run(opened_by_mark=marked, tokens=[(token, strength)])
+        previous_token = token
+    close()
+
+    seen: set[str] = set()
+    unique: list[str] = []
+    for token in found:
+        if token.upper() not in seen:
             seen.add(token.upper())
-            found.append(token)
-    return found
+            unique.append(token)
+    return unique
 
 
 def gene_list_request(text: str) -> list[str] | None:
     """The identifiers to propose analysing, if this message asks for it."""
+    if len(text) > MAX_MESSAGE_CHARS:
+        return None
     request = _REQUEST.search(text)
     if not (request and _ANALYSIS_TERMS.search(text)) or _ABOUT.search(text):
         return None
@@ -187,8 +306,20 @@ def describe_proposal(identifiers: list[str]) -> str:
         "needs expression measurements for each sample — attach a matrix "
         "with 📎 if you have one.)\n\n"
         f"I read **{len(identifiers)} identifiers** in your message: {shown}.{limit}\n\n"
-        "Run the analysis on these?"
+        "Run the analysis on these? (Or just type *yes*.)"
     )
+
+
+_CONFIRMS = re.compile(
+    r"\A\s*(yes|y|yep|yeah|ok|okay|sure|go|go\s+ahead|run|run\s+it|do\s+it"
+    r"|please|please\s+do|yes,?\s+please|please\s+run\s+it)\s*[.!]*\s*\Z",
+    re.IGNORECASE,
+)
+
+
+def confirms(text: str) -> bool:
+    """A typed yes to the proposal just made, instead of clicking Run."""
+    return bool(_CONFIRMS.match(text))
 
 
 @dataclass(frozen=True)
@@ -293,4 +424,10 @@ FAILED = (
     "I tried to run an over-representation analysis on those genes, but "
     "Reactome's Analysis Service didn't return a result. Please try again in "
     "a moment."
+)
+
+
+EXPIRED = (
+    "That list is no longer waiting to be analysed. Send it again and I'll "
+    "offer to run it."
 )

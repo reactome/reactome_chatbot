@@ -6,6 +6,13 @@
 - HELD_OUT_*: written after that rewrite and never tuned against. They are
   the honest measure: 15/15 and 0/20 when added.
 
+- SECOND_REVIEW_*: from a second review, of the version that proposed
+  rather than ran. It fired on 12 of 40 questions and read the wrong list
+  or none for 3 of 25; the parser was rewritten again.
+- HELD_OUT_3_*: written after that, never tuned against: 11/12 requests
+  exact, 1/15 questions fired. The two failures are KNOWN_LIMITS, pinned
+  as they are rather than tuned away, so the rate stays honest.
+
 A positive is exact: the identifiers read, in order. A request that reads
 the wrong list is a failure even if it fires.
 """
@@ -208,4 +215,232 @@ HELD_OUT_QUESTIONS: list[str] = [
     "Is there a pathway that links GLUT1 and HK2?",
     "Which of these involve TP53?",
     "Can you find pathways where both INS and INSR are present?",
+]
+
+
+SECOND_REVIEW_REQUESTS: list[tuple[str, list[str]]] = [
+    ("run ORA on\nTP53\tMDM2\tCDKN1A\tBAX", ["TP53", "MDM2", "CDKN1A", "BAX"]),
+    (
+        "Enrichment please:\nGene\nTP53\nMDM2\nCDKN1A\nBAX",
+        ["TP53", "MDM2", "CDKN1A", "BAX"],
+    ),
+    ("analyse these genes:\n1. TP53\n2. MDM2\n3. CDKN1A", ["TP53", "MDM2", "CDKN1A"]),
+    ("please run an enrichment on:\n- EGFR\n- KRAS\n- BRAF", ["EGFR", "KRAS", "BRAF"]),
+    ("perform pathway analysis on:\n* EGFR\n* KRAS\n* BRAF", ["EGFR", "KRAS", "BRAF"]),
+    ("run ORA on TP53, P38398, ENSG00000135679", ["TP53", "P38398", "ENSG00000135679"]),
+    (
+        "run an enrichment on TP53, MDM2, CDKN1A. These came from my knockdown screen.",
+        ["TP53", "MDM2", "CDKN1A"],
+    ),
+    (
+        "Run a pathway analysis on these: TP53, MDM2, BAX, thanks!",
+        ["TP53", "MDM2", "BAX"],
+    ),
+    (
+        "do an ORA with the following genes\nSTAT1\nSTAT2\nIRF9\n\nThey are interferon genes.",
+        ["STAT1", "STAT2", "IRF9"],
+    ),
+    ("run enrichment on MYC/MAX/MXD1", ["MYC", "MAX", "MXD1"]),
+    ("Run ORA on: TP53 | MDM2 | CDKN1A", ["TP53", "MDM2", "CDKN1A"]),
+    (
+        "Please do an enrichment analysis on my gene list (TP53, MDM2, CDKN1A)",
+        ["TP53", "MDM2", "CDKN1A"],
+    ),
+    ('run ora on "TP53", "MDM2", "CDKN1A"', ["TP53", "MDM2", "CDKN1A"]),
+    (
+        "Run an enrichment for HLA-A, HLA-B, B2M, TAP1",
+        ["HLA-A", "HLA-B", "B2M", "TAP1"],
+    ),
+    (
+        "Can you run an ORA on these mouse genes: Trp53, Mdm2, Cdkn1a, Bax",
+        ["Trp53", "Mdm2", "Cdkn1a", "Bax"],
+    ),
+    (
+        "perform enrichment on CD8A, GZMB, PRF1, IFNG, and NKG7",
+        ["CD8A", "GZMB", "PRF1", "IFNG", "NKG7"],
+    ),
+    (
+        "Run a Reactome analysis on the list below\n\nIL6\nIL1B\nTNF\nCXCL8",
+        ["IL6", "IL1B", "TNF", "CXCL8"],
+    ),
+    ("find enriched pathways for: sox9, runx2, sp7", ["sox9", "runx2", "sp7"]),
+    (
+        "run GSEA on TP53, MDM2, CDKN1A, BAX, BBC3, PMAIP1, FAS, TNFRSF10B, GADD45A, SESN1, RRM2B, ZMAT3",
+        [
+            "TP53",
+            "MDM2",
+            "CDKN1A",
+            "BAX",
+            "BBC3",
+            "PMAIP1",
+            "FAS",
+            "TNFRSF10B",
+            "GADD45A",
+            "SESN1",
+            "RRM2B",
+            "ZMAT3",
+        ],
+    ),
+    ("run an ORA on P04637-2, Q00987, O15350", ["P04637-2", "Q00987", "O15350"]),
+    (
+        "Please run enrichment on ATF4 DDIT3 XBP1 ERN1 EIF2AK3",
+        ["ATF4", "DDIT3", "XBP1", "ERN1", "EIF2AK3"],
+    ),
+    (
+        "analyse: ENSG00000141510.18, ENSG00000135679.25",
+        ["ENSG00000141510", "ENSG00000135679"],
+    ),
+    (
+        "run ORA with genes GATA1, TAL1, KLF1, LMO2 from my erythroid dataset",
+        ["GATA1", "TAL1", "KLF1", "LMO2"],
+    ),
+    (
+        "Do an over-representation analysis for PSEN1, APP, APOE, MAPT, TREM2, CLU",
+        ["PSEN1", "APP", "APOE", "MAPT", "TREM2", "CLU"],
+    ),
+]
+
+SECOND_REVIEW_QUESTIONS: list[str] = [
+    "Can EGFR and ERBB2 form heterodimers in Reactome?",
+    "Are there any pathways where both TP53 and MYC act?",
+    "Please list the reactions that SMAD3 and SMAD4 participate in",
+    "I'd like the Reactome pathways for CDK4 and CDK6",
+    "Which Reactome pathway has the most overlap with BRCA1, BRCA2 and PALB2?",
+    "Find me papers about KRAS and NRAS in colorectal cancer",
+    "Does Reactome have an analysis of IL6 versus IL10 signalling?",
+    "Show me where PIK3CA, AKT1 and MTOR sit in the PI3K pathway",
+    "Map out the interactions between NOTCH1 and HES1 for me",
+    "Run a search for pathways containing JAK1 and JAK2",
+    "Which pathways are shared by STAT1 and STAT3?",
+    "In my enrichment analysis, CXCL8 and CCL2 were top hits. Anything to worry about?",
+    "Find the reactions where MDM2 ubiquitinates TP53",
+    "Can you find the complexes that contain CDK1 and CCNB1?",
+    "I performed an ORA with 200 genes, of which TP53 and ATM were most significant. Next steps?",
+    "Submit a question: are ESR1 and FOXA1 co-regulated?",
+    "Please run a check on whether BAX and BAK1 are in apoptosis",
+    "Map the protein P04637 and P38398 to their Reactome names",
+    "Find pathways related to insulin, e.g. INS, INSR",
+    "Which pathways are regulated by miRNAs targeting PTEN and TP53?",
+    "Is the GSEA leading edge with ACTB and GAPDH normal?",
+    "Execute a query for interactors of VEGFA and KDR",
+    "Can I analyse a gene list of 500 genes including TP53 and EGFR?",
+    "Can you find what pathways CD4 and CD8A are enriched for in T cells, per the literature?",
+    "Which pathways are my DE genes in? I have not decided yet, maybe TP53 and MYC.",
+    "I want to run ORA later; first, what are HIF1A and EPAS1?",
+    "Find enrichment papers on BRCA1 and BRCA2 please",
+    "Run me a summary: TP53, MDM2",
+    "Do an analysis of the TP53-MDM2 feedback loop",
+    "Please analyse the role of TNF and IL1B in inflammation",
+    "Analyse the relationship between APC and CTNNB1",
+    "Which pathways do SOX2 and NANOG regulate?",
+    "Find the enrichment map for my results; genes include FOS and JUN",
+    "Can you perform a literature search on GSEA results with MYC and E2F1?",
+    "Carry out a comparison between AKT1 and AKT2 please",
+    "Which pathways involve TGFB1 and SMAD7 negatively?",
+    "Map EGFR mutations L858R and T790M to pathways",
+    "Run through the analysis steps for MAPK1 and MAPK3",
+    "Find the pathways on chromosome 17 with TP53 and BRCA1",
+    "Is ORA appropriate for TP53, MDM2 and CDKN1A or should I use GSEA?",
+]
+
+HELD_OUT_3_REQUESTS: list[tuple[str, list[str]]] = [
+    (
+        "Hi! Could you run a pathway enrichment on NOTCH1, NOTCH2, JAG1, DLL4, HES1?",
+        ["NOTCH1", "NOTCH2", "JAG1", "DLL4", "HES1"],
+    ),
+    (
+        "run ORA:\nABCA1\nABCG1\nAPOA1\nLDLR\nPCSK9",
+        ["ABCA1", "ABCG1", "APOA1", "LDLR", "PCSK9"],
+    ),
+    (
+        "please analyse this list: Myod1, Myog, Myf5, Des",
+        ["Myod1", "Myog", "Myf5", "Des"],
+    ),
+    (
+        "Can you do an enrichment analysis on CXCR4, CXCL12, ACKR3?",
+        ["CXCR4", "CXCL12", "ACKR3"],
+    ),
+    ("run pathway analysis on P01308, P06213, P35568", ["P01308", "P06213", "P35568"]),
+    (
+        "Perform ORA on BCL2, BCL2L1, MCL1, BAX, BAK1, BID. Thanks in advance",
+        ["BCL2", "BCL2L1", "MCL1", "BAX", "BAK1", "BID"],
+    ),
+    ("find enriched pathways for\nhk1\nhk2\ngck\npfkl", ["hk1", "hk2", "gck", "pfkl"]),
+    (
+        "run an enrichment on SREBF1; SREBF2; INSIG1; SCAP",
+        ["SREBF1", "SREBF2", "INSIG1", "SCAP"],
+    ),
+    (
+        "Could we run a GSA with TNFRSF1A, TRADD, RIPK1 and TRAF2?",
+        ["TNFRSF1A", "TRADD", "RIPK1", "TRAF2"],
+    ),
+    (
+        "analyse the following:\nCOL1A1\nCOL1A2\nCOL3A1\nFN1\n\nThese are fibrosis markers",
+        ["COL1A1", "COL1A2", "COL3A1", "FN1"],
+    ),
+    (
+        "do a pathway analysis with ATG5, ATG7, BECN1, MAP1LC3B, SQSTM1",
+        ["ATG5", "ATG7", "BECN1", "MAP1LC3B", "SQSTM1"],
+    ),
+]
+
+HELD_OUT_3_QUESTIONS: list[str] = [
+    "Could you explain whether SOX9 and RUNX2 act together?",
+    "Which Reactome pathway includes both ATG5 and ATG7?",
+    "What happens to BCL2 and BAX during apoptosis?",
+    "Can you run a quick check: is TP53 a tumour suppressor?",
+    "Do FOXP3 and IL2RA mark regulatory T cells?",
+    "Please find reactions catalysed by HK1 and HK2",
+    "Give me an overview of enrichment analysis for genes like CXCR4 and CXCL12",
+    "How do NOTCH1 and JAG1 signal?",
+    "Show me the pathway diagram containing LDLR and PCSK9",
+    "Which pathways would you expect to be enriched for COL1A1 and FN1?",
+    "Help me write a methods section for my ORA of TP53 and MDM2",
+    "What's the Reactome ID for SREBF1 and SREBF2?",
+    "Run a literature search on MYOD1 and MYOG",
+    "Can you describe what TNFRSF1A and TRADD do in NF-kB activation?",
+]
+
+#: What a request followed by a trailing sentence must still read as.
+TRAILING_BASE = "run an enrichment on TP53, MDM2, CDKN1A"
+TRAILING: list[str] = [
+    " from my screen",
+    " using default settings",
+    " thanks",
+    " cheers",
+    " asap",
+    " today",
+    " vs background",
+    " against the human genome",
+    "\n\nCheers, Anna",
+    "\nThanks",
+    " please and thank you",
+    " (human)",
+    " - human",
+    " if possible",
+    " when you can",
+    " at FDR 0.05",
+    " using Reactome",
+    " by FDR",
+    " sorted by pvalue",
+    " but exclude disease pathways",
+    " etc",
+    " genes",
+    "\n\nBest\nJohn",
+]
+
+#: Current behaviour that is wrong, pinned so a change is noticed.
+KNOWN_LIMITS: list[tuple[str, list[str] | None]] = [
+    (
+        "I'd like an over-representation analysis on these genes - FOXP3, IL2RA, CTLA4, IKZF2",
+        None,
+    ),
+    (
+        "Is my list of TP53, MDM2 targets enriched for apoptosis? I have not run anything yet, just asking",
+        ["TP53", "MDM2"],
+    ),
+    (
+        "gene\tlog2FC\tpadj\nTP53\t2.1\t0.001\nMDM2\t1.5\t0.01\nCDKN1A\t3.2\t0.0001\nplease run an enrichment analysis",
+        None,
+    ),
 ]

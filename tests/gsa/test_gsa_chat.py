@@ -280,3 +280,12 @@ def test_the_gene_list_example_it_gives_is_one_the_chat_runs() -> None:
     example = re.search(r"\*(run a pathway analysis on [^*]+)\*", chat.HOW_TO_RUN_GSA)
     assert example is not None
     assert gene_list_request(example.group(1)) == ["TP53", "ERBB2", "RUNX2"]
+
+
+def test_the_matrix_only_reply_offers_no_gene_list() -> None:
+    # Sent after the reader declined a gene-list analysis; it must not offer
+    # that analysis again.
+    assert chat.HOW_TO_RUN_GSA.startswith(chat.HOW_TO_RUN_GSA_WITH_A_MATRIX)
+    assert "Attach" in chat.HOW_TO_RUN_GSA_WITH_A_MATRIX
+    assert "list of genes" not in chat.HOW_TO_RUN_GSA_WITH_A_MATRIX
+    assert "list of genes" in chat.HOW_TO_RUN_GSA
