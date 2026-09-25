@@ -29,6 +29,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from agent.registry import get_graph
+from api.answer_store import StoredAnswer, answers
 from util.anchor_strip import AnchorStripper
 from util.caller_token import TokenRejectedError, verify
 from util.logging import logging
@@ -129,6 +130,11 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
         # worse one, since `AnchorStripper` has just taken its links off.
         sources = SourcesSectionStripper()
         tokens_sent = 0
+        # What the reader is shown, kept so "Continue in chat" can open the
+        # chat on this answer rather than a regenerated one (spec 013). The
+        # text after stripping, because that is what the page renders.
+        shown: list[str] = []
+        cited: list[tuple[str, str]] = []
         try:
             async with asyncio.timeout(ANSWER_TIMEOUT_SECONDS):
                 async for event in graph.astream_answer(
@@ -147,6 +153,7 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
                         text = sources.feed(stripper.feed(event.text))
                         if text:
                             tokens_sent += 1
+                            shown.append(text)
                             yield _sse("token", {"text": text})
                     elif event.kind == "citation":
                         # Exactly one identifier, never both and never an empty
@@ -158,6 +165,9 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
                             {"st_id": event.st_id}
                             if event.st_id
                             else {"url": event.url}
+                        )
+                        cited.append(
+                            (event.st_id or event.url or "", event.display_name or "")
                         )
                         yield _sse(
                             "citation",
@@ -209,9 +219,26 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
             state = "failed"
         held = sources.feed(stripper.flush()) + sources.flush()
         if held:
+            shown.append(held)
             yield _sse("token", {"text": held})
-        yield _sse(
-            "done", {"state": state, "seconds": round(time.monotonic() - started, 1)}
-        )
+        done: dict[str, Any] = {
+            "state": state,
+            "seconds": round(time.monotonic() - started, 1),
+        }
+        if state == "answered":
+            # Only an answer can be continued. The ID, not the question, is
+            # the key: two readers asking the same thing get different text.
+            answer_id = answers.put(
+                StoredAnswer(
+                    question=body.question,
+                    text="".join(shown),
+                    citations=tuple(cited),
+                    release=release,
+                    created_at=time.time(),
+                )
+            )
+            if answer_id:
+                done["answer_id"] = answer_id
+        yield _sse("done", done)
 
     return StreamingResponse(stream(), media_type="text/event-stream")

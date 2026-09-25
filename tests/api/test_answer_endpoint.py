@@ -277,7 +277,12 @@ def test_start_carries_the_release_and_done_carries_seconds(
 def test_a_refusal_has_the_same_done_shape_as_an_answer(
     keys: tuple[str, str], stub: _StubGraph
 ) -> None:
-    """One shape, so the caller parses `done` one way."""
+    """One shape, so the caller parses `done` one way.
+
+    The single difference is `answer_id`, present only when the state is
+    `answered` (spec 013) -- so a caller that ignores unknown keys parses
+    every `done` identically, and one that wants the ID looks only there.
+    """
     _, public = keys
     client = _client(public)
 
@@ -529,3 +534,81 @@ def test_the_trailing_source_list_never_reaches_the_caller(
     # The citation itself must survive: stripping the prose copy must not cost
     # the caller the data it renders chips from.
     assert any(kind == "citation" for kind, _ in _events(response.text))
+
+
+class TestAnswersAreKeptForContinueInChat:
+    """Spec 013, Story 2: an answered stream is kept under an ID, so "Continue
+    in chat" can open the chat on the answer the reader saw rather than a
+    regenerated one (the same question scores ~0.33 similarity run to run)."""
+
+    @pytest.fixture(autouse=True)
+    def _fresh_store(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from api.answer_store import AnswerStore
+
+        store = AnswerStore()
+        monkeypatch.setattr("api.answer.answers", store)
+        self.store = store
+
+    def ask(self, keys: tuple[str, str]) -> tuple[dict[str, Any], str]:
+        private, public = keys
+        response = _client(public).post(
+            f"{PREFIX}/answer",
+            json={
+                "question": "what does CDK5 phosphorylate?",
+                "caller_token": _token(private),
+            },
+        )
+        events = _events(response.text)
+        streamed = "".join(
+            json.loads(data)["text"] for kind, data in events if kind == "token"
+        )
+        return json.loads(dict(events)["done"]), streamed
+
+    def test_an_answer_carries_an_id(
+        self, keys: tuple[str, str], stub: _StubGraph
+    ) -> None:
+        done, _ = self.ask(keys)
+        assert done["state"] == "answered"
+        assert isinstance(done.get("answer_id"), str)
+        assert len(done["answer_id"]) >= 22
+
+    def test_what_is_kept_is_exactly_what_the_page_was_sent(
+        self, keys: tuple[str, str], stub: _StubGraph
+    ) -> None:
+        # The text after anchor and sources stripping -- the page renders
+        # that, not the model's raw output.
+        done, streamed = self.ask(keys)
+        kept = self.store.get(done["answer_id"])
+        assert kept is not None
+        assert kept.text == streamed
+        assert kept.question == "what does CDK5 phosphorylate?"
+        assert kept.citations == (("R-HSA-1", "Apoptosis"),)
+
+    def test_two_answers_to_one_question_are_kept_apart(
+        self, keys: tuple[str, str], stub: _StubGraph
+    ) -> None:
+        # Keyed by answer, not question: a reader must never continue
+        # someone else's answer to the same search.
+        first, _ = self.ask(keys)
+        second, _ = self.ask(keys)
+        assert first["answer_id"] != second["answer_id"]
+
+    def test_only_an_answer_gets_an_id(
+        self, keys: tuple[str, str], stub: _StubGraph
+    ) -> None:
+        _, public = keys
+        response = _client(public).post(
+            f"{PREFIX}/answer", json={"question": "what is CDK5"}
+        )
+        done = json.loads(dict(_events(response.text))["done"])
+        assert done["state"] == "refused"
+        assert "answer_id" not in done
+        assert len(self.store._entries) == 0
+
+    def test_a_failure_gets_no_id(
+        self, keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("api.answer.get_graph", lambda: _ExplodingGraph())
+        done, _ = self.ask(keys)
+        assert done["state"] == "failed"
+        assert "answer_id" not in done

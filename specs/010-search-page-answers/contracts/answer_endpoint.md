@@ -59,10 +59,20 @@ event: citation
 data: {"st_id": "R-HSA-8862803", "display_name": "Deregulated CDK5 triggers..."}
 
 event: done
-data: {"state": "answered", "seconds": 8.4}
+data: {"state": "answered", "seconds": 8.4, "answer_id": "Ev3z3JDmIIUF4gkKTfrn9VF83H"}
 ```
 
 `state` is one of `answered`, `nothing_found`, `refused`, `failed`.
+
+**`answer_id` is present only when `state` is `answered`** (added 2026-09-25,
+spec 013). It names the answer exactly as this stream sent it -- the text after
+anchors and the sources list were stripped, and the citations -- kept for an
+hour so "Continue in chat" can open the chat on *that* answer rather than a
+regenerated one (the same question scores ~0.33 similarity run to run). Pass it
+to `POST /api/handoff` as `{"kind": "search", "answer_id": ...}`. It is keyed per
+answer, not per question, so two readers of the same search never share one.
+Every other `done` has exactly `state` and `seconds`; a caller that ignores
+unknown keys parses them all the same way.
 
 > **This endpoint does not require a human-presence claim and
 > `/api/analysis-summary` does.** A caller token without one gets a full

@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from analysis.store import SummaryStore
 from api import handoff as endpoint
-from handoff.store import HandoffStore
+from handoff.store import AnalysisHandoff, HandoffStore, SearchHandoff
 from util.caller_token import DEFAULT_AUDIENCE
 from util.rate_limit import SlidingWindowLimiter
 
@@ -107,7 +107,7 @@ def test_mints_a_handoff_for_a_summary_the_reader_saw(
     body = response.json()
     assert body["path"] == f"/chat/guest/#handoff={body['id']}"
     stored = handoffs.get(body["id"])
-    assert stored is not None
+    assert isinstance(stored, AnalysisHandoff)
     # A copy of the text the reader saw, not a reference to regenerate from.
     assert stored.summary == "Four pathways pass correction."
     assert stored.tier == "aggregate"
@@ -217,3 +217,103 @@ def test_refuses_an_unknown_kind(keys: tuple[str, str]) -> None:
         },
     )
     assert response.status_code == 422
+
+
+class TestSearchHandoffs:
+    """Story 2: continue a search-page answer."""
+
+    @pytest.fixture(autouse=True)
+    def _answers(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from api.answer_store import AnswerStore
+
+        self.answers = AnswerStore()
+        monkeypatch.setattr("api.handoff.answers", self.answers)
+
+    def keep(self, text: str = "CDK5 phosphorylates tau.") -> str:
+        from api.answer_store import StoredAnswer
+
+        answer_id = self.answers.put(
+            StoredAnswer(
+                question="what does CDK5 phosphorylate?",
+                text=text,
+                citations=(("R-HSA-1", "Apoptosis"),),
+                release=97,
+                created_at=time.time(),
+            )
+        )
+        assert answer_id is not None
+        return answer_id
+
+    def mint(self, keys: tuple[str, str], answer_id: str, **claims: object):  # type: ignore[no-untyped-def]
+        private, public = keys
+        return client(public).post(
+            f"{PREFIX}/handoff",
+            json={
+                "kind": "search",
+                "answer_id": answer_id,
+                "caller_token": caller(private, **claims),
+            },
+        )
+
+    def test_mints_for_an_answer_the_reader_saw(
+        self, keys: tuple[str, str], stores: tuple[SummaryStore, HandoffStore]
+    ) -> None:
+        response = self.mint(keys, self.keep())
+        assert response.status_code == 200
+        body = response.json()
+        assert body["path"] == f"/chat/guest/#handoff={body['id']}"
+        handoff = stores[1].get(body["id"])
+        assert isinstance(handoff, SearchHandoff)
+        # A copy of what the page showed, question included.
+        assert handoff.summary == "CDK5 phosphorylates tau."
+        assert handoff.question == "what does CDK5 phosphorylate?"
+
+    def test_does_not_require_proof_a_person_is_present(
+        self, keys: tuple[str, str]
+    ) -> None:
+        # Same bar as /api/answer, which produced it: public pathway text,
+        # and the search page may have no presence claim to send. The
+        # analysis handoff does require it; that asymmetry is deliberate.
+        response = self.mint(keys, self.keep(), human=False)
+        assert response.status_code == 200
+
+    def test_an_analysis_handoff_still_does(
+        self, keys: tuple[str, str], stores: tuple[SummaryStore, HandoffStore]
+    ) -> None:
+        # The control for the test above: the relaxation must be search-only.
+        stores[0].put(ANALYSIS, "97", "aggregate", "Summary.", ())
+        assert mint(keys, human=False).status_code == 403
+
+    def test_refuses_an_unknown_answer(self, keys: tuple[str, str]) -> None:
+        response = self.mint(keys, "never-issued-0000000000")
+        assert response.status_code == 404
+        assert response.json() == {"reason": "no_answer"}
+
+    def test_still_requires_a_valid_caller(self, keys: tuple[str, str]) -> None:
+        answer_id = self.keep()
+        response = client(keys[1]).post(
+            f"{PREFIX}/handoff",
+            json={
+                "kind": "search",
+                "answer_id": answer_id,
+                "caller_token": "not-a-token",
+            },
+        )
+        assert response.status_code == 403
+
+    def test_a_search_request_cannot_smuggle_an_analysis_field(
+        self, keys: tuple[str, str]
+    ) -> None:
+        # Discriminated by `kind`: a search request carrying `disclosure` or
+        # `token` is not quietly treated as an analysis one.
+        private, public = keys
+        response = client(public).post(
+            f"{PREFIX}/handoff",
+            json={
+                "kind": "search",
+                "token": ANALYSIS,
+                "disclosure": "identifiers",
+                "caller_token": caller(private),
+            },
+        )
+        assert response.status_code == 422

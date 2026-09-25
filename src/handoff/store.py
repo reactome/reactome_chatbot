@@ -39,12 +39,10 @@ DEFAULT_TTL_SECONDS = 15 * 60
 #: Bounded because it lives for the life of the process.
 DEFAULT_MAX_ENTRIES = 2048
 
-Kind = Literal["analysis"]
-
 
 @dataclass(frozen=True)
-class Handoff:
-    kind: Kind
+class AnalysisHandoff:
+    kind: Literal["analysis"]
     #: The analysis token the summary describes.
     token: str
     release: str
@@ -54,6 +52,24 @@ class Handoff:
     summary: str
     citations: tuple[tuple[str, str], ...]
     created_at: float
+
+
+@dataclass(frozen=True)
+class SearchHandoff:
+    """A search-page answer (Story 2). No tier: it is public pathway text."""
+
+    kind: Literal["search"]
+    question: str
+    #: The answer exactly as the page rendered it.
+    summary: str
+    #: `(st_id or url, display_name)`, as the page received them.
+    citations: tuple[tuple[str, str], ...]
+    created_at: float
+
+
+#: Two types rather than one with optional fields, so a search handoff cannot
+#: be built carrying a disclosure tier that means nothing for it.
+Handoff = AnalysisHandoff | SearchHandoff
 
 
 def new_id() -> str:

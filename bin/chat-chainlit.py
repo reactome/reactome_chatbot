@@ -24,7 +24,7 @@ from gsa.chainlit_flow import (
     run_analysis,
 )
 from handoff import seed
-from handoff.store import handoffs
+from handoff.store import AnalysisHandoff, handoffs
 from handoff.window import acknowledgement, claimed_id
 from util.chainlit_helpers import (
     PrefixedS3StorageClient,
@@ -229,8 +229,10 @@ async def continue_from_handoff(handoff_id: str) -> None:
     # `on_chat_start` sets `thread_id` from the session id. A claim arriving
     # before it has run would otherwise seed a thread called "None".
     thread_id: str = cl.user_session.get("thread_id") or cl.user_session.get("id")
+    data = None
     try:
-        data = await seed.analysis_data(handoff)
+        if isinstance(handoff, AnalysisHandoff):
+            data = await seed.analysis_data(handoff)
         seeded = await get_graph().seed_history(
             profile, thread_id=thread_id, messages=seed.seeded_turn(handoff, data)
         )
@@ -246,7 +248,11 @@ async def continue_from_handoff(handoff_id: str) -> None:
 
     logger.info(
         "handoff claimed",
-        extra={"tier": handoff.tier, "with_data": data is not None},
+        extra={
+            "kind": handoff.kind,
+            "tier": getattr(handoff, "tier", None),
+            "with_data": data is not None,
+        },
     )
     await cl.Message(content=seed.shown_to_reader(handoff)).send()
 

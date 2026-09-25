@@ -4,7 +4,7 @@
 
 **Created**: 2026-09-25
 
-**Status**: Story 1 built and verified end to end; Stories 2 and 3 not started
+**Status**: Stories 1 and 2 built and verified end to end; Story 3 needs a shared store
 
 **Input**: Adam, 2026-09-25: "with the chat on both the search page and the analysis results we want there to be a button to go to the [chat] interface … two options … either the logged in version or the guest version of the chat app and have the context already be set with either the search results or the analysis summary with the summary data." And: "the chat should open in a new tab."
 
@@ -165,3 +165,22 @@ on "couldn't load the summary". Two ways to do Story 3, to decide later:
 - the website calls the logged-in deployment's own summary and handoff
   endpoints -- simpler, but the summary would be generated a second time in
   that process, and would not be the one the reader saw (FR-002).
+
+## Story 2, 2026-09-25
+
+**Search-page answers can be continued.** `/api/answer` now keeps each answered
+stream under an `answer_id`, emitted in `done` only when `state` is
+`answered`, and `POST /api/handoff` accepts `{"kind": "search", "answer_id"}`.
+Keyed per answer, never per question: two readers of one search get different
+answers, and neither may continue the other's. What is kept is what the page
+was sent -- after anchor and sources stripping -- not the raw model output.
+
+**No human-presence claim for a search handoff**, unlike an analysis one.
+`/api/answer` does not require it either (public pathway text), so the search
+page may have none to send. Pinned in both directions: requiring it for search
+fails one test, dropping it for analysis fails two.
+
+Verified end to end through the real Turnstile gate as a first-time visitor:
+a real answer, a handoff minted with no human claim, the tab opens on the
+question and the same answer, and "which protein kinase were we just
+discussing?" is answered "CDK5". The control, with no handoff, cannot say.
