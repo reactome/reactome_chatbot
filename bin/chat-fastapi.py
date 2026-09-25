@@ -199,6 +199,18 @@ async def captcha_page() -> Response:
                 <div class="cf-turnstile" data-sitekey="{os.getenv('CLOUDFLARE_SITE_KEY')}" data-callback="onSubmit"></div>
             </form>
             <script>
+                // Continue in chat (spec 013): keep a handoff across this page.
+                // A visitor without the captcha cookie arrives here from
+                // /chat/guest/#handoff=<id>; the redirect keeps the fragment,
+                // but the form POST below cannot carry it, so after the
+                // redirect back the chat would open without its context.
+                // sessionStorage is per tab and never sent to a server, so the
+                // handoff stays tab-bound and out of logs; custom.js restores it.
+                try {{
+                    if (/(^|[#&])handoff=/.test(window.location.hash)) {{
+                        sessionStorage.setItem('reactome-handoff-fragment', window.location.hash);
+                    }}
+                }} catch (e) {{}}
                 let formSubmitted = false;
                 function onSubmit(token) {{
                     if (!formSubmitted) {{

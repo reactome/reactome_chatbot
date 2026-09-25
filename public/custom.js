@@ -104,9 +104,24 @@
  * posting forever.
  */
 (function () {
-  const match = /(?:^|&)handoff=([A-Za-z0-9_-]{22,128})(?:&|$)/.exec(
-    window.location.hash.slice(1)
-  );
+  // A first-time visitor goes through the captcha page on the way here, and
+  // its form POST drops the fragment; that page stashes it in sessionStorage
+  // (per tab, never sent to a server). Put it back in the URL so a reload
+  // keeps working, and clear the stash so it cannot be claimed twice.
+  const STASH = 'reactome-handoff-fragment';
+  let fragment = window.location.hash;
+  try {
+    const stashed = sessionStorage.getItem(STASH);
+    sessionStorage.removeItem(STASH);
+    if (stashed && !/(^|[#&])handoff=/.test(fragment)) {
+      fragment = stashed;
+      history.replaceState(null, '', window.location.pathname + window.location.search + stashed);
+    }
+  } catch (e) {
+    // Storage unavailable (private mode, blocked): the direct path still works.
+  }
+
+  const match = /(?:^|&)handoff=([A-Za-z0-9_-]{22,128})(?:&|$)/.exec(fragment.slice(1));
   if (!match) return;
   const id = match[1];
 
