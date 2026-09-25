@@ -210,3 +210,69 @@ class TestPathwayNamesSurviveMarkdown:
         text = chat.describe_result(self.result_with(tmp_path, "left | right"))
         row = next(line for line in text.splitlines() if "Up" in line)
         assert row.replace("\\|", "").count("|") == 4
+
+
+class TestRecognisingARequestToRunGsa:
+    """Asked in words, the chat said it could not run a GSA. These pin which
+    messages get the how-to instead of going to the model.
+
+    Reported with "can we run gsa in this chat please", answered "no"."""
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "can we run gsa in this chat please",
+            "Can I run a gene set analysis in this chat?",
+            "Run a GSEA on my RNA-seq data",
+            "I have an expression matrix, how do I analyse it here?",
+            "is it possible to do a GSEA here",
+            "could you perform a gene set enrichment analysis for me",
+            "I'd like to run ReactomeGSA on my data",
+            "help me analyse my microarray data",
+            "how can I upload my count matrix",
+            "I want to do gene-set analysis on my proteomics data",
+            "please run GSA",
+            "can you analyse my RNA-seq expression data",
+            "Kannst du eine GSEA machen? can you run gsea",
+            "start a gene set analysis",
+            "how do I submit expression data for analysis",
+        ],
+    )
+    def test_a_request_to_run_one_is_recognised(self, text: str) -> None:
+        assert chat.asks_to_run_gsa(text), text
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # Questions *about* the method: explained by the model, not
+            # answered with upload instructions.
+            "what is GSEA?",
+            "what's the difference between GSA and over-representation analysis",
+            "explain gene set enrichment analysis",
+            "what does RNA-seq measure",
+            # Ordinary questions.
+            "which pathways involve TP53?",
+            "what does CDK5 phosphorylate?",
+            "how many species are in Reactome",
+            "analyse these genes: TP53, MDM2, CDKN1A",
+            "can you tell me about apoptosis",
+            "how do I cite Reactome",
+            "run through the steps of glycolysis",
+            "",
+        ],
+    )
+    def test_anything_else_goes_to_the_model(self, text: str) -> None:
+        assert not chat.asks_to_run_gsa(text), text
+
+    def test_the_reply_says_yes_and_how(self) -> None:
+        # The failure was an answer starting "no".
+        assert chat.HOW_TO_RUN_GSA.startswith("Yes")
+        assert "Attach" in chat.HOW_TO_RUN_GSA
+        assert "20 MB" in chat.HOW_TO_RUN_GSA
+
+
+def test_the_reply_promises_nothing_the_chat_cannot_do() -> None:
+    # Verified in a browser: a pasted gene list is NOT analysed in the chat.
+    # The reply must not say it is.
+    assert "ask me to analyse it" not in chat.HOW_TO_RUN_GSA
+    assert "reactome.org/PathwayBrowser/#TOOL=AT" in chat.HOW_TO_RUN_GSA
