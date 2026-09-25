@@ -235,3 +235,82 @@ async def fetch_not_found(
         for entry in payload
         if isinstance(entry, dict) and entry.get("id")
     ][:limit]
+
+
+#: A gene list pasted into a chat is short; this bounds a hostile paste.
+MAX_SUBMITTED_IDENTIFIERS = 3000
+
+
+@dataclass(frozen=True)
+class Submitted:
+    """A new over-representation analysis, and the first page of its result."""
+
+    token: str
+    result: dict[str, Any]
+
+
+async def submit_identifiers(
+    identifiers: list[str],
+    *,
+    page_size: int = 10,
+    client: httpx.AsyncClient | None = None,
+) -> Submitted | None:
+    """Run an over-representation analysis on a list of identifiers.
+
+    Measured against beta on 2026-09-25 rather than read off the docs: the
+    reply is JSON (unlike ReactomeGSA's `text/plain`), the token is in
+    `summary.token` and arrives already URL-encoded (`...MTU%3D`), and
+    `pathways` is ranked by the `sortBy` we ask for. Projected to human.
+
+    None when the service refuses or answers in a shape without a usable
+    token -- the caller says so rather than inventing a result.
+    """
+    ids = [i for i in identifiers if i][:MAX_SUBMITTED_IDENTIFIERS]
+    if not ids:
+        return None
+    owned = client is None
+    client = client or httpx.AsyncClient(timeout=TIMEOUT_SECONDS)
+    try:
+        response = await client.post(
+            f"{base_url()}/identifiers/projection",
+            content="\n".join(ids),
+            headers={**_headers(), "Content-Type": "text/plain"},
+            params={
+                "pageSize": page_size,
+                "page": 1,
+                "sortBy": "ENTITIES_FDR",
+                "order": "ASC",
+            },
+        )
+        if response.status_code != 200:
+            logger.warning(
+                "identifier submission refused",
+                extra={"status": response.status_code},
+            )
+            return None
+        result = response.json()
+    except Exception as exc:
+        # A timeout or a non-JSON body is "no result", said to the reader --
+        # not an exception out of the chat handler.
+        logger.warning("identifier submission failed: %s", type(exc).__name__)
+        return None
+    finally:
+        if owned:
+            await client.aclose()
+    summary = result.get("summary") if isinstance(result, dict) else None
+    token = summary.get("token") if isinstance(summary, dict) else None
+    if not isinstance(token, str) or not is_well_formed(token):
+        logger.warning("identifier submission returned no usable token")
+        return None
+    return Submitted(token=token, result=result)
+
+
+def pathway_browser_url(token: str) -> str:
+    """The result in the Pathway Browser *of the service that holds it*.
+
+    The token only exists in the Analysis Service that issued it -- beta, by
+    default -- so a reactome.org link would open on a token production has
+    never seen.
+    """
+    site = base_url().removesuffix("/AnalysisService")
+    return f"{site}/PathwayBrowser/#/DTAB=AN&ANALYSIS={token}"

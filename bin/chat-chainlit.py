@@ -2,28 +2,40 @@
 # chainlit ships no annotations for cl.user_session.get/set, cl.Message.send
 # or get_data_layer. Not fixable here; it needs stubs upstream. The file is
 # named with a hyphen, so it cannot be listed in [[tool.mypy.overrides]].
+import asyncio
 import os
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import chainlit as cl
+from chainlit.context import context
 from chainlit.data.base import BaseDataLayer
 from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 from chainlit.oauth_providers import providers
 from chainlit.types import ThreadDict
 from dotenv import load_dotenv
 from langchain_community.callbacks import OpenAICallbackHandler
+from langchain_core.messages import AIMessage, HumanMessage
 
 from agent.profile_names import ProfileName
 from agent.profiles import get_chat_profiles
 from agent.profiles.base import OutputState
 from agent.registry import get_graph
+from analysis import gene_list
+from analysis.client import (
+    MAX_SUBMITTED_IDENTIFIERS,
+    fetch_not_found,
+    pathway_browser_url,
+    submit_identifiers,
+)
+from analysis.proposals import Proposal, proposals
 from gsa.chainlit_flow import (
     Attachment,
     matrix_attachment,
     result_file_kwargs,
     run_analysis,
 )
-from gsa.chat import HOW_TO_RUN_GSA, asks_to_run_gsa
+from gsa.chat import HOW_TO_RUN_GSA, HOW_TO_RUN_GSA_WITH_A_MATRIX, asks_to_run_gsa
 from handoff import seed
 from handoff.store import AnalysisHandoff, handoffs
 from handoff.window import acknowledgement, claimed_id
@@ -229,7 +241,7 @@ async def continue_from_handoff(handoff_id: str) -> None:
     profile: str = (cl.user_session.get("chat_profile") or "").lower()
     # `on_chat_start` sets `thread_id` from the session id. A claim arriving
     # before it has run would otherwise seed a thread called "None".
-    thread_id: str = cl.user_session.get("thread_id") or cl.user_session.get("id")
+    thread_id: str = current_thread_id()
     data = None
     try:
         if isinstance(handoff, AnalysisHandoff):
@@ -258,6 +270,169 @@ async def continue_from_handoff(handoff_id: str) -> None:
     await cl.Message(content=seed.shown_to_reader(handoff)).send()
 
 
+def current_thread_id() -> str:
+    """The graph thread for this session -- the same one `main` invokes.
+
+    `on_chat_start` sets it from the session id; a resumed chat may not.
+    """
+    return str(cl.user_session.get("thread_id") or cl.user_session.get("id"))
+
+
+def session_id() -> str:
+    return str(cl.user_session.get("id"))
+
+
+async def remove_buttons(proposal: Proposal) -> None:
+    # Rebuilt from their ids: the frontend removes an action by id.
+    for name, action_id in proposal.actions:
+        await cl.Action(name=name, payload={}, id=action_id).remove()
+
+
+async def propose_gene_list(message: cl.Message, identifiers: list[str]) -> None:
+    """Offer to analyse the list; the buttons answer later, without blocking.
+
+    Not `AskActionMessage`: that disables the message box until the reader
+    clicks, and drops the question if they never do. Here they can click
+    Run, click No, type "yes", or simply type on.
+    """
+    proposal_id = proposals.new_id()
+    run = cl.Action(name="gene_list_run", payload={"id": proposal_id}, label="Run it")
+    decline = cl.Action(
+        name="gene_list_no",
+        payload={"id": proposal_id},
+        label="No, answer my question",
+    )
+    evicted = proposals.put(
+        session_id(),
+        proposal_id,
+        Proposal(
+            text=message.content,
+            message_id=message.id,
+            identifiers=tuple(identifiers),
+            actions=((run.name, run.id), (decline.name, decline.id)),
+        ),
+    )
+    for old in evicted:
+        await remove_buttons(old)
+    await cl.Message(
+        content=gene_list.describe_proposal(identifiers), actions=[run, decline]
+    ).send()
+
+
+async def take_proposal(proposal_id: str | None) -> Proposal | None:
+    """Claim an offer once, and take its buttons away."""
+    proposal = proposals.take(session_id(), proposal_id)
+    if proposal is not None:
+        await remove_buttons(proposal)
+    return proposal
+
+
+def run_as_task(work: Callable[[], Awaitable[None]]) -> None:
+    """Run a button's work the way Chainlit runs a message.
+
+    Action callbacks run with no task: the message box stays open, there is
+    no Stop, an exception is logged and the reader told nothing, and the
+    work holds the /project/action HTTP request open. So: mark a task, make
+    it stoppable, report failure, and return from the request at once.
+    """
+
+    async def body() -> None:
+        await context.emitter.task_start()
+        try:
+            await work()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("gene list action failed")
+            await cl.ErrorMessage(content=gene_list.FAILED_TO_ANSWER).send()
+        finally:
+            await context.emitter.task_end()
+
+    context.session.current_task = asyncio.create_task(body())
+
+
+@cl.action_callback("gene_list_run")
+async def on_gene_list_run(action: cl.Action) -> None:
+    proposal = await take_proposal(action.payload.get("id"))
+    if proposal is None:
+        await cl.Message(content=gene_list.EXPIRED).send()
+        return
+    run_as_task(
+        lambda: run_gene_list_analysis(proposal.text, list(proposal.identifiers))
+    )
+
+
+@cl.action_callback("gene_list_no")
+async def on_gene_list_no(action: cl.Action) -> None:
+    proposal = await take_proposal(action.payload.get("id"))
+    if proposal is None:
+        # After a restart the offer is gone, and so is the question's text.
+        await cl.Message(content=gene_list.EXPIRED_DECLINED).send()
+        return
+    run_as_task(lambda: decline_gene_list(proposal))
+
+
+async def decline_gene_list(proposal: Proposal) -> None:
+    # Not the full GSA how-to: for "can we do a gsa analysis... TP53, ERBB2"
+    # it ends by offering to analyse the list just declined. Not the model
+    # either: grounded in the website's user guide, it says GSA cannot be
+    # done in this chat -- the bug the how-to exists to fix. Measured both.
+    if asks_to_run_gsa(proposal.text):
+        await cl.Message(content=HOW_TO_RUN_GSA_WITH_A_MATRIX).send()
+        return
+    await answer_with_model(proposal.text, proposal.message_id)
+
+
+async def run_gene_list_analysis(text: str, identifiers: list[str]) -> None:
+    """Over-representation on a pasted gene list, and seed it for follow-ups."""
+    submitted = identifiers[:MAX_SUBMITTED_IDENTIFIERS]
+    # Up to two service calls; say something is happening meanwhile.
+    reply_message = cl.Message(content="Running the analysis…")
+    await reply_message.send()
+    result = await submit_identifiers(submitted)
+    if result is None:
+        reply_message.content = gene_list.FAILED
+        await reply_message.update()
+        return
+    not_found = result.result.get("identifiersNotFound")
+    unmatched = (
+        await fetch_not_found(result.token)
+        if isinstance(not_found, int) and not_found > 0
+        else None
+    )
+    reply = gene_list.describe_overrepresentation(
+        submitted,
+        result.result,
+        pathway_browser_url(result.token),
+        unmatched,
+        truncated=len(identifiers) > len(submitted),
+    )
+    reply_message.content = reply.text
+    await reply_message.update()
+    logger.info(
+        "gene list analysed",
+        extra={"submitted": len(submitted), "has_pathways": reply.has_pathways},
+    )
+    if not reply.has_pathways:
+        return
+    # The exchange becomes the thread's previous turn, so "which of these
+    # involve TP53?" is answered from this result. The reader typed the list
+    # into this chat, whose every message goes to the model anyway.
+    profile: str = (cl.user_session.get("chat_profile") or "").lower()
+    try:
+        seeded = await get_graph().seed_history(
+            profile,
+            thread_id=current_thread_id(),
+            messages=[HumanMessage(content=text), AIMessage(content=reply.text)],
+        )
+    except Exception:
+        # The reader has their result; only follow-ups lose it.
+        logger.exception("gene list seeding failed")
+        return
+    if not seeded:
+        logger.warning("gene list not seeded", extra={"profile": profile})
+
+
 @cl.on_window_message
 async def on_window_message(message: object) -> None:
     """Claim a "Continue in chat" handoff posted by this tab (spec 013).
@@ -281,38 +456,14 @@ async def on_window_message(message: object) -> None:
     await cl.send_window_message(acknowledgement(handoff_id))
 
 
-@cl.on_message
-async def main(message: cl.Message) -> None:
-    if await message_rate_limited(config):
-        return
-
-    await static_messages(config, TriggerEvent.on_message)
-
-    # An attached matrix routes to the analysis flow instead of the graph.
-    #
-    # Not a tool the agent calls: the run takes minutes, which is longer
-    # than a chat turn, and the matrix is over a megabyte, which must never
-    # enter the model's context. A tool call would put the model in the
-    # middle of both problems.
-    attachment = matrix_attachment(getattr(message, "elements", None))
-    if attachment is not None:
-        await run_gsa_analysis(attachment)
-        return
-
-    # Asked in words rather than by attaching a file. The answer path is
-    # grounded in the user guide, which describes the website's GSA page, so
-    # it said this chat could not do it. Answered here instead -- chat only,
-    # because the same answer path serves the search page, which cannot.
-    if asks_to_run_gsa(message.content or ""):
-        await cl.Message(content=HOW_TO_RUN_GSA).send()
-        return
-
+async def answer_with_model(content: str, message_id: str) -> None:
+    """The ordinary turn: the graph answers, streamed, with its sources."""
     message_count: int = cl.user_session.get("message_count", 0) + 1
     cl.user_session.set("message_count", message_count)
 
     chat_profile: str = cl.user_session.get("chat_profile")
 
-    thread_id: str = cl.user_session.get("thread_id")
+    thread_id: str = current_thread_id()
 
     chainlit_cb = cl.AsyncLangchainCallbackHandler(
         stream_final_answer=True,
@@ -322,7 +473,7 @@ async def main(message: cl.Message) -> None:
 
     enable_postprocess: bool = is_feature_enabled(config, "postprocessing")
     result: OutputState = await get_graph().ainvoke(
-        message.content,
+        content,
         chat_profile.lower(),
         callbacks=[chainlit_cb, openai_cb],
         thread_id=thread_id,
@@ -342,4 +493,56 @@ async def main(message: cl.Message) -> None:
 
     await static_messages(config, after_messages=message_count)
 
-    save_openai_metrics(message.id, openai_cb)
+    save_openai_metrics(message_id, openai_cb)
+
+
+@cl.on_message
+async def main(message: cl.Message) -> None:
+    # First, before any early return: a "yes" means the offer just made, so
+    # any other message -- rate limited, an attachment -- ends that meaning.
+    latest = proposals.take_latest(session_id())
+
+    if await message_rate_limited(config):
+        return
+
+    await static_messages(config, TriggerEvent.on_message)
+
+    # An attached matrix routes to the analysis flow instead of the graph.
+    #
+    # Not a tool the agent calls: the run takes minutes, which is longer
+    # than a chat turn, and the matrix is over a megabyte, which must never
+    # enter the model's context. A tool call would put the model in the
+    # middle of both problems.
+    attachment = matrix_attachment(getattr(message, "elements", None))
+    if attachment is not None:
+        await run_gsa_analysis(attachment)
+        return
+
+    # "yes" to the offer just made is the same as clicking Run.
+    if latest and gene_list.confirms(message.content or ""):
+        proposal = await take_proposal(latest)
+        if proposal is not None:
+            await run_gene_list_analysis(proposal.text, list(proposal.identifiers))
+            return
+
+    # "yes" to the proposal just made is the same as clicking Run. Only the
+    # message straight after it: a "yes" later answers something else.
+    # A gene list is not a matrix: offer what Reactome runs on a list,
+    # over-representation, rather than explaining how to upload a matrix.
+    # Before the GSA check, because the request that prompted this said "gsa".
+    # It only proposes; a question that merely looks like a request is one
+    # click from being answered.
+    identifiers = gene_list.gene_list_request(message.content or "")
+    if identifiers is not None:
+        await propose_gene_list(message, identifiers)
+        return
+
+    # Asked in words rather than by attaching a file. The answer path is
+    # grounded in the user guide, which describes the website's GSA page, so
+    # it said this chat could not do it. Answered here instead -- chat only,
+    # because the same answer path serves the search page, which cannot.
+    if asks_to_run_gsa(message.content or ""):
+        await cl.Message(content=HOW_TO_RUN_GSA).send()
+        return
+
+    await answer_with_model(message.content, message.id)
