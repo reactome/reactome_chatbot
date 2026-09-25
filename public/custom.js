@@ -89,3 +89,41 @@
 
   mo.observe(document.documentElement, { childList: true, subtree: true });
 })();
+
+/*
+ * Continue in chat (spec 013): claim a handoff carried in the URL fragment.
+ *
+ * The website opens /chat/guest/#handoff=<id> in a new tab. The fragment
+ * never reaches a server, so the ID stays out of logs and Referer headers.
+ * Chainlit forwards every window message to the server over this tab's own
+ * socket, which binds the handoff to this tab -- a cookie would be shared by
+ * every tab and could seed the wrong one.
+ *
+ * Chainlit drops a message posted before its socket is up, so this retries
+ * until the server acknowledges, and gives up after a while rather than
+ * posting forever.
+ */
+(function () {
+  const match = /(?:^|&)handoff=([A-Za-z0-9_-]{22,128})(?:&|$)/.exec(
+    window.location.hash.slice(1)
+  );
+  if (!match) return;
+  const id = match[1];
+
+  let acknowledged = false;
+  window.addEventListener('message', function (event) {
+    const data = event.data;
+    if (data && data.type === 'reactome-handoff-ack' && data.id === id) {
+      acknowledged = true;
+    }
+  });
+
+  let attempts = 0;
+  const timer = setInterval(function () {
+    if (acknowledged || ++attempts > 40) {
+      clearInterval(timer);
+      return;
+    }
+    window.postMessage({ type: 'reactome-handoff', id: id }, window.location.origin);
+  }, 500);
+})();

@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from agent.registry import build_graph, set_graph
 from api.analysis_summary import router as analysis_summary_router
 from api.answer import router as answer_router
+from api.handoff import router as handoff_router
 from util.caller_token import load_verifying_key
 from util.captcha_scope import is_captcha_exempt
 from util.embedding_environment import EmbeddingEnvironment
@@ -72,6 +73,7 @@ app.include_router(answer_router, prefix=API_PREFIX)
 # is present -- a stricter bar than the answer endpoint's, because it discloses
 # the user's own uploaded analysis rather than public pathway text.
 app.include_router(analysis_summary_router, prefix=API_PREFIX)
+app.include_router(handoff_router, prefix=API_PREFIX)
 CHAINLIT_URL = os.getenv("CHAINLIT_URL")
 
 CLOUDFLARE_SECRET_KEY = get_secret("CLOUDFLARE_SECRET_KEY")

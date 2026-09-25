@@ -23,6 +23,9 @@ from gsa.chainlit_flow import (
     result_file_kwargs,
     run_analysis,
 )
+from handoff import seed
+from handoff.store import handoffs
+from handoff.window import acknowledgement, claimed_id
 from util.chainlit_helpers import (
     PrefixedS3StorageClient,
     is_feature_enabled,
@@ -41,6 +44,8 @@ from util.secrets import (
     load_secrets_to_environ,
     mounted_secrets,
 )
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 # Before anything reads os.environ. Docker secrets, where mounted, take
@@ -202,6 +207,71 @@ async def run_gsa_analysis(attachment: Attachment) -> None:
     finally:
         if progress is not None:
             await progress.remove()
+
+
+async def continue_from_handoff(handoff_id: str) -> None:
+    """Start this thread from the summary the reader clicked from.
+
+    The model gets the summary as its own previous turn plus the data it was
+    built from, at the tier the reader chose (FR-003); the reader sees their
+    summary verbatim. An unknown or expired handoff says so (FR-009), rather
+    than leaving an empty chat the reader will assume has the context.
+    """
+    handoff = handoffs.get(handoff_id)
+    if handoff is None:
+        # Expired, never issued, or minted by another process -- the guest
+        # and logged-in chats do not share this in-memory store.
+        logger.info("handoff unavailable")
+        await cl.Message(content=seed.UNAVAILABLE).send()
+        return
+
+    profile: str = (cl.user_session.get("chat_profile") or "").lower()
+    # `on_chat_start` sets `thread_id` from the session id. A claim arriving
+    # before it has run would otherwise seed a thread called "None".
+    thread_id: str = cl.user_session.get("thread_id") or cl.user_session.get("id")
+    try:
+        data = await seed.analysis_data(handoff)
+        seeded = await get_graph().seed_history(
+            profile, thread_id=thread_id, messages=seed.seeded_turn(handoff, data)
+        )
+    except Exception:
+        # A failed fetch or graph update must not leave the reader in a chat
+        # that silently lacks the context they came for.
+        logger.exception("handoff seeding failed")
+        seeded = False
+    if not seeded:
+        logger.warning("handoff not seeded", extra={"profile": profile})
+        await cl.Message(content=seed.UNAVAILABLE).send()
+        return
+
+    logger.info(
+        "handoff claimed",
+        extra={"tier": handoff.tier, "with_data": data is not None},
+    )
+    await cl.Message(content=seed.shown_to_reader(handoff)).send()
+
+
+@cl.on_window_message
+async def on_window_message(message: object) -> None:
+    """Claim a "Continue in chat" handoff posted by this tab (spec 013).
+
+    Chainlit forwards every message posted in the page, including this
+    server's own acknowledgement, so anything that is not a well-formed claim
+    is ignored. The tab retries until acknowledged, so one claim can arrive
+    several times; it is redeemed once per session and acknowledged every
+    time.
+    """
+    handoff_id = claimed_id(message)
+    if handoff_id is None:
+        return
+
+    claimed: set[str] = cl.user_session.get("handoff_claimed") or set()
+    if handoff_id not in claimed:
+        claimed.add(handoff_id)
+        cl.user_session.set("handoff_claimed", claimed)
+        await continue_from_handoff(handoff_id)
+
+    await cl.send_window_message(acknowledgement(handoff_id))
 
 
 @cl.on_message

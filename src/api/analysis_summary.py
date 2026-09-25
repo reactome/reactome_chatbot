@@ -28,7 +28,7 @@ from agent.graph import resolve_llm_model
 from agent.models import get_llm
 from analysis.client import current_release, fetch_not_found, fetch_result
 from analysis.disclosure import Tier, for_tier
-from analysis.store import SummaryStore
+from analysis.store import Stored, SummaryStore
 from analysis.summarise import (
     INEXACT_COUNT_INSTRUCTION,
     NAMED_UNMATCHED_INSTRUCTION,
@@ -60,6 +60,16 @@ _limiter = limiter_from_env()
 #: Process-local, lost on deploy (research D4). Module state so it outlives
 #: a request, as the limiter does.
 _store = SummaryStore()
+
+
+def stored_summary(token: str, release: str, tier: str) -> Stored | None:
+    """A summary this endpoint generated and kept, if it still has it.
+
+    For spec 013's handoff, which may only continue a summary the reader
+    has actually been shown.
+    """
+    return _store.get(token, release, tier)
+
 
 SYSTEM_PROMPT = """
 You explain a completed Reactome pathway-analysis result to the researcher who
