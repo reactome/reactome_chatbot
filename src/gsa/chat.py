@@ -117,10 +117,29 @@ def parse_grouping(reply: str, sample_count: int) -> Grouping:
 
 
 def describe_progress(status: AnalysisStatus) -> str:
-    """One line, safe to send repeatedly as an edit."""
-    percent = max(0, min(100, int(status.completed * 100)))
-    detail = status.description.strip() or "working"
-    return f"Running the analysis — {percent}% · {detail}"
+    """One line, safe to send repeatedly as an edit.
+
+    **No percentage.** The first version showed `completed` as a percent,
+    and against the real service that read "60% · Permutation 1000 / 1000":
+    ReactomeGSA holds `completed` at 0.6 for the whole permutation phase
+    while its description counts through it. The description is the
+    service's own account and never contradicts itself; a number that does
+    is worse than none.
+    """
+    detail = " ".join(status.description.split()) or "working"
+    return f"Running the analysis — {detail}"
+
+
+#: Characters with meaning in markdown. Reactome pathway names contain some
+#: of them -- measured over a real 2,679-pathway result: `H139Hfs13* PPM1K
+#: causes a mild variant of MSUD`, `NOTCH1:M1580_K2555`. Two of either in a
+#: cell become emphasis, and a variant identifier like `M1580_K2555` renders
+#: as `M1580K2555` with nothing to show it changed.
+_MARKDOWN_SPECIAL = "\\`*_[]<>|"
+
+
+def _escape(text: str) -> str:
+    return "".join(f"\\{ch}" if ch in _MARKDOWN_SPECIAL else ch for ch in text)
 
 
 def describe_result(finished: Finished) -> str:
@@ -146,7 +165,7 @@ def describe_result(finished: Finished) -> str:
         ]
         for pathway in top[:10]:
             lines.append(
-                f"| {pathway['name']} | {pathway['direction']} | {pathway['fdr']:.2g} |"
+                f"| {_escape(pathway['name'])} | {pathway['direction']} | {pathway['fdr']:.2g} |"
             )
         lines.append("")
 

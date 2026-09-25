@@ -76,22 +76,30 @@ class GsaNotReadyError(GsaError):
     """
 
 
-def _identifier_from(payload: Any, kind: str) -> str:
+def _identifier_from(body: str, kind: str) -> str:
     """Read an ID out of a response body, refusing anything else.
 
-    Both POSTs answer with the bare ID as a quoted JSON string. `str()` on
-    an unexpected shape -- an error object, a list -- produces a plausible
-    string like `{'detail': ...}` that is then used as a path segment and
-    fails somewhere far from here, as a 404 that looks like a missing
-    analysis rather than a malformed response.
+    **Both POSTs answer `text/plain`: the bare identifier, unquoted.** The
+    swagger says so (`produces: text/plain`, example `Analysis00371643`),
+    and the live service returns a bare UUID.
+
+    The first version of this function said the opposite -- "the bare ID as a
+    quoted JSON string" -- and called `response.json()` on it. That was never
+    measured, and it meant every submission failed: the job was accepted with
+    a 200, the ID could not be parsed, and the user was told nothing had run.
+    The upload feature shipped that way and was never able to work. Every
+    test stubbed `submit()` at the method level, returning a Python string,
+    so the one line that was wrong was the one line no test executed.
+
+    Quotes are still stripped, so a JSON-quoted body would also be accepted;
+    what matters is that the result is validated as an identifier before it
+    becomes a URL path segment. An error body, an HTML page from a proxy, or
+    an empty response produces a plausible string that would otherwise fail
+    far from here, as a 404 that reads like a missing analysis.
     """
-    if not isinstance(payload, str):
-        raise GsaError(
-            f"expected a {kind}, got {type(payload).__name__}: {payload!r:.120}"
-        )
-    value = payload.strip()
+    value = body.strip().strip('"').strip()
     if not _IDENTIFIER.match(value):
-        raise GsaError(f"{kind} is not a valid identifier: {value!r:.120}")
+        raise GsaError(f"{kind} is not a valid identifier: {value[:120]!r}")
     return value
 
 
@@ -169,11 +177,22 @@ class AnalysisStatus:
 class GsaClient:
     """Thin async client. Holds no state about a running analysis."""
 
-    def __init__(self, url: str | None = None) -> None:
+    def __init__(
+        self,
+        url: str | None = None,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         self._base = (url or base_url()).rstrip("/")
+        # Injectable so the HTTP layer itself can be tested. Without it the
+        # only way to test this client was to stub its methods, which is how
+        # a `response.json()` on a `text/plain` body reached production.
+        self._transport = transport
 
     async def _get(self, path: str, *, timeout: float = TIMEOUT_SECONDS) -> Any:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(
+            timeout=timeout, transport=self._transport
+        ) as client:
             response = await client.get(f"{self._base}{path}")
         if response.status_code == 406:
             raise GsaNotReadyError(f"GET {path}: analysis is not complete")
@@ -194,7 +213,9 @@ class GsaClient:
         _checked("resource", resource_id)
         _checked("dataset", dataset_id)
         body = [{"name": "dataset_id", "value": dataset_id}]
-        async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
+        async with httpx.AsyncClient(
+            timeout=TIMEOUT_SECONDS, transport=self._transport
+        ) as client:
             response = await client.post(
                 f"{self._base}/data/load/{resource_id}", json=body
             )
@@ -203,7 +224,7 @@ class GsaClient:
                 f"loading {dataset_id} from {resource_id} returned "
                 f"{response.status_code}: {response.text[:200]}"
             )
-        return _identifier_from(response.json(), "loading id")
+        return _identifier_from(response.text, "loading id")
 
     async def loading_status(self, loading_id: str) -> LoadingStatus:
         data = await self._get(f"/data/status/{_checked('loading id', loading_id)}")
@@ -239,7 +260,9 @@ class GsaClient:
         accepted values.
         """
         url = f"{self._base}/data/download/{_checked('dataset', dataset_id)}"
-        async with httpx.AsyncClient(timeout=SUBMIT_TIMEOUT_SECONDS) as client:
+        async with httpx.AsyncClient(
+            timeout=SUBMIT_TIMEOUT_SECONDS, transport=self._transport
+        ) as client:
             response = await client.get(url, params={"format": "expr"})
         if response.status_code != 200:
             raise GsaError(f"downloading {dataset_id} returned {response.status_code}")
@@ -281,13 +304,15 @@ class GsaClient:
                 }
             ],
         }
-        async with httpx.AsyncClient(timeout=SUBMIT_TIMEOUT_SECONDS) as client:
+        async with httpx.AsyncClient(
+            timeout=SUBMIT_TIMEOUT_SECONDS, transport=self._transport
+        ) as client:
             response = await client.post(f"{self._base}/analysis", json=body)
         if response.status_code != 200:
             raise GsaError(
                 f"submitting returned {response.status_code}: {response.text[:200]}"
             )
-        analysis_id = _identifier_from(response.json(), "analysis id")
+        analysis_id = _identifier_from(response.text, "analysis id")
         logger.info(
             "gsa analysis submitted",
             extra={

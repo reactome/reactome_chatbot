@@ -83,15 +83,26 @@ class TestWhatTheUserIsTold:
         assert "unknown number" in text
         assert "None" not in text
 
-    def test_progress_is_a_single_clamped_line(self) -> None:
+    def test_progress_is_one_line_carrying_the_services_own_account(self) -> None:
         line = chat.describe_progress(
-            AnalysisStatus("running", "Permutation 900 / 1000", 0.9)
+            AnalysisStatus("running", "Permutation 860 / 1000", 0.6)
         )
-        assert "90%" in line
+        assert "Permutation 860 / 1000" in line
         assert "\n" not in line
-        # The service has reported completion values outside 0..1.
-        assert "100%" in chat.describe_progress(AnalysisStatus("running", "x", 4.2))
-        assert "0%" in chat.describe_progress(AnalysisStatus("running", "x", -1.0))
+
+    def test_progress_does_not_show_a_percentage_the_service_does_not_update(
+        self,
+    ) -> None:
+        # Measured against the real service: `completed` stays at 0.6 for the
+        # whole permutation phase. Showing it produced
+        # "60% · Permutation 1000 / 1000".
+        line = chat.describe_progress(
+            AnalysisStatus("running", "Permutation 1000 / 1000", 0.6)
+        )
+        assert "%" not in line
+
+    def test_a_blank_description_still_says_something(self) -> None:
+        assert "working" in chat.describe_progress(AnalysisStatus("running", "  ", 0.1))
 
 
 def finished(tmp_path: Path) -> Finished:
@@ -141,3 +152,61 @@ class TestWhatTheUserReads:
         # token, and whoever holds it can fetch the unredacted result --
         # including the user's own gene identifiers.
         assert "PathwayBrowser" not in json.dumps(finished(tmp_path).for_model)
+
+
+class TestPathwayNamesSurviveMarkdown:
+    """Real Reactome names contain markdown syntax.
+
+    Measured over a real 2,679-pathway result: `NOTCH1:M1580_K2555` and
+    `H139Hfs13* PPM1K ...`. Unescaped, paired `_` or `*` become emphasis and
+    a variant identifier renders with characters missing -- silently, in a
+    results table someone may copy into a paper.
+    """
+
+    def result_with(self, tmp_path: Path, name: str) -> Finished:
+        table = tmp_path / "t.tsv"
+        table.write_text("Pathway\\tName\\n")
+        return Finished(
+            analysis_id="an-1",
+            for_model={
+                "no_result": False,
+                "pathway_count": 1,
+                "significant_count": 1,
+                "top_pathways": [
+                    {
+                        "stId": "R-HSA-1",
+                        "name": name,
+                        "direction": "Up",
+                        "fdr": 1e-5,
+                        "genes": 6,
+                    }
+                ],
+            },
+            links=[],
+            table_path=table,
+        )
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "Signaling by NOTCH1 t(7;9)(NOTCH1:M1580_K2555) Translocation Mutant",
+            "H139Hfs13* PPM1K causes a mild variant of  MSUD",
+            "a_b_c and x*y*z",
+            "left | right",
+        ],
+    )
+    def test_special_characters_are_escaped(self, tmp_path: Path, name: str) -> None:
+        text = chat.describe_result(self.result_with(tmp_path, name))
+        row = next(
+            line for line in text.splitlines() if line.startswith("| ") and "Up" in line
+        )
+        for ch in "_*|":
+            if ch in name:
+                assert "\\" + ch in row, f"{ch!r} not escaped in {row!r}"
+
+    def test_a_pipe_does_not_add_a_column(self, tmp_path: Path) -> None:
+        # An unescaped `|` splits the cell and shifts Direction and FDR one
+        # column right, so the table reports the wrong value in each.
+        text = chat.describe_result(self.result_with(tmp_path, "left | right"))
+        row = next(line for line in text.splitlines() if "Up" in line)
+        assert row.replace("\\|", "").count("|") == 4

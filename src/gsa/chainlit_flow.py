@@ -14,7 +14,7 @@ summary at all.
 """
 
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol, TypedDict
 
 from gsa import chat
 from gsa.client import GsaClient
@@ -57,6 +57,37 @@ class Attachment(Protocol):
 
     name: str
     path: str
+
+
+class ResultFile(TypedDict):
+    """Exactly the `cl.File` arguments set here, so the unpacking type-checks."""
+
+    name: str
+    path: str
+    display: Literal["inline", "side", "page"]
+    mime: str
+
+
+def result_file_kwargs(path: Path) -> ResultFile:
+    """Arguments for the `cl.File` that hands the user their results table.
+
+    **`mime` must be explicit.** For an element given by `path`, Chainlit
+    infers the type with `filetype.guess()`, which reads magic bytes -- and a
+    TSV is plain text with no signature, so it came out `null`. Chainlit does
+    not fall back to the extension for paths, only for URLs. The browser then
+    called `mime.startsWith(...)` on null and the entire chat UI was replaced
+    by "Cannot read properties of null (reading 'startsWith')".
+
+    That happened at the moment of success, on every analysis, and nothing
+    but a real browser could see it: the server logged the result as
+    delivered 11 ms before the page died.
+    """
+    return {
+        "name": path.name,
+        "path": str(path),
+        "display": "inline",
+        "mime": "text/tab-separated-values",
+    }
 
 
 def matrix_attachment(elements: list[Any] | None) -> Attachment | None:
@@ -161,8 +192,17 @@ async def _run(
         await send(f"I could not start the analysis: {failure}")
         return
     except Exception:
+        # Not "I could not reach the service. Nothing was run." -- the first
+        # real run of this feature proved that untrue. The service *was*
+        # reached: it accepted the job with a 200, and the failure was in
+        # reading the reply. The analysis may well be running. This branch
+        # catches failures on both sides of the request, so it must not
+        # claim to know which.
         logger.exception("gsa submission failed")
-        await send("I could not reach the analysis service. Nothing was run.")
+        await send(
+            "Something went wrong while starting the analysis, so I cannot "
+            "follow it or return its results. Please try again in a moment."
+        )
         return
 
     await send(
@@ -198,5 +238,11 @@ async def _run(
     # It is computed rather than skipped so the disclosure rules stay
     # exercised by the tests; if a summary is added later, the bounded view
     # is what it must be given, not the result.
+    # Logged either side of delivery. The first real run wrote its result
+    # and then went silent: websocket frames are not logged, so there was no
+    # way to tell "sent and not shown" from "never sent". This line is the
+    # difference.
+    logger.info("gsa result sending", extra={"analysis": finished.analysis_id})
     await send(chat.describe_result(finished))
     await send_file(finished.table_path)
+    logger.info("gsa result delivered", extra={"analysis": finished.analysis_id})
