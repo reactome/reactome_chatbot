@@ -10,8 +10,16 @@
   rather than ran. It fired on 12 of 40 questions and read the wrong list
   or none for 3 of 25; the parser was rewritten again.
 - HELD_OUT_3_*: written after that, never tuned against: 11/12 requests
-  exact, 1/15 questions fired. The two failures are KNOWN_LIMITS, pinned
-  as they are rather than tuned away, so the rate stays honest.
+  exact, 1/15 questions fired. The miss and a pasted table (which
+  should be attached as a file) are KNOWN_LIMITS, pinned as they are.
+  The misfire was later fixed, by the rule for round three's misfires.
+- A third review's fresh set, on the version after that: 18/20 requests
+  exact, 4/20 questions offered an analysis. The offer costs one click;
+  the rate is the honest one to quote.
+- THIRD_REVIEW_*: that review's fresh set, then tuned against (4
+  question misfires, all two genes in a question, fixed by one rule).
+- HELD_OUT_4_*: written after round three's fixes, never tuned against:
+  9/10 requests exact, 0/12 questions offered. The miss is a KNOWN_LIMIT.
 
 A positive is exact: the identifiers read, in order. A request that reads
 the wrong list is a failure even if it fires.
@@ -385,6 +393,8 @@ HELD_OUT_3_REQUESTS: list[tuple[str, list[str]]] = [
 ]
 
 HELD_OUT_3_QUESTIONS: list[str] = [
+    # Was a known limit; fixed by the two-genes-in-a-question rule.
+    "Is my list of TP53, MDM2 targets enriched for apoptosis? I have not run anything yet, just asking",
     "Could you explain whether SOX9 and RUNX2 act together?",
     "Which Reactome pathway includes both ATG5 and ATG7?",
     "What happens to BCL2 and BAX during apoptosis?",
@@ -429,6 +439,157 @@ TRAILING: list[str] = [
     "\n\nBest\nJohn",
 ]
 
+THIRD_REVIEW_REQUESTS: list[tuple[str, list[str]]] = [
+    (
+        "Could you run an over-representation analysis for SOX2, POU5F1, NANOG, KLF4 and LIN28A?",
+        ["SOX2", "POU5F1", "NANOG", "KLF4", "LIN28A"],
+    ),
+    (
+        "run enrichment on these DE genes:\nIL6\nCXCL8\nCCL2\nTNF\nIL1B\nPTGS2",
+        ["IL6", "CXCL8", "CCL2", "TNF", "IL1B", "PTGS2"],
+    ),
+    ("Perform ORA with P04637, Q00987, P38936", ["P04637", "Q00987", "P38936"]),
+    (
+        "please do a reactome analysis of ENSG00000141510, ENSG00000135679, ENSG00000124762",
+        ["ENSG00000141510", "ENSG00000135679", "ENSG00000124762"],
+    ),
+    (
+        "map BRCA1 BRCA2 PALB2 RAD51C RAD51D to pathways",
+        ["BRCA1", "BRCA2", "PALB2", "RAD51C", "RAD51D"],
+    ),
+    (
+        "Find the enriched pathways for my hits: Atg5, Atg7, Becn1, Map1lc3b, Sqstm1",
+        ["Atg5", "Atg7", "Becn1", "Map1lc3b", "Sqstm1"],
+    ),
+    (
+        "hi! can you run a pathway enrichment on CD3E, CD4, CD8A, GZMB, PRF1, IFNG thanks",
+        ["CD3E", "CD4", "CD8A", "GZMB", "PRF1", "IFNG"],
+    ),
+    (
+        "Run ORA:\nHIF1A, VEGFA, EPAS1, LDHA, PDK1, SLC2A1",
+        ["HIF1A", "VEGFA", "EPAS1", "LDHA", "PDK1", "SLC2A1"],
+    ),
+    (
+        "I'd like you to analyse NOTCH1, HES1, HEY1, JAG1, DLL4 for pathway enrichment",
+        ["NOTCH1", "HES1", "HEY1", "JAG1", "DLL4"],
+    ),
+    (
+        "Submit this list to Reactome analysis: MLH1; MSH2; MSH6; PMS2",
+        ["MLH1", "MSH2", "MSH6", "PMS2"],
+    ),
+    (
+        "do an enrichment analysis on the following genes: ATM, ATR, CHEK1, CHEK2, WEE1",
+        ["ATM", "ATR", "CHEK1", "CHEK2", "WEE1"],
+    ),
+    (
+        "run gsa with KEAP1, NFE2L2, NQO1, HMOX1, GCLM",
+        ["KEAP1", "NFE2L2", "NQO1", "HMOX1", "GCLM"],
+    ),
+    (
+        "Which pathways are enriched in STAT1 STAT2 IRF9 ISG15 MX1 OAS1?",
+        ["STAT1", "STAT2", "IRF9", "ISG15", "MX1", "OAS1"],
+    ),
+    (
+        "Run enrichment for:\n1. PINK1\n2. PRKN\n3. LRRK2\n4. SNCA\n5. PARK7",
+        ["PINK1", "PRKN", "LRRK2", "SNCA", "PARK7"],
+    ),
+    (
+        "analyze my genes - CTNNB1, APC, AXIN2, LGR5, TCF7L2 - using reactome",
+        ["CTNNB1", "APC", "AXIN2", "LGR5", "TCF7L2"],
+    ),
+    (
+        "please perform over representation analysis: Tp53, Mdm2, Cdkn1a, Bax, Pmaip1",
+        ["Tp53", "Mdm2", "Cdkn1a", "Bax", "Pmaip1"],
+    ),
+    (
+        "run an ORA on SMAD2/SMAD3/SMAD4/TGFBR1/TGFBR2",
+        ["SMAD2", "SMAD3", "SMAD4", "TGFBR1", "TGFBR2"],
+    ),
+    (
+        "Can you do pathway analysis on my list? MYOD1, MYOG, MEF2C, DES, ACTA1",
+        ["MYOD1", "MYOG", "MEF2C", "DES", "ACTA1"],
+    ),
+    (
+        "execute an enrichment on EZH2 SUZ12 EED RBBP4",
+        ["EZH2", "SUZ12", "EED", "RBBP4"],
+    ),
+    (
+        "Analyse for pathway enrichment:\nGAPDH\nPGK1\nENO1\nPKM\nALDOA\n\nThanks,\nMaria",
+        ["GAPDH", "PGK1", "ENO1", "PKM", "ALDOA"],
+    ),
+]
+
+THIRD_REVIEW_QUESTIONS: list[str] = [
+    "Is KRAS or NRAS more frequently mutated in colorectal cancer pathways?",
+    "Can you find pathways where both PTEN and PIK3CA act?",
+    "What happens downstream of EGFR and ERBB2 activation?",
+    "Which pathways does TP53 participate in, and does MDM2 share any?",
+    "Run me through the steps of mismatch repair involving MLH1 and MSH2",
+    "Has anyone performed an enrichment analysis with BRCA1 and BRCA2 knockouts in Reactome?",
+    "I ran ORA on my list and got Signaling by NOTCH at the top with NOTCH1, JAG1 - is that plausible?",
+    "Do SOX2, POU5F1 appear together in any Reactome pathway?",
+    "After I run the analysis on IL6, TNF, should I use the projection to human?",
+    "Which pathways are shown when I analyze CD19, MS4A1 in the Pathway Browser - where do I click?",
+    "What's the Reactome ID for the pathway containing ATM, CHEK2?",
+    "My enrichment for HIF1A, VEGFA came back empty. What went wrong?",
+    "Map of the interactions between KEAP1 and NFE2L2 please",
+    "Could analysis of STAT3, JAK2 phosphorylation be done in Reactome?",
+    "Is GAPDH a good housekeeping gene for ORA background, along with ACTB?",
+    "In which pathways would BCL2, BAX, BAK1 be found?",
+    "Please find me literature-backed pathways for FOXO1, FOXO3",
+    "Should I run an ORA with SMAD4, TGFBR2 or wait until I have more genes?",
+    "Why doesn't my ORA list CDK4, CDK6 in cell cycle?",
+    "Run the numbers for me: are MYC, MAX, MXD1 all in the same Reactome pathway?",
+]
+
+HELD_OUT_4_REQUESTS: list[tuple[str, list[str]]] = [
+    (
+        "Run a pathway enrichment on KEAP1, NFE2L2, HMOX1, NQO1 please",
+        ["KEAP1", "NFE2L2", "HMOX1", "NQO1"],
+    ),
+    (
+        "perform ORA with the following:\nPINK1\nPRKN\nPARK7\nLRRK2\nSNCA",
+        ["PINK1", "PRKN", "PARK7", "LRRK2", "SNCA"],
+    ),
+    (
+        "Could you do an over-representation analysis of GLS, GLUD1, GOT2, SLC1A5?",
+        ["GLS", "GLUD1", "GOT2", "SLC1A5"],
+    ),
+    ("analyse these: cd274, pdcd1, ctla4, lag3", ["cd274", "pdcd1", "ctla4", "lag3"]),
+    (
+        "Enrichment analysis on SIRT1, SIRT3, PPARGC1A, FOXO3 - can you run it?",
+        ["SIRT1", "SIRT3", "PPARGC1A", "FOXO3"],
+    ),
+    ("run ORA on Q16539, P45983, P53779", ["Q16539", "P45983", "P53779"]),
+    (
+        "Can we run an enrichment for ACE2, TMPRSS2, FURIN and CTSL",
+        ["ACE2", "TMPRSS2", "FURIN", "CTSL"],
+    ),
+    (
+        "please do a GSEA with RB1, E2F1, CDK2, CCNE1, CDKN1B",
+        ["RB1", "E2F1", "CDK2", "CCNE1", "CDKN1B"],
+    ),
+    (
+        "run pathway analysis on WNT3A FZD7 LRP6 DVL2 AXIN1",
+        ["WNT3A", "FZD7", "LRP6", "DVL2", "AXIN1"],
+    ),
+]
+
+HELD_OUT_4_QUESTIONS: list[str] = [
+    "What does KEAP1 do to NFE2L2 under oxidative stress?",
+    "Is PINK1, PRKN signalling part of mitophagy in Reactome?",
+    "Can you tell me if GLS and GLUD1 are in glutamine metabolism?",
+    "Why are CD274 and PDCD1 targets for immunotherapy?",
+    "Which pathway would SIRT1, SIRT3, FOXO3 all belong to?",
+    "Run a search for the ACE2 entry please",
+    "Can I use Ensembl IDs like ENSG00000130234 and ENSG00000184012 for analysis?",
+    "What is the difference between RB1 and CDKN1B?",
+    "Show me the reactions for PAX6 and SOX1 in neural development",
+    "How do WNT3A and FZD7 activate beta-catenin?",
+    "Where is LRRK2 located in the cell?",
+    "I ran an enrichment of SNCA, LRRK2, PARK7 last week - is the result still valid after the release?",
+]
+
 #: Current behaviour that is wrong, pinned so a change is noticed.
 KNOWN_LIMITS: list[tuple[str, list[str] | None]] = [
     (
@@ -436,11 +597,8 @@ KNOWN_LIMITS: list[tuple[str, list[str] | None]] = [
         None,
     ),
     (
-        "Is my list of TP53, MDM2 targets enriched for apoptosis? I have not run anything yet, just asking",
-        ["TP53", "MDM2"],
-    ),
-    (
         "gene\tlog2FC\tpadj\nTP53\t2.1\t0.001\nMDM2\t1.5\t0.01\nCDKN1A\t3.2\t0.0001\nplease run an enrichment analysis",
         None,
     ),
+    ("find pathways for my genes: Pax6, Sox1, Nes, Otx2", None),
 ]

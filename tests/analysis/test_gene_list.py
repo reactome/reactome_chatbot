@@ -44,6 +44,8 @@ REQUESTS = [
     *phrases.HELD_OUT_REQUESTS,
     *phrases.SECOND_REVIEW_REQUESTS,
     *phrases.HELD_OUT_3_REQUESTS,
+    *phrases.THIRD_REVIEW_REQUESTS,
+    *phrases.HELD_OUT_4_REQUESTS,
     *(
         (phrases.TRAILING_BASE + tail, ["TP53", "MDM2", "CDKN1A"])
         for tail in phrases.TRAILING
@@ -53,6 +55,16 @@ REQUESTS = [
         ["TP53", "MDM2", "MYC", "CCND1"],
     ),
     ("Run ORA on\r\nTP53\r\nMDM2", ["TP53", "MDM2"]),
+    # Round three: a lower-case word after a list is the sentence going on.
+    ("run ORA on TP53, MDM2, then show me the top hits", ["TP53", "MDM2"]),
+    ("run ORA on TP53, MDM2 or similar", ["TP53", "MDM2"]),
+    ("run an enrichment on TP53, MDM2, CDKN1A, cheers", ["TP53", "MDM2", "CDKN1A"]),
+    (
+        "run an enrichment on TP53, MDM2, CDKN1A, and plot it",
+        ["TP53", "MDM2", "CDKN1A"],
+    ),
+    ("analyze my genes - CTNNB1, APC, AXIN2", ["CTNNB1", "APC", "AXIN2"]),
+    ("run enrichment in STAT1, STAT2, IRF9", ["STAT1", "STAT2", "IRF9"]),
     # A list can open the message, in lower case.
     ("egfr, kras, braf - run ORA on these", ["egfr", "kras", "braf"]),
     # The verb is not the list's first member.
@@ -78,6 +90,8 @@ NOT_REQUESTS = [
     *phrases.HELD_OUT_QUESTIONS,
     *phrases.SECOND_REVIEW_QUESTIONS,
     *phrases.HELD_OUT_3_QUESTIONS,
+    *phrases.THIRD_REVIEW_QUESTIONS,
+    *phrases.HELD_OUT_4_QUESTIONS,
     "please run GSA on my matrix, columns are sample1, sample2, sample3",
     "Map EGFR mutations L858R and T790M to pathways",
 ]
@@ -93,7 +107,10 @@ def test_known_limits_are_as_recorded(text: str, current: list[str] | None) -> N
 @pytest.mark.parametrize(
     "text",
     [
-        "run ORA on:\n" + "\n".join(f"GENE{i}" for i in range(8000)),
+        # Under the cap, so the parser reads all of it: the first rewrite
+        # took 38 s on 4,000 lines. (8,000 lines are over the cap, and would
+        # pass on the old code unread.)
+        "run ORA on:\n" + "\n".join(f"GENE{i}" for i in range(6000)),
         "run ORA on TP53, MDM2" + "\n" * 50_000 + "x",
         "run ORA on TP53, MDM2" + "?" * 50_000 + "x",
         "run ORA on: TP53, MDM2" + " " * 50_000 + "!MYC",

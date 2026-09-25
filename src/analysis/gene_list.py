@@ -106,7 +106,7 @@ MAX_MESSAGE_CHARS = 60_000
 #: Words a list follows: "for", "on", "genes", and the request verbs
 #: themselves ("analyze TP53, MDM2").
 _OPENER_WORDS = frozenset(
-    """FOR ON OF WITH GENES PROTEINS LIST THESE FOLLOWING RUN PERFORM SUBMIT
+    """FOR ON OF IN WITH GENES PROTEINS LIST THESE FOLLOWING RUN PERFORM SUBMIT
     ANALYSE ANALYZE MAP FIND""".split()
 )
 #: Joining words, read as part of the gap between two tokens.
@@ -185,7 +185,7 @@ class _Run:
     ended_by_and: bool = False
 
 
-def _accepted(run: _Run, *, shouting: bool, pair_ok: bool) -> list[str]:
+def _accepted(run: _Run, *, shouting: bool, pair_ok: bool, question: bool) -> list[str]:
     tokens = run.tokens
     # Space-separated plain words are prose unless a colon, question mark or
     # newline announced a list: "on TP53 MDM2 using default settings" reads
@@ -197,10 +197,21 @@ def _accepted(run: _Run, *, shouting: bool, pair_ok: bool) -> list[str]:
             ):
                 tokens = tokens[:index]
                 break
+    # A list typed in lower case is read in lower case. In any other list a
+    # lower-case word is the sentence carrying on: "TP53, MDM2, then show
+    # me the top hits", "..., cheers".
+    if any(token != token.lower() for token, _ in tokens):
+        for index, (token, strength) in enumerate(tokens):
+            if strength == "weak" and token == token.lower():
+                tokens = tokens[:index]
+                break
     if len(tokens) < MIN_IDENTIFIERS:
         return []
     # "X and Y" is how prose names two genes; a list says it with commas.
-    if len(tokens) == 2 and run.kind == "and" and not pair_ok:
+    # And two genes in a question are the question's subject -- "My
+    # enrichment for HIF1A, VEGFA came back empty. What went wrong?" -- more
+    # often than a list to run: a third review's four misfires were all this.
+    if len(tokens) == 2 and (run.kind == "and" or question) and not pair_ok:
         return []
     return [token for token, _ in tokens]
 
@@ -217,7 +228,8 @@ def identifiers_in(text: str, *, shouting: bool = False) -> list[str]:
     """
     text = text.replace("\r\n", "\n").translate(_NORMALISE)
     text = _ENSEMBL_VERSION.sub(r"\1", _MARKERS.sub("", text))
-    pair_ok = "?" not in text and bool(_REQUEST_START.match(text))
+    question = "?" in text
+    pair_ok = not question and bool(_REQUEST_START.match(text))
     found: list[str] = []
     run: _Run | None = None
     previous_end = 0
@@ -225,12 +237,15 @@ def identifiers_in(text: str, *, shouting: bool = False) -> list[str]:
 
     def close() -> None:
         if run is not None:
-            found.extend(_accepted(run, shouting=shouting, pair_ok=pair_ok))
+            found.extend(
+                _accepted(run, shouting=shouting, pair_ok=pair_ok, question=question)
+            )
 
     for match in _TOKEN.finditer(text):
         token = match.group().strip("-")
-        if token.lower() in _JOINERS:
-            continue  # stays in the gap: "TP53, ERBB2 and RUNX2"
+        if not token or token.lower() in _JOINERS:
+            # Stays in the gap: "TP53, ERBB2 and RUNX2", "my genes - CTNNB1".
+            continue
         gap = text[previous_end : match.start()]
         previous_end = match.end()
         if _BLANK_LINE.search(gap):
@@ -431,3 +446,10 @@ EXPIRED = (
     "That list is no longer waiting to be analysed. Send it again and I'll "
     "offer to run it."
 )
+
+EXPIRED_DECLINED = (
+    "That offer has lapsed, so I no longer have the question that went with "
+    "it. Please ask it again."
+)
+
+FAILED_TO_ANSWER = "Something went wrong answering that. Please try again."

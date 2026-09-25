@@ -2,11 +2,13 @@
 # chainlit ships no annotations for cl.user_session.get/set, cl.Message.send
 # or get_data_layer. Not fixable here; it needs stubs upstream. The file is
 # named with a hyphen, so it cannot be listed in [[tool.mypy.overrides]].
+import asyncio
 import os
-import uuid
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import chainlit as cl
+from chainlit.context import context
 from chainlit.data.base import BaseDataLayer
 from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 from chainlit.oauth_providers import providers
@@ -26,6 +28,7 @@ from analysis.client import (
     pathway_browser_url,
     submit_identifiers,
 )
+from analysis.proposals import Proposal, proposals
 from gsa.chainlit_flow import (
     Attachment,
     matrix_attachment,
@@ -275,8 +278,14 @@ def current_thread_id() -> str:
     return str(cl.user_session.get("thread_id") or cl.user_session.get("id"))
 
 
-#: Proposals kept per session, so an older proposal's buttons still work.
-MAX_PENDING_PROPOSALS = 5
+def session_id() -> str:
+    return str(cl.user_session.get("id"))
+
+
+async def remove_buttons(proposal: Proposal) -> None:
+    # Rebuilt from their ids: the frontend removes an action by id.
+    for name, action_id in proposal.actions:
+        await cl.Action(name=name, payload={}, id=action_id).remove()
 
 
 async def propose_gene_list(message: cl.Message, identifiers: list[str]) -> None:
@@ -286,41 +295,60 @@ async def propose_gene_list(message: cl.Message, identifiers: list[str]) -> None
     clicks, and drops the question if they never do. Here they can click
     Run, click No, type "yes", or simply type on.
     """
-    proposal_id = uuid.uuid4().hex
+    proposal_id = proposals.new_id()
     run = cl.Action(name="gene_list_run", payload={"id": proposal_id}, label="Run it")
     decline = cl.Action(
         name="gene_list_no",
         payload={"id": proposal_id},
         label="No, answer my question",
     )
-    pending: dict[str, dict] = cl.user_session.get("gene_list_pending") or {}
-    pending[proposal_id] = {
-        "text": message.content,
-        "message_id": message.id,
-        "identifiers": identifiers,
-        "actions": [run, decline],
-    }
-    while len(pending) > MAX_PENDING_PROPOSALS:
-        pending.pop(next(iter(pending)))
-    cl.user_session.set("gene_list_pending", pending)
-    # A typed "yes" means the proposal just made, and only that one.
-    cl.user_session.set("gene_list_latest", proposal_id)
+    evicted = proposals.put(
+        session_id(),
+        proposal_id,
+        Proposal(
+            text=message.content,
+            message_id=message.id,
+            identifiers=tuple(identifiers),
+            actions=((run.name, run.id), (decline.name, decline.id)),
+        ),
+    )
+    for old in evicted:
+        await remove_buttons(old)
     await cl.Message(
         content=gene_list.describe_proposal(identifiers), actions=[run, decline]
     ).send()
 
 
-async def take_proposal(proposal_id: str | None) -> dict | None:
-    """Claim a proposal once, and take its buttons away."""
-    pending: dict[str, dict] = cl.user_session.get("gene_list_pending") or {}
-    proposal = pending.pop(proposal_id, None) if proposal_id else None
-    cl.user_session.set("gene_list_pending", pending)
-    if cl.user_session.get("gene_list_latest") == proposal_id:
-        cl.user_session.set("gene_list_latest", None)
+async def take_proposal(proposal_id: str | None) -> Proposal | None:
+    """Claim an offer once, and take its buttons away."""
+    proposal = proposals.take(session_id(), proposal_id)
     if proposal is not None:
-        for action in proposal["actions"]:
-            await action.remove()
+        await remove_buttons(proposal)
     return proposal
+
+
+def run_as_task(work: Callable[[], Awaitable[None]]) -> None:
+    """Run a button's work the way Chainlit runs a message.
+
+    Action callbacks run with no task: the message box stays open, there is
+    no Stop, an exception is logged and the reader told nothing, and the
+    work holds the /project/action HTTP request open. So: mark a task, make
+    it stoppable, report failure, and return from the request at once.
+    """
+
+    async def body() -> None:
+        await context.emitter.task_start()
+        try:
+            await work()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("gene list action failed")
+            await cl.ErrorMessage(content=gene_list.FAILED_TO_ANSWER).send()
+        finally:
+            await context.emitter.task_end()
+
+    context.session.current_task = asyncio.create_task(body())
 
 
 @cl.action_callback("gene_list_run")
@@ -329,22 +357,30 @@ async def on_gene_list_run(action: cl.Action) -> None:
     if proposal is None:
         await cl.Message(content=gene_list.EXPIRED).send()
         return
-    await run_gene_list_analysis(proposal["text"], proposal["identifiers"])
+    run_as_task(
+        lambda: run_gene_list_analysis(proposal.text, list(proposal.identifiers))
+    )
 
 
 @cl.action_callback("gene_list_no")
 async def on_gene_list_no(action: cl.Action) -> None:
     proposal = await take_proposal(action.payload.get("id"))
     if proposal is None:
+        # After a restart the offer is gone, and so is the question's text.
+        await cl.Message(content=gene_list.EXPIRED_DECLINED).send()
         return
+    run_as_task(lambda: decline_gene_list(proposal))
+
+
+async def decline_gene_list(proposal: Proposal) -> None:
     # Not the full GSA how-to: for "can we do a gsa analysis... TP53, ERBB2"
     # it ends by offering to analyse the list just declined. Not the model
     # either: grounded in the website's user guide, it says GSA cannot be
     # done in this chat -- the bug the how-to exists to fix. Measured both.
-    if asks_to_run_gsa(proposal["text"]):
+    if asks_to_run_gsa(proposal.text):
         await cl.Message(content=HOW_TO_RUN_GSA_WITH_A_MATRIX).send()
         return
-    await answer_with_model(proposal["text"], proposal["message_id"])
+    await answer_with_model(proposal.text, proposal.message_id)
 
 
 async def run_gene_list_analysis(text: str, identifiers: list[str]) -> None:
@@ -462,6 +498,10 @@ async def answer_with_model(content: str, message_id: str) -> None:
 
 @cl.on_message
 async def main(message: cl.Message) -> None:
+    # First, before any early return: a "yes" means the offer just made, so
+    # any other message -- rate limited, an attachment -- ends that meaning.
+    latest = proposals.take_latest(session_id())
+
     if await message_rate_limited(config):
         return
 
@@ -478,16 +518,15 @@ async def main(message: cl.Message) -> None:
         await run_gsa_analysis(attachment)
         return
 
-    # "yes" to the proposal just made is the same as clicking Run. Only the
-    # message straight after it: a "yes" later answers something else.
-    latest = cl.user_session.get("gene_list_latest")
-    cl.user_session.set("gene_list_latest", None)
+    # "yes" to the offer just made is the same as clicking Run.
     if latest and gene_list.confirms(message.content or ""):
         proposal = await take_proposal(latest)
         if proposal is not None:
-            await run_gene_list_analysis(proposal["text"], proposal["identifiers"])
+            await run_gene_list_analysis(proposal.text, list(proposal.identifiers))
             return
 
+    # "yes" to the proposal just made is the same as clicking Run. Only the
+    # message straight after it: a "yes" later answers something else.
     # A gene list is not a matrix: offer what Reactome runs on a list,
     # over-representation, rather than explaining how to upload a matrix.
     # Before the GSA check, because the request that prompted this said "gsa".
