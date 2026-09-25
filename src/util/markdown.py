@@ -6,8 +6,10 @@ Reactome pathway names contain markdown syntax -- measured over a real
 renders with characters silently missing; a `|` splits the cell.
 """
 
-SPECIAL = "\\`*_[]<>|"
+SPECIAL = "\\`*_[]<>|~"
 
 
 def escape(text: str) -> str:
-    return "".join(f"\\{ch}" if ch in SPECIAL else ch for ch in text)
+    """Literal text, on one line: a newline would end a table row."""
+    flat = " ".join(text.splitlines())
+    return "".join(f"\\{ch}" if ch in SPECIAL else ch for ch in flat)

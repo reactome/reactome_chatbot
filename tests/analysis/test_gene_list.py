@@ -7,12 +7,15 @@ recogniser is a heuristic and a heuristic's failures are in its edges.
 import asyncio
 from collections.abc import Callable
 
+import gene_list_phrases as phrases
 import httpx
 import pytest
 
 from analysis import client as analysis_client
 from analysis.gene_list import (
+    MAX_PROPOSED_LISTED,
     describe_overrepresentation,
+    describe_proposal,
     gene_list_request,
     identifiers_in,
 )
@@ -25,42 +28,34 @@ ASKED = (
 
 REQUESTS = [
     (ASKED, ["TP53", "ERBB2", "RUNX2"]),
-    ("run a pathway analysis on EGFR KRAS BRAF PTEN", ["EGFR", "KRAS", "BRAF", "PTEN"]),
-    (
-        "Please run an enrichment for P04637, Q9Y6K9 and ENSG00000141510",
-        ["P04637", "Q9Y6K9", "ENSG00000141510"],
-    ),
-    ("analyse these genes: tp53 mdm2 cdkn1a", ["tp53", "mdm2", "cdkn1a"]),
-    (
-        "Can you do an over-representation analysis with BRCA1, BRCA2, PALB2?",
-        ["BRCA1", "BRCA2", "PALB2"],
-    ),
     ("perform ORA on\nTP53\nMDM2\nCDKN1A\n", ["TP53", "MDM2", "CDKN1A"]),
     ("run a GSEA with genes MYC, MAX", ["MYC", "MAX"]),
-    ("I would like to run an enrichment analysis for Trp53, Mdm2", ["Trp53", "Mdm2"]),
-    ("could you analyse my gene list: HLA-A, HLA-B, B2M", ["HLA-A", "HLA-B", "B2M"]),
     ("do a pathway analysis for TP53, TP53, tp53, MDM2", ["TP53", "MDM2"]),
     ("run reactome gsa on P04637-2 and Q00987", ["P04637-2", "Q00987"]),
+    # Words in capitals and accession-like strings are not submitted.
     (
-        "Please do a gene set analysis for SMAD2, SMAD3, SMAD4, TGFB1",
-        ["SMAD2", "SMAD3", "SMAD4", "TGFB1"],
+        "run an enrichment on TP53, MDM2 in HUMAN NOT MOUSE, see GSE12345 chr17",
+        ["TP53", "MDM2"],
     ),
+    *phrases.REVIEW_REQUESTS,
+    *phrases.HELD_OUT_REQUESTS,
 ]
 
 NOT_REQUESTS = [
-    "can we run gsa in this chat please",  # no genes: how-to reply
+    "can we run gsa in this chat please",  # no genes: the how-to reply
     "what is GSEA?",
-    "can you explain how TP53 and MDM2 interact?",  # genes, no analysis term
-    "What pathways are BRCA1 and BRCA2 in?",
     "Compare GSEA and PADOG analysis methods",  # capitals, not genes
     "CAN YOU RUN A GSA ANALYSIS ON MY DATA PLEASE",  # shouting
-    "Is TP53 enriched in apoptosis?",  # one gene is not a list
-    "run a pathway analysis on TP53",
+    # Shouting, with capitals the stoplist does not know.
+    "RUN AN ENRICHMENT ANALYSIS FROM MY EXPERIMENT TODAY",
+    # Space-separated lower-case words after "for" are prose, not a list.
+    "run an enrichment for mice given high doses",
+    "run a pathway analysis on TP53",  # one gene is not a list
     "How do I run GSA on RNA-seq data from a TSV or CSV?",
-    "what does an FDR mean in an ORA result?",
-    "Tell me about the role of CDK5 in neurons",
     "what is the difference between ORA and GSEA",
     "",
+    *phrases.REVIEW_QUESTIONS,
+    *phrases.HELD_OUT_QUESTIONS,
 ]
 
 
@@ -72,6 +67,21 @@ def test_a_request_with_genes_is_recognised(text: str, expected: list[str]) -> N
 @pytest.mark.parametrize("text", NOT_REQUESTS)
 def test_other_messages_are_left_to_the_model(text: str) -> None:
     assert gene_list_request(text) is None
+
+
+def test_the_sets_are_the_size_they_claim() -> None:
+    # Sized sets are the point: a pass at n=2 says nothing about a rate.
+    assert len(REQUESTS) >= 40
+    assert len(NOT_REQUESTS) >= 70
+
+
+def test_the_proposal_lists_what_will_be_submitted() -> None:
+    proposal = describe_proposal(["TP53", "ERBB2", "RUNX2"])
+    assert "over-representation" in proposal
+    assert "**3 identifiers**" in proposal
+    assert "`TP53`, `ERBB2`, `RUNX2`" in proposal
+    many = describe_proposal([f"G{i}" for i in range(MAX_PROPOSED_LISTED + 5)])
+    assert "and 5 more" in many
 
 
 def test_the_words_around_the_genes_are_not_submitted() -> None:
@@ -104,7 +114,7 @@ URL = "https://beta.reactome.org/PathwayBrowser/#/DTAB=AN&ANALYSIS=MjAy"
 def test_the_reply_reports_matches_pathways_and_the_link() -> None:
     reply = describe_overrepresentation(SUBMITTED, MEASURED, URL, ["NOTAGENE1"])
     assert reply.has_pathways
-    assert "over-representation" in reply.text
+    assert "Over-representation analysis" in reply.text
     assert "Matched **3 of 4** identifiers" in reply.text
     assert "Top 2 of 188 pathways" in reply.text
     assert (
@@ -146,6 +156,36 @@ def test_nothing_matched_says_so_and_offers_nothing_to_continue() -> None:
     assert "Matched **0 of 2**" in reply.text
     assert "No Reactome pathways" in reply.text
     assert URL not in reply.text
+
+
+def test_the_remainder_of_unmatched_counts_all_of_them() -> None:
+    # The notFound lookup is paged (50); the reply said "and 30 more" for 300.
+    many = [f"G{i}" for i in range(300)]
+    result = {**MEASURED, "identifiersNotFound": 300}
+    reply = describe_overrepresentation(many, result, URL, many[:50])
+    assert "and 280 more" in reply.text
+
+
+def test_an_impossible_match_count_is_not_shown() -> None:
+    result = {**MEASURED, "identifiersNotFound": 5}
+    reply = describe_overrepresentation(["A1", "B2"], result, URL, None)
+    assert "Matched" not in reply.text
+    assert "-3" not in reply.text
+
+
+def test_an_odd_entities_field_does_not_raise() -> None:
+    odd = {**MEASURED, "pathways": [{"stId": "R-HSA-1", "name": "X", "entities": "?"}]}
+    reply = describe_overrepresentation(SUBMITTED, odd, URL, None)
+    assert "| X (R-HSA-1) | – of – | – |" in reply.text
+
+
+def test_a_newline_in_a_name_stays_in_its_row() -> None:
+    odd = {
+        **MEASURED,
+        "pathways": [{"stId": "R-HSA-1", "name": "A\nB", "entities": {}}],
+    }
+    reply = describe_overrepresentation(SUBMITTED, odd, URL, None)
+    assert "| A B (R-HSA-1) |" in reply.text
 
 
 # --- submission, stubbed at the transport -----------------------------------

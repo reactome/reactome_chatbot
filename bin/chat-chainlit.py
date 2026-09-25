@@ -237,7 +237,7 @@ async def continue_from_handoff(handoff_id: str) -> None:
     profile: str = (cl.user_session.get("chat_profile") or "").lower()
     # `on_chat_start` sets `thread_id` from the session id. A claim arriving
     # before it has run would otherwise seed a thread called "None".
-    thread_id: str = cl.user_session.get("thread_id") or cl.user_session.get("id")
+    thread_id: str = current_thread_id()
     data = None
     try:
         if isinstance(handoff, AnalysisHandoff):
@@ -266,12 +266,53 @@ async def continue_from_handoff(handoff_id: str) -> None:
     await cl.Message(content=seed.shown_to_reader(handoff)).send()
 
 
+def current_thread_id() -> str:
+    """The graph thread for this session -- the same one `main` invokes.
+
+    `on_chat_start` sets it from the session id; a resumed chat may not.
+    """
+    return str(cl.user_session.get("thread_id") or cl.user_session.get("id"))
+
+
+#: How long the Run / No buttons wait before the offer lapses.
+PROPOSAL_TIMEOUT_SECONDS = 600
+
+
+async def confirm_gene_list(identifiers: list[str]) -> bool | None:
+    """Ask before submitting. True to run, False to answer instead, None on no reply.
+
+    The list is a message of its own because `AskActionMessage` replaces its
+    content with "Selected: ..." once answered, and the reader should keep
+    seeing what was submitted.
+    """
+    await cl.Message(content=gene_list.describe_proposal(identifiers)).send()
+    answer = await cl.AskActionMessage(
+        content="",
+        actions=[
+            cl.Action(name="gene_list", payload={"run": True}, label="Run it"),
+            cl.Action(
+                name="gene_list",
+                payload={"run": False},
+                label="No, answer my question",
+            ),
+        ],
+        timeout=PROPOSAL_TIMEOUT_SECONDS,
+    ).send()
+    if answer is None:
+        return None
+    return bool((answer.get("payload") or {}).get("run"))
+
+
 async def run_gene_list_analysis(text: str, identifiers: list[str]) -> None:
     """Over-representation on a pasted gene list, and seed it for follow-ups."""
     submitted = identifiers[:MAX_SUBMITTED_IDENTIFIERS]
+    # Up to two service calls; say something is happening meanwhile.
+    reply_message = cl.Message(content="Running the analysis…")
+    await reply_message.send()
     result = await submit_identifiers(submitted)
     if result is None:
-        await cl.Message(content=gene_list.FAILED).send()
+        reply_message.content = gene_list.FAILED
+        await reply_message.update()
         return
     not_found = result.result.get("identifiersNotFound")
     unmatched = (
@@ -286,7 +327,8 @@ async def run_gene_list_analysis(text: str, identifiers: list[str]) -> None:
         unmatched,
         truncated=len(identifiers) > len(submitted),
     )
-    await cl.Message(content=reply.text).send()
+    reply_message.content = reply.text
+    await reply_message.update()
     logger.info(
         "gene list analysed",
         extra={"submitted": len(submitted), "has_pathways": reply.has_pathways},
@@ -297,16 +339,18 @@ async def run_gene_list_analysis(text: str, identifiers: list[str]) -> None:
     # involve TP53?" is answered from this result. The reader typed the list
     # into this chat, whose every message goes to the model anyway.
     profile: str = (cl.user_session.get("chat_profile") or "").lower()
-    thread_id: str = cl.user_session.get("thread_id") or cl.user_session.get("id")
     try:
-        await get_graph().seed_history(
+        seeded = await get_graph().seed_history(
             profile,
-            thread_id=thread_id,
+            thread_id=current_thread_id(),
             messages=[HumanMessage(content=text), AIMessage(content=reply.text)],
         )
     except Exception:
         # The reader has their result; only follow-ups lose it.
         logger.exception("gene list seeding failed")
+        return
+    if not seeded:
+        logger.warning("gene list not seeded", extra={"profile": profile})
 
 
 @cl.on_window_message
@@ -357,10 +401,16 @@ async def main(message: cl.Message) -> None:
     # A gene list is not a matrix: run what Reactome runs on a list,
     # over-representation, rather than explaining how to upload a matrix.
     # Before the GSA check, because the request that prompted this said "gsa".
+    # It only proposes: the reader sees the identifiers read and chooses, so
+    # a question that merely looks like a request still gets answered.
     identifiers = gene_list.gene_list_request(message.content or "")
     if identifiers is not None:
-        await run_gene_list_analysis(message.content, identifiers)
-        return
+        choice = await confirm_gene_list(identifiers)
+        if choice is None:
+            return
+        if choice:
+            await run_gene_list_analysis(message.content, identifiers)
+            return
 
     if asks_to_run_gsa(message.content or ""):
         await cl.Message(content=HOW_TO_RUN_GSA).send()
@@ -371,7 +421,7 @@ async def main(message: cl.Message) -> None:
 
     chat_profile: str = cl.user_session.get("chat_profile")
 
-    thread_id: str = cl.user_session.get("thread_id")
+    thread_id: str = current_thread_id()
 
     chainlit_cb = cl.AsyncLangchainCallbackHandler(
         stream_final_answer=True,
