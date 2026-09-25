@@ -12,11 +12,19 @@ from chainlit.oauth_providers import providers
 from chainlit.types import ThreadDict
 from dotenv import load_dotenv
 from langchain_community.callbacks import OpenAICallbackHandler
+from langchain_core.messages import AIMessage, HumanMessage
 
 from agent.profile_names import ProfileName
 from agent.profiles import get_chat_profiles
 from agent.profiles.base import OutputState
 from agent.registry import get_graph
+from analysis import gene_list
+from analysis.client import (
+    MAX_SUBMITTED_IDENTIFIERS,
+    fetch_not_found,
+    pathway_browser_url,
+    submit_identifiers,
+)
 from gsa.chainlit_flow import (
     Attachment,
     matrix_attachment,
@@ -258,6 +266,49 @@ async def continue_from_handoff(handoff_id: str) -> None:
     await cl.Message(content=seed.shown_to_reader(handoff)).send()
 
 
+async def run_gene_list_analysis(text: str, identifiers: list[str]) -> None:
+    """Over-representation on a pasted gene list, and seed it for follow-ups."""
+    submitted = identifiers[:MAX_SUBMITTED_IDENTIFIERS]
+    result = await submit_identifiers(submitted)
+    if result is None:
+        await cl.Message(content=gene_list.FAILED).send()
+        return
+    not_found = result.result.get("identifiersNotFound")
+    unmatched = (
+        await fetch_not_found(result.token)
+        if isinstance(not_found, int) and not_found > 0
+        else None
+    )
+    reply = gene_list.describe_overrepresentation(
+        submitted,
+        result.result,
+        pathway_browser_url(result.token),
+        unmatched,
+        truncated=len(identifiers) > len(submitted),
+    )
+    await cl.Message(content=reply.text).send()
+    logger.info(
+        "gene list analysed",
+        extra={"submitted": len(submitted), "has_pathways": reply.has_pathways},
+    )
+    if not reply.has_pathways:
+        return
+    # The exchange becomes the thread's previous turn, so "which of these
+    # involve TP53?" is answered from this result. The reader typed the list
+    # into this chat, whose every message goes to the model anyway.
+    profile: str = (cl.user_session.get("chat_profile") or "").lower()
+    thread_id: str = cl.user_session.get("thread_id") or cl.user_session.get("id")
+    try:
+        await get_graph().seed_history(
+            profile,
+            thread_id=thread_id,
+            messages=[HumanMessage(content=text), AIMessage(content=reply.text)],
+        )
+    except Exception:
+        # The reader has their result; only follow-ups lose it.
+        logger.exception("gene list seeding failed")
+
+
 @cl.on_window_message
 async def on_window_message(message: object) -> None:
     """Claim a "Continue in chat" handoff posted by this tab (spec 013).
@@ -303,6 +354,14 @@ async def main(message: cl.Message) -> None:
     # grounded in the user guide, which describes the website's GSA page, so
     # it said this chat could not do it. Answered here instead -- chat only,
     # because the same answer path serves the search page, which cannot.
+    # A gene list is not a matrix: run what Reactome runs on a list,
+    # over-representation, rather than explaining how to upload a matrix.
+    # Before the GSA check, because the request that prompted this said "gsa".
+    identifiers = gene_list.gene_list_request(message.content or "")
+    if identifiers is not None:
+        await run_gene_list_analysis(message.content, identifiers)
+        return
+
     if asks_to_run_gsa(message.content or ""):
         await cl.Message(content=HOW_TO_RUN_GSA).send()
         return

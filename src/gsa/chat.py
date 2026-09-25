@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from gsa.client import AnalysisStatus
 from gsa.job import Finished
 from gsa.upload import Matrix
+from util.markdown import escape
 
 #: Shown when a matrix arrives, before anything is submitted.
 MAX_SAMPLES_LISTED = 24
@@ -131,18 +132,6 @@ def describe_progress(status: AnalysisStatus) -> str:
     return f"Running the analysis — {detail}"
 
 
-#: Characters with meaning in markdown. Reactome pathway names contain some
-#: of them -- measured over a real 2,679-pathway result: `H139Hfs13* PPM1K
-#: causes a mild variant of MSUD`, `NOTCH1:M1580_K2555`. Two of either in a
-#: cell become emphasis, and a variant identifier like `M1580_K2555` renders
-#: as `M1580K2555` with nothing to show it changed.
-_MARKDOWN_SPECIAL = "\\`*_[]<>|"
-
-
-def _escape(text: str) -> str:
-    return "".join(f"\\{ch}" if ch in _MARKDOWN_SPECIAL else ch for ch in text)
-
-
 def describe_result(finished: Finished) -> str:
     """What the person reads. Never a prompt.
 
@@ -166,7 +155,7 @@ def describe_result(finished: Finished) -> str:
         ]
         for pathway in top[:10]:
             lines.append(
-                f"| {_escape(pathway['name'])} | {pathway['direction']} | {pathway['fdr']:.2g} |"
+                f"| {escape(pathway['name'])} | {pathway['direction']} | {pathway['fdr']:.2g} |"
             )
         lines.append("")
 
@@ -216,14 +205,12 @@ def asks_to_run_gsa(text: str) -> bool:
     return bool(_ANALYSIS_TERMS.search(text) and _WANTS_TO_DO_IT.search(text))
 
 
-#: The gene-list line points at the website, not at this chat. An earlier
-#: draft said "paste the gene list and ask me to analyse it"; checked in a
-#: browser, the chat does not run that analysis -- it sends the reader to the
-#: website -- so the promise would have been false.
+#: The gene-list line promises what `analysis.gene_list` does. It first
+#: pointed at the website, because the chat did not run that analysis yet.
 HOW_TO_RUN_GSA = """Yes — you can run a gene set analysis right here in the chat, using ReactomeGSA.
 
 1. **Attach your expression matrix** with the 📎 button below: a `.tsv` or `.csv` file with genes (or proteins) as rows, samples as columns, and a first row naming the samples. Up to 20 MB.
 2. **Tell me which group each sample is in** when I ask — for example `control, control, treated, treated`.
 3. I'll run the analysis and give you the most significant pathways, a link to view the result in Reactome's Pathway Browser, and the full results table to download. It usually takes a few minutes.
 
-If you only have a **list of genes** rather than measurements for each sample, that's an over-representation analysis instead. You can run it on Reactome's [Analyse Data](https://reactome.org/PathwayBrowser/#TOOL=AT) page by pasting the list."""
+If you only have a **list of genes** rather than measurements for each sample, that's an over-representation analysis instead, and I can run it here too: ask me to analyse them and include the genes in your message — for example *run a pathway analysis on TP53, ERBB2, RUNX2*."""
