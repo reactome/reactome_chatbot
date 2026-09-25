@@ -23,6 +23,7 @@ from gsa.chainlit_flow import (
     result_file_kwargs,
     run_analysis,
 )
+from gsa.chat import HOW_TO_RUN_GSA, asks_to_run_gsa
 from handoff import seed
 from handoff.store import AnalysisHandoff, handoffs
 from handoff.window import acknowledgement, claimed_id
@@ -296,6 +297,14 @@ async def main(message: cl.Message) -> None:
     attachment = matrix_attachment(getattr(message, "elements", None))
     if attachment is not None:
         await run_gsa_analysis(attachment)
+        return
+
+    # Asked in words rather than by attaching a file. The answer path is
+    # grounded in the user guide, which describes the website's GSA page, so
+    # it said this chat could not do it. Answered here instead -- chat only,
+    # because the same answer path serves the search page, which cannot.
+    if asks_to_run_gsa(message.content or ""):
+        await cl.Message(content=HOW_TO_RUN_GSA).send()
         return
 
     message_count: int = cl.user_session.get("message_count", 0) + 1

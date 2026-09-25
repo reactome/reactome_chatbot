@@ -13,6 +13,7 @@ file. `describe_result` writes what the person reads; it never becomes a
 prompt, and `Finished.for_model` never becomes a message.
 """
 
+import re
 from dataclasses import dataclass
 
 from gsa.client import AnalysisStatus
@@ -175,3 +176,54 @@ def describe_result(finished: Finished) -> str:
         lines.append("")
     lines.append("The full table, with every column, is attached.")
     return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------
+# "Can we run a GSA in this chat?"
+#
+# Asked in words, the chat used to say no. The answer path grounds itself in
+# the user guide, which describes the *website's* ReactomeGSA page, and its
+# prompt forbids claiming anything the guide does not say -- so "you cannot do
+# this in the chat, go to the website" was the only answer it could give.
+# Reported 2026-09-25 from "can we run gsa in this chat please", which got an
+# answer starting "no".
+#
+# The capability cannot be added to that prompt: the same prompt answers the
+# website's search page, which has no upload, and would start telling people
+# to attach files. So the request is recognised here, on the chat side only.
+#
+# Deliberately narrow. It needs both an analysis term and a request to *do*
+# something, so "what is GSEA?" still reaches the model and is explained
+# rather than being answered with upload instructions.
+
+_ANALYSIS_TERMS = re.compile(
+    r"\b(gsea|gsa|reactome\s*gsa|gene[\s-]*set(\s+enrichment)?\s+analy[sz]\w*"
+    r"|expression\s+(matrix|matrices|data|profiles?|values?)|rna[\s-]*seq|microarray"
+    r"|proteomics?\s+data|count\s+matrix)\b",
+    re.IGNORECASE,
+)
+_WANTS_TO_DO_IT = re.compile(
+    r"\b(run|do|perform|start|carry\s+out|execute|submit|upload|attach"
+    r"|analy[sz]e\s+(my|our|this|these|it|them)"
+    r"|can\s+(we|i|you)|could\s+(we|i|you)|how\s+(do|can|would|should)\s+(i|we)"
+    r"|is\s+it\s+possible|want\s+to|would\s+like\s+to|help\s+me)\b",
+    re.IGNORECASE,
+)
+
+
+def asks_to_run_gsa(text: str) -> bool:
+    """True for a request to run a gene set analysis, not a question about one."""
+    return bool(_ANALYSIS_TERMS.search(text) and _WANTS_TO_DO_IT.search(text))
+
+
+#: The gene-list line points at the website, not at this chat. An earlier
+#: draft said "paste the gene list and ask me to analyse it"; checked in a
+#: browser, the chat does not run that analysis -- it sends the reader to the
+#: website -- so the promise would have been false.
+HOW_TO_RUN_GSA = """Yes — you can run a gene set analysis right here in the chat, using ReactomeGSA.
+
+1. **Attach your expression matrix** with the 📎 button below: a `.tsv` or `.csv` file with genes (or proteins) as rows, samples as columns, and a first row naming the samples. Up to 20 MB.
+2. **Tell me which group each sample is in** when I ask — for example `control, control, treated, treated`.
+3. I'll run the analysis and give you the most significant pathways, a link to view the result in Reactome's Pathway Browser, and the full results table to download. It usually takes a few minutes.
+
+If you only have a **list of genes** rather than measurements for each sample, that's an over-representation analysis instead. You can run it on Reactome's [Analyse Data](https://reactome.org/PathwayBrowser/#TOOL=AT) page by pasting the list."""
