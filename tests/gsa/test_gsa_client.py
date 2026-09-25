@@ -26,12 +26,15 @@ def test_real_identifiers_are_accepted(value: str) -> None:
     assert gsa_client._checked("dataset", value) == value
 
 
-def test_an_id_response_must_be_a_string() -> None:
-    # The service answers a submission with a bare quoted ID. `str()` on an
-    # error object yields a plausible-looking path segment that fails far
-    # away, as a 404 that reads like a missing analysis.
-    with pytest.raises(gsa_client.GsaError, match="expected a analysis id"):
-        gsa_client._identifier_from({"detail": "Bad Request"}, "analysis id")
+def test_an_error_body_is_not_taken_for_an_id() -> None:
+    # This test used to hand `_identifier_from` a Python dict, because it was
+    # written against the same wrong belief as the code: that the reply is
+    # JSON. It is `text/plain`. So the test could only ever confirm the
+    # assumption, never the service -- which is how the upload feature
+    # shipped unable to start an analysis. It now gets the *text* of an
+    # error body, which is what would actually arrive.
+    with pytest.raises(gsa_client.GsaError, match="not a valid identifier"):
+        gsa_client._identifier_from('{"detail": "Bad Request"}', "analysis id")
 
 
 def test_a_real_id_response_is_accepted() -> None:

@@ -17,7 +17,12 @@ from agent.profile_names import ProfileName
 from agent.profiles import get_chat_profiles
 from agent.profiles.base import OutputState
 from agent.registry import get_graph
-from gsa.chainlit_flow import Attachment, matrix_attachment, run_analysis
+from gsa.chainlit_flow import (
+    Attachment,
+    matrix_attachment,
+    result_file_kwargs,
+    run_analysis,
+)
 from util.chainlit_helpers import (
     PrefixedS3StorageClient,
     is_feature_enabled,
@@ -147,8 +152,15 @@ async def run_gsa_analysis(attachment: Attachment) -> None:
     The flow takes these four as arguments so it can be tested without a
     browser; this is the only place that knows they are Chainlit.
     """
-    progress = cl.Message(content="Reading your file…")
-    await progress.send()
+    # Created on the first update, not up front.
+    #
+    # It used to be sent before anything else, so it was the first message
+    # in the thread -- and Chainlit scrolls the latest user message to the
+    # top, which put the progress line above the fold. It updated faithfully
+    # for minutes where nobody could see it; the user saw "Started." and then
+    # nothing. Created lazily, it lands below "Started.", where they are
+    # looking.
+    progress: cl.Message | None = None
 
     async def ask_for_grouping() -> str | None:
         answer = await cl.AskUserMessage(
@@ -160,13 +172,17 @@ async def run_gsa_analysis(attachment: Attachment) -> None:
         await cl.Message(content=text).send()
 
     async def update_progress(text: str) -> None:
-        progress.content = text
-        await progress.update()
+        nonlocal progress
+        if progress is None:
+            progress = cl.Message(content=text)
+            await progress.send()
+        else:
+            progress.content = text
+            await progress.update()
 
     async def send_file(path: Path) -> None:
         await cl.Message(
-            content="",
-            elements=[cl.File(name=path.name, path=str(path), display="inline")],
+            content="", elements=[cl.File(**result_file_kwargs(path))]
         ).send()
 
     # The progress line is removed rather than marked "Done".
@@ -184,7 +200,8 @@ async def run_gsa_analysis(attachment: Attachment) -> None:
             send_file=send_file,
         )
     finally:
-        await progress.remove()
+        if progress is not None:
+            await progress.remove()
 
 
 @cl.on_message

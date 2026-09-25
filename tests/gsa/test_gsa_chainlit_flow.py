@@ -268,3 +268,23 @@ class TestTheUploadNeverSurvives:
 
         assert chat_.said, "it must say something rather than fail silently"
         assert not path.exists()
+
+
+class TestTheResultFile:
+    def test_carries_an_explicit_mime_type(self, tmp_path: Path) -> None:
+        """Without it, the whole chat UI dies at the moment of success.
+
+        Chainlit infers a path-based element's type from magic bytes, and a
+        TSV has none, so `mime` was null; the browser then called
+        `mime.startsWith(...)` on it and replaced the chat with a
+        JavaScript error. Found by a headless browser against the deployed
+        image, after every server-side check had passed.
+        """
+        kwargs = chainlit_flow.result_file_kwargs(tmp_path / "reactome-gsa-an-1.tsv")
+        assert kwargs["mime"].startswith("text/")
+
+    def test_names_the_file_after_the_table(self, tmp_path: Path) -> None:
+        path = tmp_path / "reactome-gsa-an-1.tsv"
+        kwargs = chainlit_flow.result_file_kwargs(path)
+        assert kwargs["name"] == "reactome-gsa-an-1.tsv"
+        assert kwargs["path"] == str(path)
