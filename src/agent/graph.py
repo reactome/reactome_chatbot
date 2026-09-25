@@ -9,6 +9,7 @@ from langchain_core.callbacks.base import Callbacks
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
@@ -526,6 +527,29 @@ class AgentGraph:
         yield AnswerEvent(
             kind="done", state="answered" if answered else "nothing_found"
         )
+
+    async def seed_history(
+        self, profile: str, *, thread_id: str, messages: list[BaseMessage]
+    ) -> bool:
+        """Put a turn into a thread's history as if it had been asked here.
+
+        For spec 013's handoff: the reader's summary becomes the thread's
+        previous turn, so their first message can be a follow-up. Recorded as
+        having ended at `postprocess`, the graph's last node, so the next
+        `ainvoke` starts an ordinary new turn with this history in place.
+
+        Returns False, and changes nothing, for an unknown profile.
+        """
+        if self.graph is None:
+            self.graph = await self.initialize()
+        if profile not in self.graph:
+            return False
+        await self.graph[profile].aupdate_state(
+            RunnableConfig(configurable={"thread_id": thread_id}),
+            {"chat_history": messages},
+            as_node="postprocess",
+        )
+        return True
 
     async def ainvoke(
         self,
