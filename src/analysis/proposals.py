@@ -14,6 +14,8 @@ import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
 
+from analysis.client import MAX_SUBMITTED_IDENTIFIERS
+
 MAX_PER_SESSION = 5
 MAX_SESSIONS = 2000
 
@@ -90,7 +92,10 @@ class ProposalStore:
         return latest
 
     def remember_list(self, session_id: str, identifiers: list[str]) -> None:
-        self._session(session_id).last_list = tuple(identifiers)
+        # Bounded like a submission: 2,000 sessions of 10K strings is not.
+        self._session(session_id).last_list = tuple(
+            identifiers[:MAX_SUBMITTED_IDENTIFIERS]
+        )
 
     def last_list(self, session_id: str) -> list[str] | None:
         session = self._sessions.get(session_id)

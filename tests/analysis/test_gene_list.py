@@ -24,6 +24,7 @@ from analysis.gene_list import (
     gene_list_request,
     identifiers_in,
     listed,
+    read_message,
     refers_back,
 )
 
@@ -59,6 +60,7 @@ REQUESTS = [
     *phrases.HELD_OUT_3_REQUESTS,
     *phrases.THIRD_REVIEW_REQUESTS,
     *phrases.HELD_OUT_4_REQUESTS,
+    *phrases.TUNED_LATER,
     *(
         (phrases.TRAILING_BASE + tail, ["TP53", "MDM2", "CDKN1A"])
         for tail in phrases.TRAILING
@@ -421,7 +423,6 @@ REFERS_BACK = "can you analyze the gene list that I gave you"
         REFERS_BACK,
         "please run an enrichment on those genes",
         "run ORA on the list I sent earlier",
-        "can you do a pathway analysis of them?",
         "analyse my gene list",
     ],
 )
@@ -437,6 +438,20 @@ def test_a_request_about_an_earlier_list_refers_back(text: str) -> None:
         "run ORA on TP53, MDM2",  # the list is here, not earlier
         "tell me about TP53",
         "",
+        # "them" could be anything; a gene list must be named.
+        "can you do a pathway analysis of them?",
+        # Pointing back at something that is not a gene list (review, round 4).
+        "analyse the pathways above",
+        "analyze the results above",
+        "can you perform the analysis the website mentioned",
+        "run a gene set analysis on my expression data I sent before",
+        "analyze them with GSEA instead",
+        "run GSA on it again with the samples I listed",
+        "analyse the file I uploaded earlier",
+        # A gene list is named, but it is a file or a GSA -- the guard for these.
+        "analyse the genes in the file I uploaded",
+        "run GSEA on those genes",
+        "run a GSA on the gene list from my expression matrix",
     ],
 )
 def test_other_messages_do_not(text: str) -> None:
@@ -466,3 +481,126 @@ def test_asking_for_a_list_when_none_was_sent_invites_one_that_would_work() -> N
     example = re.search(r"\*([^*]+)\*", NO_LIST_YET)
     assert example is not None
     assert answer_to_invitation(example.group(1)) == ["TP53", "ERBB2", "RUNX2"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # The how-to's own step-2 example, typed straight after it.
+        "control, control, treated, treated",
+        "yes, great",
+        "sure, sounds good",
+        "nope, later",
+        "ctrl, trt",
+        "WT, KO",
+        "day0, day3, day7",
+        "Sample1, Sample2, Sample3",
+        "Rep1 Rep2 Rep3",
+        "HeLa, U2OS cells",
+        "Treated, Untreated",
+        "GeneSymbol, Sample1, Sample2",
+    ],
+)
+def test_after_an_invitation_replies_that_are_not_genes_are_not_offered(
+    text: str,
+) -> None:
+    assert answer_to_invitation(text) is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "hmm, interesting",
+        "I see, makes sense",
+        "great, now tell me more",
+        "What is PD-1 PD-L1 checkpoint blockade",
+        "SARS-CoV-2 ACE2 TMPRSS2 entry pathway",
+    ],
+)
+def test_chat_is_not_remembered_as_a_list(text: str) -> None:
+    assert listed(text) is None
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("my genes are TP53, MDM2, CDKN1A", ["TP53", "MDM2", "CDKN1A"]),
+        ("my genes are egfr, kras, braf", ["egfr", "kras", "braf"]),
+    ],
+)
+def test_a_hand_over_reads_the_list_after_the_phrase(
+    text: str, expected: list[str]
+) -> None:
+    assert gene_list_request(text) == expected
+
+
+def test_are_does_not_open_a_list_in_general() -> None:
+    # Review, round 4: "are" opening lists made mid-sentence pairs requests.
+    assert (
+        gene_list_request("run an analysis on RNA-seq where the controls are WT, KO")
+        is None
+    )
+
+
+# --- the whole decision, as the handler takes it ------------------------------
+
+
+def test_reading_the_reported_first_conversation() -> None:
+    how_to = read_message("can we run a gsa experiment", invited=False)
+    assert how_to.offer is None
+    assert how_to.refers_back is False
+    handed = read_message(HANDED_OVER, invited=True)
+    assert handed.offer == ["TP53", "ERBB3", "JAX9"]
+    assert handed.listed == ["TP53", "ERBB3", "JAX9"]
+
+
+def test_reading_the_reported_second_conversation() -> None:
+    asked = read_message("What do TP53, ERBB3 and MDM2 have in common?", invited=False)
+    assert asked.offer is None
+    assert asked.listed == ["TP53", "ERBB3", "MDM2"]
+    back = read_message(REFERS_BACK, invited=False)
+    assert back.refers_back is True
+    assert back.offer is None
+
+
+def test_an_invitation_only_widens_what_is_offered() -> None:
+    assert read_message("TP53, ERBB3, MDM2", invited=False).offer is None
+    assert read_message("TP53, ERBB3, MDM2", invited=True).offer == [
+        "TP53",
+        "ERBB3",
+        "MDM2",
+    ]
+    assert (
+        read_message("control, control, treated, treated", invited=True).offer is None
+    )
+
+
+def test_a_matrix_request_is_left_to_the_gsa_how_to() -> None:
+    reading = read_message(
+        "run a gene set analysis on my expression data I sent before", invited=False
+    )
+    assert reading.offer is None
+    assert reading.refers_back is False
+
+
+@pytest.mark.parametrize(("text", "invited", "offer", "back"), phrases.HELD_OUT_5)
+def test_the_new_routes_on_a_held_out_set(
+    text: str, invited: bool, offer: list[str] | None, back: bool
+) -> None:
+    reading = read_message(text, invited=invited)
+    assert reading.offer == offer
+    assert reading.refers_back == back
+
+
+@pytest.mark.parametrize(("text", "current"), phrases.KNOWN_LIMITS_INVITED)
+def test_known_limits_after_an_invitation(text: str, current: list[str] | None) -> None:
+    assert read_message(text, invited=True).offer == current
+
+
+@pytest.mark.parametrize("invited", [False, True])
+def test_reading_a_whole_message_is_fast(invited: bool) -> None:
+    # Off the event loop, but still one worker thread per message.
+    for text in ("a b " * 15_000, "run analysis on them " + "a " * 29_000):
+        started = time.perf_counter()
+        read_message(text, invited=invited)
+        assert time.perf_counter() - started < 2.0

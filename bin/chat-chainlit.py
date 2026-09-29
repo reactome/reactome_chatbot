@@ -308,7 +308,13 @@ async def propose_gene_list(
         session_id(),
         proposal_id,
         Proposal(
-            text=message.content,
+            # Declined, this goes to the model: name the genes when they came
+            # from an earlier message, or "the list I gave you" means nothing.
+            text=(
+                f"{message.content}\n\n(The genes: {', '.join(identifiers)})"
+                if earlier
+                else message.content
+            ),
             message_id=message.id,
             identifiers=tuple(identifiers),
             actions=((run.name, run.id), (decline.name, decline.id)),
@@ -356,6 +362,7 @@ def run_as_task(work: Callable[[], Awaitable[None]]) -> None:
 
 @cl.action_callback("gene_list_run")
 async def on_gene_list_run(action: cl.Action) -> None:
+    proposals.take_invited(session_id())
     proposal = await take_proposal(action.payload.get("id"))
     if proposal is None:
         await cl.Message(content=gene_list.EXPIRED).send()
@@ -367,6 +374,7 @@ async def on_gene_list_run(action: cl.Action) -> None:
 
 @cl.action_callback("gene_list_no")
 async def on_gene_list_no(action: cl.Action) -> None:
+    proposals.take_invited(session_id())
     proposal = await take_proposal(action.payload.get("id"))
     if proposal is None:
         # After a restart the offer is gone, and so is the question's text.
@@ -537,31 +545,27 @@ async def main(message: cl.Message) -> None:
     # It only proposes; a question that merely looks like a request is one
     # click from being answered.
     text = message.content or ""
-    identifiers = gene_list.gene_list_request(text)
-    if identifiers is None and invited:
-        # Just told "include the genes in your message": a list is the reply.
-        identifiers = gene_list.answer_to_invitation(text)
-    earlier = False
-    if identifiers is None and gene_list.refers_back(text):
+    # Off the event loop: it is the one pure-Python pass over a message of
+    # up to 60K characters, and every session shares the loop.
+    reading = await asyncio.to_thread(gene_list.read_message, text, invited=invited)
+    if reading.listed is not None:
+        # Any list the reader sends -- offered or not -- is the one a later
+        # "analyse those genes" means.
+        proposals.remember_list(session_id(), reading.listed)
+    if reading.offer is not None:
+        await propose_gene_list(message, reading.offer)
+        return
+    if reading.refers_back:
         # "analyze the gene list that I gave you": the list is in an earlier
         # message. Offered by name, so the reader sees which list it means.
-        identifiers = proposals.last_list(session_id())
-        if identifiers is None:
+        earlier = proposals.last_list(session_id())
+        if earlier is None:
             # Otherwise the model answers, and sends them to the website's
             # GSA form -- which takes a matrix, not a list.
             await cl.Message(content=gene_list.NO_LIST_YET).send()
             proposals.invite(session_id())
             return
-        earlier = True
-    else:
-        # Any list the reader sends -- offered or not, e.g. "what do TP53,
-        # MDM2 and CDKN1A have in common?" -- is the one a later "analyse
-        # those" means.
-        sent = identifiers or gene_list.listed(text)
-        if sent is not None:
-            proposals.remember_list(session_id(), sent)
-    if identifiers is not None:
-        await propose_gene_list(message, identifiers, earlier=earlier)
+        await propose_gene_list(message, earlier, earlier=True)
         return
 
     # Asked in words rather than by attaching a file. The answer path is

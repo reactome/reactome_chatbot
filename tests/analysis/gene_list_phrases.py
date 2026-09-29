@@ -20,7 +20,13 @@
   question misfires, all two genes in a question, fixed by one rule).
 - HELD_OUT_4_*: written after round three's fixes, never tuned against:
   9/10 requests exact, 0/12 questions offered. The miss was pinned as a
-  known limit, then fixed by the hand-over phrasing (2026-09-29).
+  known limit, then fixed by the hand-over phrasing (2026-09-29); it is in
+  TUNED_LATER now, since a fix aimed at a case no longer measures it.
+- HELD_OUT_5: the three routes added 2026-09-29 (hand-over, reply to an
+  invitation, pointing back), written after round four of review and
+  measured once, untuned: 13/16. Two misses were then fixed ("Here's my
+  list:", and prose after "my genes are" read as genes) so those moved to
+  TUNED_LATER; the third is a KNOWN_LIMIT.
 
 A positive is exact: the identifiers read, in order. A request that reads
 the wrong list is a failure even if it fires.
@@ -544,11 +550,6 @@ THIRD_REVIEW_QUESTIONS: list[str] = [
 ]
 
 HELD_OUT_4_REQUESTS: list[tuple[str, list[str]]] = [
-    # Was a known limit; read since "my genes:" counts as handing a list over.
-    (
-        "find pathways for my genes: Pax6, Sox1, Nes, Otx2",
-        ["Pax6", "Sox1", "Nes", "Otx2"],
-    ),
     (
         "Run a pathway enrichment on KEAP1, NFE2L2, HMOX1, NQO1 please",
         ["KEAP1", "NFE2L2", "HMOX1", "NQO1"],
@@ -607,3 +608,37 @@ KNOWN_LIMITS: list[tuple[str, list[str] | None]] = [
         None,
     ),
 ]
+
+#: Cases a later fix was aimed at: they pass, and prove nothing about a rate.
+TUNED_LATER: list[tuple[str, list[str]]] = [
+    (
+        "find pathways for my genes: Pax6, Sox1, Nes, Otx2",
+        ["Pax6", "Sox1", "Nes", "Otx2"],
+    ),
+    (
+        "Here's my list: SPP1, COL1A1, RUNX2, BGLAP",
+        ["SPP1", "COL1A1", "RUNX2", "BGLAP"],
+    ),
+]
+
+#: (message, invited, offer expected, points back expected)
+HELD_OUT_5: list[tuple[str, bool, list[str] | None, bool]] = [
+    ("my gene list is ATG5, ATG7, BECN1", False, ["ATG5", "ATG7", "BECN1"], False),
+    ("these are the genes: nr4a1, fos, egr1", False, ["nr4a1", "fos", "egr1"], False),
+    ("My genes are highly expressed in muscle", False, None, False),
+    ("PTEN, PIK3CA, AKT1", True, ["PTEN", "PIK3CA", "AKT1"], False),
+    ("SOX9\nCOL2A1\nACAN", True, ["SOX9", "COL2A1", "ACAN"], False),
+    ("mock, mock, infected, infected", True, None, False),
+    ("I only have fold changes, is that ok?", True, None, False),
+    ("okay thanks, I'll try", True, None, False),
+    ("Tumour, Normal", True, None, False),
+    ("please run the enrichment on the genes I sent", False, None, True),
+    ("could you analyse that gene list now", False, None, True),
+    ("analyse the pathways in that result", False, None, False),
+    ("rerun the analysis with the other file", False, None, False),
+    ("can you run GSEA on my expression matrix from before", False, None, False),
+]
+
+#: Wrong, pinned: a pair joined by "and" is not read as a reply to an
+#: invitation (the pair rule is for questions; this one is not a question).
+KNOWN_LIMITS_INVITED: list[tuple[str, list[str] | None]] = [("BRCA1 and BRCA2", None)]

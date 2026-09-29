@@ -55,7 +55,7 @@ _REQUEST = re.compile(
 #: means "analyse these". Reported as missed on 2026-09-29, straight after
 #: the chat had said "include the genes in your message".
 _HANDED_OVER = re.compile(
-    r"\b(here\s+(is|are)\s+(my|the|a|our)\s+(gene\s+list|list\s+of\s+genes|genes|list)"
+    r"\b(here(\s+is|\s+are|\s*'s|s)\s+(my|the|a|our)\s+(gene\s+list|list\s+of\s+genes|genes|list)"
     r"|(my|our)\s+(gene\s+list|genes|list\s+of\s+genes)\s*(is|are|:)"
     r"|these\s+are\s+(my|our|the)\s+genes|gene\s+list\s*:)",
     re.IGNORECASE,
@@ -89,7 +89,9 @@ _ANY_SYMBOL = re.compile(r"\A[A-Za-z][A-Za-z0-9-]{1,14}\Z")
 #: Shaped like identifiers, but of something else.
 _OTHER_ACCESSIONS = re.compile(
     r"\A(chr[0-9XYM]|rs\d|GS[EM]\d|hg\d|GRCh|v\d|pH\d|Q\d\Z|R-[A-Z]{3}-\d"
-    r"|log\d|COVID|SARS|PMID|HEK\d|MCF\d|HCT\d"
+    r"|log\d|COVID|SARS|PMID|HEK\d|MCF\d|HCT\d|U2OS|HepG2|A549\Z|K562\Z"
+    # Sample and group labels: Sample1, rep2, day3, t0, ctrl1.
+    r"|(sample|rep|replicate|day|week|condition|group|batch|patient|donor|ctrl|t)\d+\Z"
     # Protein variants: G12D, V600E, L858R, T790M.
     r"|[A-Z]\d{2,4}[A-Z]\Z)",
     re.IGNORECASE,
@@ -104,7 +106,10 @@ _NOT_GENES = frozenset(
     RUN WITH GENE GENES LIST HELP HOW WHAT WHY THESE THIS THAT MY OUR ME IT
     THEM ON OF IN TO AN IS ARE ALL SOME ANALYSIS ANALYSE ANALYZE ENRICHMENT
     PATHWAY PATHWAYS PROTEINS PROTEIN IDENTIFIERS FOLLOWING HERE THANK
-    PERFORM SUBMIT MAP FIND DO EXECUTE ETC""".split()
+    PERFORM SUBMIT MAP FIND DO EXECUTE ETC
+    CONTROL CONTROLS TREATED UNTREATED TREATMENT CTRL TRT WT KO KD OE MOCK
+    VEHICLE DMSO SAMPLE SAMPLES GENEID GENESYMBOL SYMBOL HELA JURKAT
+    YES NO NOPE SURE LATER GREAT""".split()
 )
 
 
@@ -116,7 +121,7 @@ MAX_MESSAGE_CHARS = 60_000
 #: Words a list follows: "for", "on", "genes", and the request verbs
 #: themselves ("analyze TP53, MDM2").
 _OPENER_WORDS = frozenset(
-    """FOR ON OF IN WITH GENES PROTEINS LIST THESE FOLLOWING IS ARE RUN PERFORM SUBMIT
+    """FOR ON OF IN WITH GENES PROTEINS LIST THESE FOLLOWING RUN PERFORM SUBMIT
     ANALYSE ANALYZE MAP FIND""".split()
 )
 #: Joining words, read as part of the gap between two tokens.
@@ -305,6 +310,13 @@ def identifiers_in(
     return unique
 
 
+def _looks_like_genes(found: list[str]) -> bool:
+    """Enough to stand as a list without a request around it: three or more,
+    or at least one that is gene-shaped rather than a plain word. "yes,
+    great" and "control, treated" are replies, not lists."""
+    return len(found) >= 3 or any(_strength(t) in ("strong", "caps") for t in found)
+
+
 def gene_list_request(text: str) -> list[str] | None:
     """The identifiers to propose analysing, if this message asks for it."""
     if len(text) > MAX_MESSAGE_CHARS:
@@ -318,32 +330,46 @@ def gene_list_request(text: str) -> list[str] | None:
     # Typed in capitals, every word looks like a symbol; then only tokens
     # with a digit, or in the accession formats, count.
     found = identifiers_in(text, shouting=request.group().isupper())
+    if len(found) < MIN_IDENTIFIERS and handed_over:
+        # "my genes are TP53, MDM2, CDKN1A": the list follows the phrase,
+        # which opens it as a colon would. ("are" does not open lists in
+        # general: "...where the controls are WT, KO".)
+        match = _HANDED_OVER.search(text)
+        if match is not None:
+            # Opened as "for" would, not as a colon: a comma list of any case
+            # is read, but space-separated words are not -- "my genes are
+            # highly expressed in muscle" is prose (held-out set 5).
+            found = identifiers_in("for " + text[match.end() :])
     return found if len(found) >= MIN_IDENTIFIERS else None
 
 
 #: Pointing back at a list from an earlier message: "can you analyze the
 #: gene list that I gave you" (reported 2026-09-29, answered by the model).
+#: It must name a gene list -- "analyse the pathways above" or "run it again"
+#: point back at something else.
 _REFERS_BACK = re.compile(
-    r"\b(gave|given|sent|provided|pasted|shared|listed|mentioned|typed|earlier"
-    r"|above|before|previous\w*|that\s+list|those\s+genes|these\s+genes"
-    r"|the\s+genes|my\s+(gene\s+)?list|the\s+(gene\s+)?list|them|those)\b",
+    r"\b((the|my|that|this|our)\s+(gene\s+list|list\s+of\s+genes|list|genes)"
+    r"|(those|these|them|the)\s+genes|gene\s+list)\b",
+    re.IGNORECASE,
+)
+#: Pointing back at something that is not a gene list: a matrix, a file, a
+#: GSA -- which the GSA how-to answers -- or the results.
+_REFERS_ELSEWHERE = re.compile(
+    r"\b(matri(x|ces)|files?|upload\w*|attach\w*|expression|samples?|pathways"
+    r"|results?|website|gsa|gsea|reactome\s*gsa|counts?)\b",
     re.IGNORECASE,
 )
 
 
 def refers_back(text: str) -> bool:
-    """A request to analyse a list given in an earlier message, not this one.
-
-    Only ever acted on when the reader *has* sent a list this session, and
-    then only as an offer naming that list, so "analyse them" cannot run
-    something the reader did not mean.
-    """
+    """A request to analyse a gene list given in an earlier message."""
     if len(text) > MAX_MESSAGE_CHARS or _ABOUT.search(text):
         return False
     return bool(
         _REQUEST.search(text)
         and _ANALYSIS_TERMS.search(text)
         and _REFERS_BACK.search(text)
+        and not _REFERS_ELSEWHERE.search(text)
         and len(identifiers_in(text)) < MIN_IDENTIFIERS
     )
 
@@ -355,7 +381,11 @@ def listed(text: str) -> list[str] | None:
     # Anywhere: "What do TP53, MDM2 and CDKN1A have in common?" has no word
     # that opens a list, but it is the list "analyse those" will mean.
     found = identifiers_in(text, anywhere=True)
-    return found if len(found) >= MIN_IDENTIFIERS else None
+    # Three or more, one of them gene-shaped: "hmm, interesting" and
+    # "PD-1 PD-L1 checkpoint blockade" are not the list a reader means.
+    if len(found) >= 3 and any(_strength(t) in ("strong", "caps") for t in found):
+        return found[:MAX_SUBMITTED_IDENTIFIERS]
+    return None
 
 
 def answer_to_invitation(text: str) -> list[str] | None:
@@ -369,7 +399,39 @@ def answer_to_invitation(text: str) -> list[str] | None:
     if len(text) > MAX_MESSAGE_CHARS or _ABOUT.search(text):
         return None
     found = identifiers_in(text)
-    return found if len(found) >= MIN_IDENTIFIERS else None
+    if len(found) >= MIN_IDENTIFIERS and _looks_like_genes(found):
+        return found
+    return None
+
+
+@dataclass(frozen=True)
+class Reading:
+    """What one message means for the gene-list flow, decided in one place."""
+
+    #: Identifiers in this message to offer an analysis of.
+    offer: list[str] | None = None
+    #: It asks about a gene list from an earlier message.
+    refers_back: bool = False
+    #: A list it mentions, to remember for a later "analyse those".
+    listed: list[str] | None = None
+
+
+def read_message(text: str, *, invited: bool) -> Reading:
+    """Every gene-list decision about a message.
+
+    Pure, so the handler's choices can be tested, and run off the event
+    loop by the handler: on a 60K message the separate calls took up to a
+    second between them.
+    """
+    offer = gene_list_request(text)
+    if offer is None and invited:
+        # Just told "include the genes in your message": a list is the reply.
+        offer = answer_to_invitation(text)
+    if offer is not None:
+        return Reading(offer=offer, listed=offer[:MAX_SUBMITTED_IDENTIFIERS])
+    if refers_back(text):
+        return Reading(refers_back=True)
+    return Reading(listed=listed(text))
 
 
 def describe_proposal(identifiers: list[str], *, earlier: bool = False) -> str:
