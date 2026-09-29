@@ -288,7 +288,9 @@ async def remove_buttons(proposal: Proposal) -> None:
         await cl.Action(name=name, payload={}, id=action_id).remove()
 
 
-async def propose_gene_list(message: cl.Message, identifiers: list[str]) -> None:
+async def propose_gene_list(
+    message: cl.Message, identifiers: list[str], *, earlier: bool = False
+) -> None:
     """Offer to analyse the list; the buttons answer later, without blocking.
 
     Not `AskActionMessage`: that disables the message box until the reader
@@ -315,7 +317,8 @@ async def propose_gene_list(message: cl.Message, identifiers: list[str]) -> None
     for old in evicted:
         await remove_buttons(old)
     await cl.Message(
-        content=gene_list.describe_proposal(identifiers), actions=[run, decline]
+        content=gene_list.describe_proposal(identifiers, earlier=earlier),
+        actions=[run, decline],
     ).send()
 
 
@@ -501,6 +504,7 @@ async def main(message: cl.Message) -> None:
     # First, before any early return: a "yes" means the offer just made, so
     # any other message -- rate limited, an attachment -- ends that meaning.
     latest = proposals.take_latest(session_id())
+    invited = proposals.take_invited(session_id())
 
     if await message_rate_limited(config):
         return
@@ -532,9 +536,32 @@ async def main(message: cl.Message) -> None:
     # Before the GSA check, because the request that prompted this said "gsa".
     # It only proposes; a question that merely looks like a request is one
     # click from being answered.
-    identifiers = gene_list.gene_list_request(message.content or "")
+    text = message.content or ""
+    identifiers = gene_list.gene_list_request(text)
+    if identifiers is None and invited:
+        # Just told "include the genes in your message": a list is the reply.
+        identifiers = gene_list.answer_to_invitation(text)
+    earlier = False
+    if identifiers is None and gene_list.refers_back(text):
+        # "analyze the gene list that I gave you": the list is in an earlier
+        # message. Offered by name, so the reader sees which list it means.
+        identifiers = proposals.last_list(session_id())
+        if identifiers is None:
+            # Otherwise the model answers, and sends them to the website's
+            # GSA form -- which takes a matrix, not a list.
+            await cl.Message(content=gene_list.NO_LIST_YET).send()
+            proposals.invite(session_id())
+            return
+        earlier = True
+    else:
+        # Any list the reader sends -- offered or not, e.g. "what do TP53,
+        # MDM2 and CDKN1A have in common?" -- is the one a later "analyse
+        # those" means.
+        sent = identifiers or gene_list.listed(text)
+        if sent is not None:
+            proposals.remember_list(session_id(), sent)
     if identifiers is not None:
-        await propose_gene_list(message, identifiers)
+        await propose_gene_list(message, identifiers, earlier=earlier)
         return
 
     # Asked in words rather than by attaching a file. The answer path is
@@ -543,6 +570,8 @@ async def main(message: cl.Message) -> None:
     # because the same answer path serves the search page, which cannot.
     if asks_to_run_gsa(message.content or ""):
         await cl.Message(content=HOW_TO_RUN_GSA).send()
+        # Its last line invites a gene list in the next message.
+        proposals.invite(session_id())
         return
 
     await answer_with_model(message.content, message.id)

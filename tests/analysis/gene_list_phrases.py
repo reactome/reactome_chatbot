@@ -19,7 +19,8 @@
 - THIRD_REVIEW_*: that review's fresh set, then tuned against (4
   question misfires, all two genes in a question, fixed by one rule).
 - HELD_OUT_4_*: written after round three's fixes, never tuned against:
-  9/10 requests exact, 0/12 questions offered. The miss is a KNOWN_LIMIT.
+  9/10 requests exact, 0/12 questions offered. The miss was pinned as a
+  known limit, then fixed by the hand-over phrasing (2026-09-29).
 
 A positive is exact: the identifiers read, in order. A request that reads
 the wrong list is a failure even if it fires.
@@ -543,6 +544,11 @@ THIRD_REVIEW_QUESTIONS: list[str] = [
 ]
 
 HELD_OUT_4_REQUESTS: list[tuple[str, list[str]]] = [
+    # Was a known limit; read since "my genes:" counts as handing a list over.
+    (
+        "find pathways for my genes: Pax6, Sox1, Nes, Otx2",
+        ["Pax6", "Sox1", "Nes", "Otx2"],
+    ),
     (
         "Run a pathway enrichment on KEAP1, NFE2L2, HMOX1, NQO1 please",
         ["KEAP1", "NFE2L2", "HMOX1", "NQO1"],
@@ -600,5 +606,4 @@ KNOWN_LIMITS: list[tuple[str, list[str] | None]] = [
         "gene\tlog2FC\tpadj\nTP53\t2.1\t0.001\nMDM2\t1.5\t0.01\nCDKN1A\t3.2\t0.0001\nplease run an enrichment analysis",
         None,
     ),
-    ("find pathways for my genes: Pax6, Sox1, Nes, Otx2", None),
 ]

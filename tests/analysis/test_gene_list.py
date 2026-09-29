@@ -5,6 +5,7 @@ recogniser is a heuristic and a heuristic's failures are in its edges.
 """
 
 import asyncio
+import re
 import time
 from collections.abc import Callable
 
@@ -16,11 +17,14 @@ from analysis import client as analysis_client
 from analysis.client import MAX_SUBMITTED_IDENTIFIERS
 from analysis.gene_list import (
     MAX_PROPOSED_LISTED,
+    answer_to_invitation,
     confirms,
     describe_overrepresentation,
     describe_proposal,
     gene_list_request,
     identifiers_in,
+    listed,
+    refers_back,
 )
 
 # The message that prompted this, verbatim.
@@ -29,8 +33,17 @@ ASKED = (
     "ERBB2 and RUNX2"
 )
 
+#: Reported 2026-09-29: sent straight after the chat said "include the genes
+#: in your message", and answered by the model instead.
+HANDED_OVER = "here is my gene list TP53, ERBB3 and JAX9"
+
 REQUESTS = [
     (ASKED, ["TP53", "ERBB2", "RUNX2"]),
+    (HANDED_OVER, ["TP53", "ERBB3", "JAX9"]),
+    ("my genes are TP53, MDM2, CDKN1A", ["TP53", "MDM2", "CDKN1A"]),
+    ("Here are my genes:\nTP53\nMDM2", ["TP53", "MDM2"]),
+    ("these are my genes: egfr, kras, braf", ["egfr", "kras", "braf"]),
+    ("gene list: SOX2, POU5F1, NANOG", ["SOX2", "POU5F1", "NANOG"]),
     ("perform ORA on\nTP53\nMDM2\nCDKN1A\n", ["TP53", "MDM2", "CDKN1A"]),
     ("run a GSEA with genes MYC, MAX", ["MYC", "MAX"]),
     ("do a pathway analysis for TP53, TP53, tp53, MDM2", ["TP53", "MDM2"]),
@@ -362,3 +375,94 @@ def test_the_link_is_to_the_service_that_holds_the_token(
     assert analysis_client.pathway_browser_url("abc%3D") == (
         "https://beta.reactome.org/PathwayBrowser/#/DTAB=AN&ANALYSIS=abc%3D"
     )
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("TP53, ERBB3, JAX9", ["TP53", "ERBB3", "JAX9"]),
+        (HANDED_OVER, ["TP53", "ERBB3", "JAX9"]),
+        ("TP53\nMDM2\nCDKN1A", ["TP53", "MDM2", "CDKN1A"]),
+        ("ok: egfr, kras, braf", ["egfr", "kras", "braf"]),
+    ],
+)
+def test_after_an_invitation_a_bare_list_is_the_reply(
+    text: str, expected: list[str]
+) -> None:
+    assert answer_to_invitation(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "how do TP53 and MDM2 interact?",
+        "thanks",
+        "TP53",
+        "what does the 20 MB limit mean?",
+        "Can you explain the difference between TP53, MDM2 and CDKN1A?",
+    ],
+)
+def test_after_an_invitation_other_replies_are_not_lists(text: str) -> None:
+    assert answer_to_invitation(text) is None
+
+
+def test_a_bare_list_without_an_invitation_is_left_alone() -> None:
+    # The invitation is what makes a bare list a request.
+    assert gene_list_request("TP53, ERBB3, JAX9") is None
+
+
+#: Reported 2026-09-29, after the list had been sent in an earlier message.
+REFERS_BACK = "can you analyze the gene list that I gave you"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        REFERS_BACK,
+        "please run an enrichment on those genes",
+        "run ORA on the list I sent earlier",
+        "can you do a pathway analysis of them?",
+        "analyse my gene list",
+    ],
+)
+def test_a_request_about_an_earlier_list_refers_back(text: str) -> None:
+    assert refers_back(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "what is an enrichment analysis?",  # a question
+        "can you explain the list of pathways above?",  # about, not a request
+        "run ORA on TP53, MDM2",  # the list is here, not earlier
+        "tell me about TP53",
+        "",
+    ],
+)
+def test_other_messages_do_not(text: str) -> None:
+    assert not refers_back(text)
+
+
+def test_a_list_is_remembered_from_any_message() -> None:
+    assert listed("What do TP53, MDM2 and CDKN1A have in common?") == [
+        "TP53",
+        "MDM2",
+        "CDKN1A",
+    ]
+    assert listed("What does TP53 do?") is None
+
+
+def test_an_offer_of_an_earlier_list_says_so() -> None:
+    assert "in your earlier message" in describe_proposal(
+        ["TP53", "MDM2"], earlier=True
+    )
+    assert "in your message" in describe_proposal(["TP53", "MDM2"])
+
+
+def test_asking_for_a_list_when_none_was_sent_invites_one_that_would_work() -> None:
+    # The example in the reply, sent as the next message, must be offered.
+    from analysis.gene_list import NO_LIST_YET
+
+    example = re.search(r"\*([^*]+)\*", NO_LIST_YET)
+    assert example is not None
+    assert answer_to_invitation(example.group(1)) == ["TP53", "ERBB2", "RUNX2"]

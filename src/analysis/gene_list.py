@@ -50,6 +50,16 @@ _REQUEST = re.compile(
     r"|enrichment\s+(for|on)|(enrichment|ora|gsea|analysis)\s+please)\b",
     re.IGNORECASE,
 )
+#: Handing a list over: a request and an analysis term at once, because in
+#: a chat that analyses lists, "here is my gene list TP53, ERBB3 and JAX9"
+#: means "analyse these". Reported as missed on 2026-09-29, straight after
+#: the chat had said "include the genes in your message".
+_HANDED_OVER = re.compile(
+    r"\b(here\s+(is|are)\s+(my|the|a|our)\s+(gene\s+list|list\s+of\s+genes|genes|list)"
+    r"|(my|our)\s+(gene\s+list|genes|list\s+of\s+genes)\s*(is|are|:)"
+    r"|these\s+are\s+(my|our|the)\s+genes|gene\s+list\s*:)",
+    re.IGNORECASE,
+)
 #: A question about something, not a request to compute it.
 _ABOUT = re.compile(
     r"\b(explain\w*|why|how|describe|what\s+(does|is|are|would|do)|difference"
@@ -106,7 +116,7 @@ MAX_MESSAGE_CHARS = 60_000
 #: Words a list follows: "for", "on", "genes", and the request verbs
 #: themselves ("analyze TP53, MDM2").
 _OPENER_WORDS = frozenset(
-    """FOR ON OF IN WITH GENES PROTEINS LIST THESE FOLLOWING RUN PERFORM SUBMIT
+    """FOR ON OF IN WITH GENES PROTEINS LIST THESE FOLLOWING IS ARE RUN PERFORM SUBMIT
     ANALYSE ANALYZE MAP FIND""".split()
 )
 #: Joining words, read as part of the gap between two tokens.
@@ -216,7 +226,9 @@ def _accepted(run: _Run, *, shouting: bool, pair_ok: bool, question: bool) -> li
     return [token for token, _ in tokens]
 
 
-def identifiers_in(text: str, *, shouting: bool = False) -> list[str]:
+def identifiers_in(
+    text: str, *, shouting: bool = False, anywhere: bool = False
+) -> list[str]:
     """The identifiers in the lists in a message, in order, each once.
 
     A list is two or more identifier-shaped tokens joined the same way
@@ -274,7 +286,10 @@ def identifiers_in(text: str, *, shouting: bool = False) -> list[str]:
             run = None
             marked = any(c in gap for c in ":?\n")
             opens = (
-                match.start() == 0 or marked or previous_token.upper() in _OPENER_WORDS
+                anywhere
+                or match.start() == 0
+                or marked
+                or previous_token.upper() in _OPENER_WORDS
             )
             if strength is not None and opens:
                 run = _Run(opened_by_mark=marked, tokens=[(token, strength)])
@@ -294,8 +309,11 @@ def gene_list_request(text: str) -> list[str] | None:
     """The identifiers to propose analysing, if this message asks for it."""
     if len(text) > MAX_MESSAGE_CHARS:
         return None
-    request = _REQUEST.search(text)
-    if not (request and _ANALYSIS_TERMS.search(text)) or _ABOUT.search(text):
+    request = _REQUEST.search(text) or _HANDED_OVER.search(text)
+    handed_over = _HANDED_OVER.search(text) is not None
+    if not (request and (handed_over or _ANALYSIS_TERMS.search(text))) or _ABOUT.search(
+        text
+    ):
         return None
     # Typed in capitals, every word looks like a symbol; then only tokens
     # with a digit, or in the accession formats, count.
@@ -303,7 +321,58 @@ def gene_list_request(text: str) -> list[str] | None:
     return found if len(found) >= MIN_IDENTIFIERS else None
 
 
-def describe_proposal(identifiers: list[str]) -> str:
+#: Pointing back at a list from an earlier message: "can you analyze the
+#: gene list that I gave you" (reported 2026-09-29, answered by the model).
+_REFERS_BACK = re.compile(
+    r"\b(gave|given|sent|provided|pasted|shared|listed|mentioned|typed|earlier"
+    r"|above|before|previous\w*|that\s+list|those\s+genes|these\s+genes"
+    r"|the\s+genes|my\s+(gene\s+)?list|the\s+(gene\s+)?list|them|those)\b",
+    re.IGNORECASE,
+)
+
+
+def refers_back(text: str) -> bool:
+    """A request to analyse a list given in an earlier message, not this one.
+
+    Only ever acted on when the reader *has* sent a list this session, and
+    then only as an offer naming that list, so "analyse them" cannot run
+    something the reader did not mean.
+    """
+    if len(text) > MAX_MESSAGE_CHARS or _ABOUT.search(text):
+        return False
+    return bool(
+        _REQUEST.search(text)
+        and _ANALYSIS_TERMS.search(text)
+        and _REFERS_BACK.search(text)
+        and len(identifiers_in(text)) < MIN_IDENTIFIERS
+    )
+
+
+def listed(text: str) -> list[str] | None:
+    """A list the reader sent, remembered in case they ask about it later."""
+    if len(text) > MAX_MESSAGE_CHARS:
+        return None
+    # Anywhere: "What do TP53, MDM2 and CDKN1A have in common?" has no word
+    # that opens a list, but it is the list "analyse those" will mean.
+    found = identifiers_in(text, anywhere=True)
+    return found if len(found) >= MIN_IDENTIFIERS else None
+
+
+def answer_to_invitation(text: str) -> list[str] | None:
+    """The identifiers in a reply to "send me your genes", however phrased.
+
+    Straight after the chat has told the reader to include their genes in a
+    message, a message that lists two or more is that message -- no verb or
+    analysis term needed. Still only proposes, and a question about the
+    genes ("how do TP53 and MDM2 interact?") is still a question.
+    """
+    if len(text) > MAX_MESSAGE_CHARS or _ABOUT.search(text):
+        return None
+    found = identifiers_in(text)
+    return found if len(found) >= MIN_IDENTIFIERS else None
+
+
+def describe_proposal(identifiers: list[str], *, earlier: bool = False) -> str:
     """What the chat is about to submit, shown before it does."""
     shown = ", ".join(f"`{i}`" for i in identifiers[:MAX_PROPOSED_LISTED])
     more = len(identifiers) - MAX_PROPOSED_LISTED
@@ -320,7 +389,8 @@ def describe_proposal(identifiers: list[str]) -> str:
         "than chance would put there. (A gene set analysis with ReactomeGSA "
         "needs expression measurements for each sample — attach a matrix "
         "with 📎 if you have one.)\n\n"
-        f"I read **{len(identifiers)} identifiers** in your message: {shown}.{limit}\n\n"
+        f"I read **{len(identifiers)} identifiers** in your "
+        f"{'earlier ' if earlier else ''}message: {shown}.{limit}\n\n"
         "Run the analysis on these? (Or just type *yes*.)"
     )
 
@@ -453,3 +523,9 @@ EXPIRED_DECLINED = (
 )
 
 FAILED_TO_ANSWER = "Something went wrong answering that. Please try again."
+
+NO_LIST_YET = (
+    "I don't have a gene list from you in this conversation yet. Paste the "
+    "genes in your next message — for example *TP53, ERBB2, RUNX2* — and "
+    "I'll offer to run an over-representation analysis on them."
+)

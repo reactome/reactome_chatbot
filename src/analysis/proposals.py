@@ -33,6 +33,10 @@ class _Session:
     offers: OrderedDict[str, Proposal] = field(default_factory=OrderedDict)
     #: The offer a typed "yes" means: the one just made, and only that.
     latest: str | None = None
+    #: The chat has just told the reader to send their genes.
+    invited: bool = False
+    #: The last list the reader sent, for "analyse the list I gave you".
+    last_list: tuple[str, ...] | None = None
 
 
 @dataclass
@@ -84,6 +88,28 @@ class ProposalStore:
             return None
         latest, session.latest = session.latest, None
         return latest
+
+    def remember_list(self, session_id: str, identifiers: list[str]) -> None:
+        self._session(session_id).last_list = tuple(identifiers)
+
+    def last_list(self, session_id: str) -> list[str] | None:
+        session = self._sessions.get(session_id)
+        if session is None or session.last_list is None:
+            return None
+        return list(session.last_list)
+
+    def invite(self, session_id: str) -> None:
+        """The chat asked for a gene list; the next message may be one."""
+        self._session(session_id).invited = True
+
+    def take_invited(self, session_id: str) -> bool:
+        """Whether this message answers that invitation -- and forget it, so
+        only the message straight after counts."""
+        session = self._sessions.get(session_id)
+        if session is None:
+            return False
+        invited, session.invited = session.invited, False
+        return invited
 
 
 proposals = ProposalStore()

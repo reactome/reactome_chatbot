@@ -84,3 +84,27 @@ def test_nothing_to_take_is_none_not_an_error() -> None:
     assert store.take("unknown", "p") is None
     assert store.take("unknown", None) is None
     assert store.take_latest("unknown") is None
+
+
+def test_an_invitation_counts_for_the_next_message_only() -> None:
+    store = ProposalStore()
+    assert store.take_invited("s") is False
+    store.invite("s")
+    assert store.take_invited("s") is True
+    assert store.take_invited("s") is False
+
+
+def test_invitations_are_per_session() -> None:
+    store = ProposalStore()
+    store.invite("s1")
+    assert store.take_invited("s2") is False
+    assert store.take_invited("s1") is True
+
+
+def test_the_last_list_is_kept_per_session() -> None:
+    store = ProposalStore()
+    assert store.last_list("s") is None
+    store.remember_list("s", ["TP53", "MDM2"])
+    store.remember_list("s", ["EGFR", "KRAS"])
+    assert store.last_list("s") == ["EGFR", "KRAS"]
+    assert store.last_list("other") is None
