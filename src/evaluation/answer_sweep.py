@@ -74,9 +74,19 @@ EXPECTATIONS: tuple[Expectation, ...] = (
         question="I have a gene list do you have a tool I can use to analyse where in "
         "reactome those genes are involved",
         why="Answered 'Reactome does not provide a specific tool' -- false, and about "
-        "its flagship feature.",
-        must=("ReactomeGSA",),
+        "its flagship feature. Then, until 2026-09-29, this expected ReactomeGSA: the "
+        "wrong tool for a list, which needs no measurements. A gene list is an "
+        "over-representation analysis; this gate was requiring the wrong answer.",
+        must_match=(r"over-?represent|analy[sz]e\s+data",),
         must_not=("does not provide", "not currently available"),
+    ),
+    Expectation(
+        question="here is my gene list TP53, ERBB3 and JAX9. how can I analyse it?",
+        why="Reported 2026-09-29: told to paste the list into ReactomeGSA at "
+        "reactome.org/gsa -- a URL the user guide does not contain, for a tool that "
+        "needs a matrix.",
+        must_match=(r"over-?represent|analy[sz]e\s+data",),
+        must_not=("reactome.org/gsa",),
     ),
     # --- gene set analysis should prefer the tool needing no install --------
     Expectation(
