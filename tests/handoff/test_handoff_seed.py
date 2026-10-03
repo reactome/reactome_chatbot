@@ -271,3 +271,31 @@ def test_markup_in_a_handed_off_summary_is_shown_as_text() -> None:
     )
     assert re.search(r"(?<!\\)<", shown) is None
     assert "**CDK5**" in shown  # markdown kept
+
+
+def test_a_seeded_analysis_turn_is_marked_in_the_thread() -> None:
+    # The web-search guard reads this mark from the thread itself; a flag in
+    # the browser session was lost on reconnect (review, area 2).
+    turn = seed.seeded_turn(handoff(), {"pathways": []})
+    assert turn[1].additional_kwargs.get(seed.ANALYSIS_SEED_MARK) is True
+
+
+def test_the_graph_finds_the_mark_in_a_threads_history() -> None:
+    from types import SimpleNamespace
+
+    from agent.graph import AgentGraph
+
+    def graph_with(history: list[Any]) -> AgentGraph:
+        class _Compiled:
+            async def aget_state(self, _config: Any) -> Any:
+                return SimpleNamespace(values={"chat_history": history})
+
+        g = object.__new__(AgentGraph)
+        g.graph = {"react_to_me": _Compiled()}  # type: ignore[dict-item]
+        return g
+
+    seeded = graph_with(seed.seeded_turn(handoff(), {"pathways": []}))
+    plain = graph_with([HumanMessage("hi"), AIMessage("hello")])
+    assert asyncio.run(seeded.thread_holds_analysis("react_to_me", "t"))
+    assert not asyncio.run(plain.thread_holds_analysis("react_to_me", "t"))
+    assert not asyncio.run(seeded.thread_holds_analysis("unknown", "t"))

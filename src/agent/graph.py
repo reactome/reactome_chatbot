@@ -402,6 +402,23 @@ class AgentGraph:
         if self.pool:
             await self.pool.close()
 
+    async def thread_holds_analysis(self, profile: str, thread_id: str) -> bool:
+        """Whether a handoff seeded a reader's analysis into this thread.
+
+        Read from the thread's own history, so it holds for as long as the
+        history does -- across reconnects and restarts.
+        """
+        if self.graph is None or profile not in self.graph:
+            return False
+        state = await self.graph[profile].aget_state(
+            RunnableConfig(configurable={"thread_id": thread_id})
+        )
+        history = (state.values or {}).get("chat_history") or []
+        return any(
+            getattr(m, "additional_kwargs", {}).get("reactome_analysis_seed")
+            for m in history
+        )
+
     async def forget_thread(self, thread_id: str) -> None:
         """Delete a one-shot thread's checkpoints.
 

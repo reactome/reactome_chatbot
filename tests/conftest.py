@@ -1,4 +1,10 @@
 import importlib.util
+import os
+
+# Importing chainlit runs load_dotenv on the working directory's .env, which
+# put the repo's real configuration -- keys included -- into the test process
+# and changed what other tests saw (found 2026-10-03). Point it at nothing.
+os.environ["CHAINLIT_ENV_FILE"] = "/nonexistent/.env.tests"
 
 import pytest
 

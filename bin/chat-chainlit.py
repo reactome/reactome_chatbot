@@ -279,8 +279,6 @@ async def continue_from_handoff(handoff_id: str) -> None:
         await cl.Message(content=seed.UNAVAILABLE).send()
         return
 
-    if isinstance(handoff, AnalysisHandoff):
-        cl.user_session.set("analysis_seeded", True)
     logger.info(
         "handoff claimed: %s, tier %s, with data %s",
         handoff.kind,
@@ -535,14 +533,24 @@ async def answer_with_model(content: str, message_id: str) -> None:
     # data they agreed to show the model provider -- not a search engine.
     enable_postprocess: bool = is_feature_enabled(
         config, "postprocessing"
-    ) and not cl.user_session.get("analysis_seeded", False)
-    result: OutputState = await get_graph().ainvoke(
-        content,
-        chat_profile.lower(),
-        callbacks=[chainlit_cb, openai_cb],
-        thread_id=thread_id,
-        enable_postprocess=enable_postprocess,
-    )
+    ) and not await get_graph().thread_holds_analysis(chat_profile.lower(), thread_id)
+    try:
+        result: OutputState = await get_graph().ainvoke(
+            content,
+            chat_profile.lower(),
+            callbacks=[chainlit_cb, openai_cb],
+            thread_id=thread_id,
+            enable_postprocess=enable_postprocess,
+        )
+    except asyncio.CancelledError:
+        raise  # Stop: nothing to say.
+    except Exception:
+        # Chainlit registers on_message without a task wrapper, which logs an
+        # exception and sends nothing: a 429, an outage or a context-length
+        # error left the question unanswered with no word (review, area 2).
+        logger.exception("answering a chat message failed")
+        await cl.Message(content=gene_list.FAILED_TO_ANSWER).send()
+        return
     assistant_message: cl.Message | None = chainlit_cb.final_stream
     if assistant_message is not None:
         # Once streamed: "CDK5:p25" in a citation or the prose was read as a
@@ -612,8 +620,11 @@ def solve_key() -> str:
     )
     if verdict.ok:
         return f"solve:{verdict.nonce}"
-    forwarded = str(environ.get("HTTP_X_FORWARDED_FOR", "")).split(",")[0].strip()
-    return f"ip:{forwarded or environ.get('REMOTE_ADDR', '')}"
+    # Not X-Forwarded-For: the client writes its first hop, so rotating it
+    # bought a fresh quota per value (review, area 2). Cloudflare sets
+    # CF-Connecting-IP itself, and overwrites any a client sends.
+    client_ip = str(environ.get("HTTP_CF_CONNECTING_IP", "")).strip()
+    return f"ip:{client_ip or environ.get('REMOTE_ADDR', '')}"
 
 
 @cl.on_message
