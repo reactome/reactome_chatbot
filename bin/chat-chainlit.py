@@ -8,13 +8,16 @@ import os
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Any
 
 import chainlit as cl
 from chainlit.chat_context import chat_contexts
+from chainlit.config import config as chainlit_config
 from chainlit.context import context
 from chainlit.data.base import BaseDataLayer
 from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 from chainlit.oauth_providers import providers
+from chainlit.session import WebsocketSession
 from chainlit.types import ThreadDict
 from dotenv import load_dotenv
 from langchain_community.callbacks import OpenAICallbackHandler
@@ -32,13 +35,17 @@ from analysis.client import (
     submit_identifiers,
 )
 from analysis.proposals import Proposal, proposals
+from gsa import chat as gsa_chat
 from gsa.chainlit_flow import (
     Attachment,
     matrix_attachment,
+    receive_matrix,
     result_file_kwargs,
-    run_analysis,
+    run_with_labels,
 )
 from gsa.chat import HOW_TO_RUN_GSA, HOW_TO_RUN_GSA_WITH_A_MATRIX, asks_to_run_gsa
+from gsa.pending import pending_matrices
+from gsa.upload import Matrix
 from handoff import seed
 from handoff.store import AnalysisHandoff, handoffs
 from handoff.window import acknowledgement, claimed_id
@@ -169,39 +176,48 @@ async def resume(thread: ThreadDict) -> None:
 @cl.on_chat_end
 async def end() -> None:
     await static_messages(config, TriggerEvent.on_chat_end)
-    # Nothing of a finished session should outlive it in memory (review,
-    # area 2): Chainlit's own per-session message list, our offers, and -- for
-    # a guest, who can never resume -- the conversation's checkpoints.
+    # Chainlit calls this on EVERY disconnect, a network blip included, and
+    # keeps the session for `session_timeout` so a reconnect can resume it.
+    # Cleaning up here deleted a guest's conversation, offers and waiting
+    # matrix on every blip (found 2026-10-04 driving a network drop). So the
+    # cleanup waits out the timeout, and runs only if the session is gone.
     sid = session_id()
+    thread_id = current_thread_id()
+    guest = cl.user_session.get("user") is None
+    task = asyncio.get_running_loop().create_task(
+        _clean_up_when_gone(sid, thread_id, guest)
+    )
+    _cleanups.add(task)
+    task.add_done_callback(_cleanups.discard)
+
+
+#: Cleanups waiting out the session timeout, so they are not collected first.
+_cleanups: set[asyncio.Task[None]] = set()
+#: Past Chainlit's own clear, so the session is gone by the time we look.
+CLEANUP_GRACE_SECONDS = 60
+
+
+async def _clean_up_when_gone(sid: str, thread_id: str, guest: bool) -> None:
+    """Nothing of a finished session should outlive it in memory (review,
+    area 2): Chainlit's per-session message list, our offers and waiting
+    matrix, and -- for a guest, who can never resume -- the checkpoints."""
+    await asyncio.sleep(chainlit_config.project.session_timeout + CLEANUP_GRACE_SECONDS)
+    if WebsocketSession.get_by_id(sid) is not None:
+        return  # Reconnected: still in use. Its next disconnect tries again.
+    pending_matrices.drop(sid)
     chat_contexts.pop(sid, None)
     proposals.drop_session(sid)
     _seeding.pop(sid, None)
-    if cl.user_session.get("user") is None:
+    if guest:
         with contextlib.suppress(Exception):
-            await get_graph().forget_thread(current_thread_id())
+            await get_graph().forget_thread(thread_id)
 
 
-async def run_gsa_analysis(attachment: Attachment) -> None:
-    """Drive `gsa.chainlit_flow` with this session's chat operations.
-
-    The flow takes these four as arguments so it can be tested without a
-    browser; this is the only place that knows they are Chainlit.
-    """
-    # Created on the first update, not up front.
-    #
-    # It used to be sent before anything else, so it was the first message
-    # in the thread -- and Chainlit scrolls the latest user message to the
-    # top, which put the progress line above the fold. It updated faithfully
-    # for minutes where nobody could see it; the user saw "Started." and then
-    # nothing. Created lazily, it lands below "Started.", where they are
-    # looking.
+def gsa_chat_ops() -> tuple[Any, Any, Any, Any]:
+    """send, update_progress, send_file, and finish (which clears progress)."""
+    # Progress is created on the first update, not up front: sent first, it
+    # sat above the fold, where Chainlit scrolls the latest user message.
     progress: cl.Message | None = None
-
-    async def ask_for_grouping() -> str | None:
-        answer = await cl.AskUserMessage(
-            content="Which group is each sample in?", timeout=600
-        ).send()
-        return (answer or {}).get("output") if answer else None
 
     async def send(text: str) -> None:
         await cl.Message(content=text).send()
@@ -220,23 +236,37 @@ async def run_gsa_analysis(attachment: Attachment) -> None:
             content="", elements=[cl.File(**result_file_kwargs(path))]
         ).send()
 
-    # The progress line is removed rather than marked "Done".
-    #
-    # A `finally` that sets "Done." runs on the failure paths too, so a user
-    # whose analysis died would have been told it finished, one line above
-    # the message explaining that it had not. `run_analysis` says what
-    # happened on every path; this only has to stop the spinner.
+    async def finish() -> None:
+        # Removed rather than marked "Done": on a failure path that would
+        # contradict the message explaining it.
+        if progress is not None:
+            await progress.remove()
+
+    return send, update_progress, send_file, finish
+
+
+async def run_gsa_analysis(attachment: Attachment) -> None:
+    """Check an uploaded matrix and keep it, waiting for its labels."""
+    send, _, _, _ = gsa_chat_ops()
+    matrix = await receive_matrix(attachment, send=send)
+    if matrix is not None:
+        pending_matrices.put(session_id(), matrix)
+
+
+async def run_with_pending_labels(matrix: Matrix, reply: str) -> None:
+    send, update_progress, send_file, finish = gsa_chat_ops()
     try:
-        await run_analysis(
-            attachment,
-            ask_for_grouping=ask_for_grouping,
+        used = await run_with_labels(
+            matrix,
+            reply,
             send=send,
             update_progress=update_progress,
             send_file=send_file,
         )
     finally:
-        if progress is not None:
-            await progress.remove()
+        await finish()
+    if not used:
+        pending_matrices.put(session_id(), matrix)
 
 
 async def continue_from_handoff(handoff_id: str) -> None:
@@ -670,6 +700,17 @@ async def handle_message(message: cl.Message) -> None:
     if attachment is not None:
         await run_gsa_analysis(attachment)
         return
+
+    # A matrix waiting for labels: a reply that reads as labels runs it.
+    # Anything else is answered as usual, and the matrix keeps waiting.
+    waiting = pending_matrices.peek(session_id())
+    if waiting is not None and gsa_chat.looks_like_labels(
+        message.content or "", len(waiting.samples)
+    ):
+        matrix = pending_matrices.take(session_id())
+        if matrix is not None:
+            await run_with_pending_labels(matrix, message.content or "")
+            return
 
     # "yes" to the offer just made is the same as clicking Run.
     if latest and gene_list.confirms(message.content or ""):

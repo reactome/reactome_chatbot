@@ -20,7 +20,7 @@ from typing import Any, Literal, Protocol, TypedDict
 from gsa import chat
 from gsa.client import GsaClient
 from gsa.job import AnalysisFailedError, await_result, submit_uploaded_matrix
-from gsa.upload import UploadRejectedError, discard, validate
+from gsa.upload import Matrix, UploadRejectedError, discard, validate
 from util.logging import logging
 
 logger = logging.getLogger(__name__)
@@ -141,6 +141,52 @@ async def run_analysis(
         discard(path)
 
 
+async def receive_matrix(attachment: Attachment, *, send: Any) -> Matrix | None:
+    """Step one: check the upload and describe it. The file is kept, waiting
+    for labels, unless it was refused -- then it is deleted here."""
+    path = Path(attachment.path)
+    try:
+        # Off the event loop: reading and checking a 20 MB file stalled every
+        # session for seconds (review, area 2).
+        matrix = await asyncio.to_thread(validate, path)
+    except UploadRejectedError as refusal:
+        discard(path)
+        await send(str(refusal))
+        return None
+    except OSError:
+        # Unreadable, vanished, or not a file. The user did nothing wrong
+        # that they can act on, so do not describe it as their mistake.
+        logger.exception("could not read an uploaded file")
+        discard(path)
+        await send("I could not read that file — please try attaching it again.")
+        return None
+    await send(chat.describe_matrix(matrix))
+    return matrix
+
+
+async def run_with_labels(
+    matrix: Matrix,
+    reply: str,
+    *,
+    send: Any,
+    update_progress: Any,
+    send_file: Any,
+    client: GsaClient | None = None,
+) -> bool:
+    """Step two. False, with the file kept, if the reply is not a grouping
+    the reader can fix by replying again; True once the matrix is used."""
+    try:
+        grouping = chat.parse_grouping(reply, len(matrix.samples))
+    except chat.ReplyUnusableError as unusable:
+        await send(f"{unusable} Reply with the labels again when you are ready.")
+        return False
+    try:
+        await _run_grouped(matrix, grouping, send, update_progress, send_file, client)
+    finally:
+        discard(matrix.path)
+    return True
+
+
 async def _run(
     attachment: Attachment,
     path: Path,
@@ -150,36 +196,31 @@ async def _run(
     send_file: Any,
     client: GsaClient | None,
 ) -> None:
-    try:
-        # Off the event loop: reading and checking a 20 MB file stalled every
-        # session for seconds (review, area 2).
-        matrix = await asyncio.to_thread(validate, path)
-    except UploadRejectedError as refusal:
-        await send(str(refusal))
+    matrix = await receive_matrix(attachment, send=send)
+    if matrix is None:
         return
-    except OSError:
-        # Unreadable, vanished, or not a file. The user did nothing wrong
-        # that they can act on, so do not describe it as their mistake.
-        logger.exception("could not read an uploaded file")
-        await send("I could not read that file — please try attaching it again.")
-        return
-
-    await send(chat.describe_matrix(matrix))
-
     reply = await ask_for_grouping()
     if not reply:
-        discard(path)
         await send(
             "No labels arrived, so I have not run anything. The file is deleted."
         )
         return
-
     try:
         grouping = chat.parse_grouping(reply, len(matrix.samples))
     except chat.ReplyUnusableError as unusable:
         await send(f"{unusable} Send the file again when you are ready.")
         return
+    await _run_grouped(matrix, grouping, send, update_progress, send_file, client)
 
+
+async def _run_grouped(
+    matrix: Matrix,
+    grouping: chat.Grouping,
+    send: Any,
+    update_progress: Any,
+    send_file: Any,
+    client: GsaClient | None,
+) -> None:
     gsa = client or GsaClient()
     try:
         # `submit_uploaded_matrix` deletes the file itself, on every path.
