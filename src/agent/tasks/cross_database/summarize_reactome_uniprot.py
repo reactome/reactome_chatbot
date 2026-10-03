@@ -22,11 +22,11 @@ Instructions:
         - Incorporate or list these citations clearly so the user can trace the information back to each respective database.
             - Example:
                 - Reactome Citations:
-                    - <a href="https://reactome.org/content/detail/R-HSA-109581">Apoptosis</a>
-                    - <a href="https://reactome.org/content/detail/R-HSA-1640170">Cell Cycle</a>
+                    - [Apoptosis](https://reactome.org/content/detail/R-HSA-109581)
+                    - [Cell Cycle](https://reactome.org/content/detail/R-HSA-1640170)
                 - UniProt Citations:
-                    - <a href="https://www.uniprot.org/uniprotkb/Q92908">GATA6</a>
-                    - <a href="https://www.uniprot.org/uniprotkb/O00482">NR5A2</a>
+                    - [GATA6](https://www.uniprot.org/uniprotkb/Q92908)
+                    - [NR5A2](https://www.uniprot.org/uniprotkb/O00482)
 
     7. Answer in the Language requested.
     8. Write in a conversational and engaging tone suitable for a chatbot.

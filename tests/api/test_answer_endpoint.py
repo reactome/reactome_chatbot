@@ -708,3 +708,32 @@ def test_the_one_shot_thread_is_deleted_afterwards(
     )
     assert graph.threads, "the graph was never asked"
     assert graph.forgotten == graph.threads
+
+
+def test_markdown_link_citations_reach_the_page_as_prose(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Citations are markdown links since the chat stopped rendering HTML; the
+    # page gets citations as events, so the prose carries the label only.
+    graph = _StubGraph(
+        [
+            AnswerEvent(kind="token", text="CDK5 acts in [Apopto"),
+            AnswerEvent(
+                kind="token",
+                text="sis](https://reactome.org/content/detail/R-HSA-109581).",
+            ),
+            AnswerEvent(kind="done", state="answered"),
+        ]
+    )
+    monkeypatch.setattr("api.answer.get_graph", lambda: graph)
+    private, public = keys
+    response = _client(public).post(
+        f"{PREFIX}/answer",
+        json={"question": "what is CDK5", "caller_token": _token(private)},
+    )
+    prose = "".join(
+        json.loads(data)["text"]
+        for kind, data in _events(response.text)
+        if kind == "token"
+    )
+    assert prose == "CDK5 acts in Apoptosis."
