@@ -82,19 +82,27 @@ a real key is installed**: on the verifying side it is pure liability.
 
 Bound to loopback: Apache is the only thing that should reach it.
 
+In practice, run `~/update-beta-chat.sh --tag <sha>`: it does the following,
+keeps the previous container for `--rollback`, and refuses to switch over
+unless the answer sweep and routing probe pass. By hand:
+
 ```bash
 docker run -d --name biochat_beta_guest --restart unless-stopped \
   --env-file .env.beta \
   -v "$PWD/embeddings:/app/embeddings" \
   -v "$PWD/config.yml:/app/config.yml" \
+  -v "$PWD/deploy/beta/caller_token_public.pem:/run/secrets/caller_token_public.pem:ro" \
   -p 127.0.0.1:8000:8000 \
-  public.ecr.aws/reactome/reactome-chatbot:e398a37
+  public.ecr.aws/reactome/reactome-chatbot:<sha>
 
-curl -s localhost:8000/chat/ | grep -o React-to-Me   # should print React-to-Me
+curl -s localhost:8000/chat/ | grep -o React-to-Me      # should print React-to-Me
+curl -s -o /dev/null -w '%{http_code}\n' localhost:8000/chat/guest/   # 307: gated
 ```
 
-The image tag matches what production runs today, so this is a like-for-like
-baseline to compare against after the dependency upgrade.
+Use a current image. Older ones -- `e398a37`, which this section used to pin --
+bypass the human check when the key is unset, and the first smoke test above
+passes either way; the second is the one that says the chat is gated. (Updated
+2026-10-03, review area 1b.)
 
 Note: the landing page shows both a **Guest Access** and a **Log In** button. Only
 Guest Access works in this setup; wiring Log In needs a second container on :8001

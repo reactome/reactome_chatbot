@@ -69,3 +69,12 @@ def test_a_reader_from_a_plain_http_page_is_let_in(gate: dict[str, Any]) -> None
 
 def test_the_check_form_takes_no_files(gate: dict[str, Any]) -> None:
     assert gate["verify_with_a_file"] == 400
+
+
+def test_secrets_are_loaded_before_chainlit_is_imported() -> None:
+    # chainlit.oauth_providers reads OAUTH_*_CLIENT_SECRET once, at import; a
+    # secret loaded later was never seen (review, area 1b).
+    source = (PROBE.parents[2] / "bin" / "chat-fastapi.py").read_text()
+    assert source.index("load_secrets_to_environ(SECRET_NAMES)") < source.index(
+        "from chainlit"
+    )

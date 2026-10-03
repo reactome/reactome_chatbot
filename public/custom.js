@@ -16,7 +16,9 @@
     </div>
   `.trim();
 
-  const WATERMARK_SELECTOR = 'a.watermark';
+  // `.watermark`, not `a.watermark`: since Chainlit 2.11 the footer is a <div>,
+  // and the disclaimer had silently stopped appearing (review, area 1b).
+  const WATERMARK_SELECTOR = '.watermark';
   const STYLE_ID = 'custom-watermark-style';
   const SIBLING_ATTR = 'data-custom-watermark-sibling';
 
@@ -26,7 +28,7 @@
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
-      a.watermark {
+      .watermark {
         display: none !important;
       }
     `;

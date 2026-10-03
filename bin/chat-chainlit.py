@@ -3,6 +3,7 @@
 # or get_data_layer. Not fixable here; it needs stubs upstream. The file is
 # named with a hyphen, so it cannot be listed in [[tool.mypy.overrides]].
 import asyncio
+import contextlib
 import os
 import time
 from collections.abc import Awaitable, Callable
@@ -476,7 +477,21 @@ async def on_window_message(message: object) -> None:
         # the summary's data loads. Otherwise a question asked meanwhile ran on
         # the same thread, and the seed landed beside it and was lost -- while
         # the chat still said it was continuing from the summary.
-        run_as_task(lambda: continue_from_handoff(handoff_id))
+        # Messages wait for this, below. Running the claim as a task alone did
+        # not hold them: Chainlit ends its own startup task with task_end,
+        # which unlocks the box mid-seed whenever the claim arrives first --
+        # 6 of 6 page loads at 200ms latency (review, area 1b).
+        seeding = asyncio.Event()
+        _seeding[session_id()] = seeding
+
+        async def claim() -> None:
+            try:
+                await continue_from_handoff(handoff_id)
+            finally:
+                seeding.set()
+                _seeding.pop(session_id(), None)
+
+        run_as_task(claim)
 
     await cl.send_window_message(acknowledgement(handoff_id))
 
@@ -526,6 +541,20 @@ async def answer_with_model(content: str, message_id: str) -> None:
     save_openai_metrics(message_id, openai_cb)
 
 
+#: Handoffs being seeded, per session. A message waits for its session's seed
+#: before touching the thread, or the seed lands beside a running turn and is
+#: lost while the chat says it is continuing from the summary.
+_seeding: dict[str, asyncio.Event] = {}
+SEED_WAIT_SECONDS = 45.0
+
+
+async def wait_for_seed() -> None:
+    event = _seeding.get(session_id())
+    if event is not None:
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(event.wait(), SEED_WAIT_SECONDS)
+
+
 #: Guests' messages, limited per human check rather than per session. The
 #: per-session quota is keyed on the session id, which the client chooses, so
 #: a reconnect -- or a script -- started a fresh quota every time (review, 1b).
@@ -554,6 +583,8 @@ def solve_key() -> str:
 
 @cl.on_message
 async def main(message: cl.Message) -> None:
+    await wait_for_seed()
+
     # First, before any early return: a "yes" means the offer just made, so
     # any other message -- rate limited, an attachment -- ends that meaning.
     latest = proposals.take_latest(session_id())

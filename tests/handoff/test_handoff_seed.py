@@ -251,3 +251,23 @@ def test_what_the_model_is_sent_names_no_file_and_no_token() -> None:
         assert secret not in sent
     # And the data is really there, so the test is not passing on nothing.
     assert "Cell Cycle" in json.dumps(data)
+
+
+def test_markup_in_a_handed_off_summary_is_shown_as_text() -> None:
+    # The summary is model-written; a visitor who steered markup into it had
+    # it run in the browser of whoever opened their link (review, 1b).
+    import re
+
+    from handoff.store import SearchHandoff
+
+    shown = seed.shown_to_reader(
+        SearchHandoff(
+            kind="search",
+            question="what does CDK5 do?",
+            summary='**CDK5** <iframe srcdoc="<script>alert(1)</script>"></iframe>',
+            citations=(),
+            created_at=time.time(),
+        )
+    )
+    assert re.search(r"(?<!\\)<", shown) is None
+    assert "**CDK5**" in shown  # markdown kept

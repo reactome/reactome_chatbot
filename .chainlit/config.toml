@@ -29,7 +29,10 @@ latex = false
 auto_tag_thread = true
 
 # Allow users to edit their own messages
-edit_message = true
+# Off: an edit removed later turns from the screen but not from the model's
+# history, so text a reader edited out kept being sent with every turn
+# (review, area 1b).
+edit_message = false
 
 # Authorize users to spontaneously upload files with messages
 [features.spontaneous_file_upload]
