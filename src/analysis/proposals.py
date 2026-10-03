@@ -116,5 +116,9 @@ class ProposalStore:
         invited, session.invited = session.invited, False
         return invited
 
+    def drop_session(self, session_id: str) -> None:
+        """Forget everything about a session that has ended."""
+        self._sessions.pop(session_id, None)
+
 
 proposals = ProposalStore()

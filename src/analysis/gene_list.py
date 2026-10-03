@@ -459,14 +459,20 @@ def describe_proposal(identifiers: list[str], *, earlier: bool = False) -> str:
 
 _CONFIRMS = re.compile(
     r"\A\s*(yes|y|yep|yeah|ok|okay|sure|go|go\s+ahead|run|run\s+it|do\s+it"
-    r"|please|please\s+do|yes,?\s+please|please\s+run\s+it)\s*[.!]*\s*\Z",
+    r"|please|please\s+do|yes,?\s+please|please\s+run\s+it)\s*+[.!]*+\s*+\Z",
     re.IGNORECASE,
 )
 
 
+#: No typed "yes" is longer than this. Checked first: the pattern ran on the
+#: raw message, and "y" plus a million spaces backtracked for an hour and a
+#: half on the event loop every session shares (review, area 2).
+MAX_CONFIRM_CHARS = 40
+
+
 def confirms(text: str) -> bool:
     """A typed yes to the proposal just made, instead of clicking Run."""
-    return bool(_CONFIRMS.match(text))
+    return len(text) <= MAX_CONFIRM_CHARS and bool(_CONFIRMS.match(text))
 
 
 @dataclass(frozen=True)
