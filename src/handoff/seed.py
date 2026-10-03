@@ -26,7 +26,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from analysis.client import Fetched, fetch_not_found, fetch_result
 from analysis.disclosure import for_tier
-from analysis.summarise import prompt_input
+from analysis.summarise import DATA_RULES, prompt_input, summary_instruction
 from handoff.store import DEFAULT_TTL_SECONDS, AnalysisHandoff, Handoff, SearchHandoff
 from util.markdown import escape
 
@@ -51,16 +51,31 @@ async def analysis_data(
     results on a new release -- in which case the chat still continues the
     summary, and says it cannot see the underlying numbers.
     """
+    data, _ = await analysis_data_and_outcome(
+        handoff, fetch=fetch, fetch_unmatched=fetch_unmatched
+    )
+    return data
+
+
+async def analysis_data_and_outcome(
+    handoff: AnalysisHandoff,
+    *,
+    fetch: FetchResult = fetch_result,
+    fetch_unmatched: FetchUnmatched = fetch_not_found,
+) -> tuple[dict[str, Any] | None, str]:
+    """The data, and the Analysis Service's outcome: "ok", "gone",
+    "not_found" or "failed". A failure is not a deletion, and the model is
+    told which (review, area 1a: a timeout said the result was gone)."""
     fetched = await fetch(handoff.token)
     if fetched.outcome != "ok" or fetched.result is None:
-        return None
+        return None, fetched.outcome
     data = prompt_input(for_tier(fetched.result, handoff.tier))
     if handoff.tier == "identifiers":
         # Only at the tier the reader chose on the website, and only then.
         unmatched = await fetch_unmatched(handoff.token)
         if unmatched:
             data["identifiers_not_found_names"] = unmatched
-    return data
+    return data, "ok"
 
 
 def _sources(citations: tuple[tuple[str, str], ...]) -> str:
@@ -71,7 +86,7 @@ def _sources(citations: tuple[tuple[str, str], ...]) -> str:
 
 
 def seeded_turn(
-    handoff: Handoff, data: dict[str, Any] | None = None
+    handoff: Handoff, data: dict[str, Any] | None = None, *, outcome: str = "gone"
 ) -> list[BaseMessage]:
     """The conversation turn the chat starts from."""
     if isinstance(handoff, SearchHandoff):
@@ -81,17 +96,29 @@ def seeded_turn(
             HumanMessage(handoff.question),
             AIMessage(handoff.summary + _sources(handoff.citations)),
         ]
-    if data is None:
+    if data is None and outcome == "failed":
+        appendix = (
+            "\n\n(The analysis data behind this summary could not be fetched from "
+            "Reactome just now -- a temporary failure. The result itself may "
+            "still exist; only the summary above is known.)"
+        )
+    elif data is None:
         appendix = (
             "\n\n(The analysis result behind this summary is no longer available "
             "from Reactome, so only the summary above is known.)"
         )
     else:
+        # The same rules and instructions the summary was written under: the
+        # chat model reads this data for every follow-up, and without them
+        # answers from the input that once produced "12 of 1280" (review, 1a).
         appendix = (
             "\n\nThe analysis data this summary was built from "
             f"(disclosure tier: {handoff.tier}):\n"
-            f"```json\n{json.dumps(data, indent=1, default=str)}\n```"
+            f"```json\n{json.dumps(data, indent=1, default=str)}\n```\n\n"
+            f"Rules for answering from this data:\n{DATA_RULES}"
         )
+        if "verdict" in data:
+            appendix += f"\nInstructions that go with it: {summary_instruction(data)}"
     return [HumanMessage(HUMAN_TURN), AIMessage(handoff.summary + appendix)]
 
 

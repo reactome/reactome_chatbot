@@ -77,3 +77,15 @@ def test_reading_a_summary_keeps_it_from_being_evicted() -> None:
     store.put("c", "97", "aggregate", "summary c", CITES)
     assert store.get("a", "97", "aggregate") is not None
     assert store.get("b", "97", "aggregate") is None
+
+
+def test_a_stored_summary_is_never_overwritten() -> None:
+    # Two generations for one key can finish out of order; overwriting served
+    # a reader a summary they were never shown (review, area 1a).
+    store = SummaryStore()
+    store.put("t", "97", "aggregate", "first", ())
+    kept = store.put("t", "97", "aggregate", "second", ())
+    assert kept.text == "first"
+    found = store.get("t", "97", "aggregate")
+    assert found is not None
+    assert found.text == "first"

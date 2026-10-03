@@ -14,9 +14,9 @@ evidence that one is present.
 """
 
 import asyncio
+import contextlib
 import json
 import time
-import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -24,26 +24,19 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from agent.graph import resolve_llm_model
+from agent.graph import resolve_llm_model, resolve_temperature
 from agent.models import get_llm
 from analysis.client import current_release, fetch_not_found, fetch_result
 from analysis.disclosure import Tier, for_tier
 from analysis.store import Stored, SummaryStore
-from analysis.summarise import (
-    INEXACT_COUNT_INSTRUCTION,
-    NAMED_UNMATCHED_INSTRUCTION,
-    STATISTICS_INSTRUCTION,
-    TYPE_INSTRUCTION,
-    UNMATCHED_INSTRUCTION,
-    VERDICT_INSTRUCTION,
-    prompt_input,
-)
+from analysis.summarise import DATA_RULES, prompt_input, summary_instruction
 from util.caller_token import (
     TokenRejectedError,
     human_presence_detail,
     human_presence_reason,
     verify,
 )
+from util.config_yml import Config
 from util.logging import logging
 from util.rate_limit import identity_of, limiter_from_env
 
@@ -60,6 +53,9 @@ _limiter = limiter_from_env()
 #: Process-local, lost on deploy (research D4). Module state so it outlives
 #: a request, as the limiter does.
 _store = SummaryStore()
+#: Summaries being generated right now, so a second request for the same one
+#: waits and reuses it rather than generating a different text.
+_generating: dict[tuple[str, str, str], "asyncio.Future[None]"] = {}
 
 
 def stored_summary(token: str, release: str, tier: str) -> Stored | None:
@@ -76,19 +72,11 @@ You explain a completed Reactome pathway-analysis result to the researcher who
 ran it.
 
 Rules, in order of importance:
-1. Every quantitative claim must come from the data below. Never state a
-   statistic it does not contain.
-2. Follow the verdict instruction exactly. It is computed from the data, not
-   guessed, and it overrides any impression the numbers give you.
-3. Whenever you call a pathway significant, say whether that is before or
-   after multiple-testing correction.
-4. Do not name a pathway that is not in the data below.
-5. Never state how many pathways were significant overall unless the data
-   says that count is exact. Only the highest-ranked are included.
+{rules}
 6. Do not list sources or citations at the end. The interface renders them
    from structured events; a list here is a duplicate.
 7. Four short paragraphs at most. Plain prose for a working scientist.
-""".strip()
+""".strip().format(rules=DATA_RULES)
 
 
 IMPLEMENTED_TIERS = ("aggregate", "identifiers")
@@ -177,6 +165,8 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
 
     async def stream() -> AsyncIterator[str]:
         state = "failed"
+        mine: asyncio.Future[None] | None = None
+        key: tuple[str, str, str] = ("", "", "")
         try:
             async with asyncio.timeout(SUMMARY_TIMEOUT_SECONDS):
                 fetched = await fetch_result(body.token)
@@ -206,6 +196,20 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
                     if release
                     else None
                 )
+                if cached is None and release:
+                    # Another request is generating this very summary: wait
+                    # for it and serve its text, so both readers see one
+                    # summary. Generating twice let the later one overwrite
+                    # what the earlier reader had seen (review, area 1a).
+                    key = (body.token, release, body.disclosure)
+                    inflight = _generating.get(key)
+                    if inflight is not None:
+                        with contextlib.suppress(Exception):
+                            await asyncio.shield(inflight)
+                        cached = _store.get(body.token, release, body.disclosure)
+                    if cached is None:
+                        mine = asyncio.get_running_loop().create_future()
+                        _generating[key] = mine
 
                 # Which tier the answer was actually built from.
                 applied: Tier = body.disclosure
@@ -225,6 +229,11 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
                         # disclose and silently got the other summary has
                         # been told nothing and given nothing.
                         applied = "aggregate"
+                        # An aggregate summary may already be stored: reuse
+                        # it rather than generate a second, different one
+                        # (review, area 1a).
+                        if release:
+                            cached = _store.get(body.token, release, "aggregate")
                         logger.warning(
                             "identifier tier requested but the not-found "
                             "lookup returned nothing; serving aggregate"
@@ -275,20 +284,8 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
                     yield _done("summarised", time.monotonic() - started)
                     return
 
-                provider, model, base_url = resolve_llm_model(None)
-                llm = get_llm(provider, model, base_url=base_url, request_timeout=90.0)
-                instruction = VERDICT_INSTRUCTION[model_input["verdict"]]
-                if not model_input["significant_count_is_exact"]:
-                    instruction = f"{instruction} {INEXACT_COUNT_INSTRUCTION}"
-                by_type = TYPE_INSTRUCTION.get(
-                    str(model_input.get("analysis_type") or "").upper()
-                )
-                if by_type:
-                    instruction = f"{instruction} {by_type}"
-                instruction = f"{instruction} {STATISTICS_INSTRUCTION}"
-                instruction = f"{instruction} {UNMATCHED_INSTRUCTION}"
-                if model_input.get("identifiers_not_found_names"):
-                    instruction = f"{instruction} {NAMED_UNMATCHED_INSTRUCTION}"
+                llm = _summary_llm()
+                instruction = summary_instruction(model_input)
                 messages = [
                     ("system", SYSTEM_PROMPT),
                     (
@@ -299,10 +296,13 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
                 ]
                 produced: list[str] = []
                 async for chunk in llm.astream(messages):
-                    text = getattr(chunk, "content", "")
-                    if isinstance(text, str) and text:
+                    text = _text(chunk)
+                    if text:
                         produced.append(text)
                         yield _sse("token", {"text": text})
+                if not produced:
+                    # Nothing came back: not a summary, whatever the stream said.
+                    raise RuntimeError("the model returned no text")
                 if release:
                     _store.put(
                         body.token, release, applied, "".join(produced), citations
@@ -319,11 +319,53 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
             # terminal event to stop waiting.
             logger.exception("summarising an analysis failed")
             state = "failed"
+        finally:
+            if mine is not None:
+                if _generating.get(key) is mine:
+                    del _generating[key]
+                if not mine.done():
+                    mine.set_result(None)
         yield _done(state, time.monotonic() - started)
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 
 
-def new_thread_id() -> str:
-    """Unused by the stream, kept for parity with the answer endpoint's ids."""
-    return f"summary-{uuid.uuid4()}"
+def _summary_llm() -> Any:
+    """The chat's model, chosen the way the chat chooses it.
+
+    The first version passed no config and no temperature: a model or
+    provider set in config.yml applied to the chat but not to summaries, and
+    a fixed-temperature model (o3, o4-mini) rejected the default 0.0 -- every
+    summary failing while the chat worked (review, area 1a).
+    """
+    config = Config.from_yaml()
+    llm_config = config.llm if config else None
+    provider, model, base_url = resolve_llm_model(llm_config)
+    temperature = resolve_temperature(
+        model, configured=llm_config.temperature if llm_config else None
+    )
+    return get_llm(
+        provider,
+        model,
+        base_url=base_url,
+        request_timeout=90.0,
+        temperature=temperature,
+    )
+
+
+def _text(chunk: Any) -> str:
+    """A streamed chunk's text, whether a string or content blocks.
+
+    Responses-API models stream content blocks; reading only strings dropped
+    all of it and still reported `summarised` (review, area 1a).
+    """
+    content = getattr(chunk, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            block.get("text", "")
+            for block in content
+            if isinstance(block, dict) and block.get("type") in ("text", "output_text")
+        )
+    return ""

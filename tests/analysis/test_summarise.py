@@ -2,7 +2,13 @@
 
 from typing import Any
 
-from analysis.summarise import VERDICT_INSTRUCTION, prompt_input
+from analysis.summarise import (
+    INEXACT_COUNT_INSTRUCTION,
+    UNKNOWN_COUNT_INSTRUCTION,
+    VERDICT_INSTRUCTION,
+    prompt_input,
+    summary_instruction,
+)
 
 
 def _payload(*fdrs: float) -> dict[str, Any]:
@@ -297,3 +303,23 @@ def test_no_column_count_is_claimed_when_the_pathways_disagree() -> None:
 def test_a_result_with_no_expression_values_claims_no_columns() -> None:
     assert "expression_columns" not in prompt_input(_payload(1e-9))
     assert "exp" not in prompt_input(_payload(1e-9))["pathways"][0]
+
+
+def _input(shown: int, significant: int) -> dict[str, Any]:
+    return {
+        "verdict": "has_findings" if significant else "nothing_significant",
+        "significant_count_is_exact": False,
+        "significant_among_shown": significant,
+        "pathways_shown": shown,
+        "analysis_type": "OVERREPRESENTATION",
+    }
+
+
+def test_all_significant_is_said_only_when_it_is_true() -> None:
+    # "Every one of them is significant" was added whenever the count was not
+    # exact -- including when only 2 of 12 were (review, area 1a).
+    assert INEXACT_COUNT_INSTRUCTION in summary_instruction(_input(12, 12))
+    two = summary_instruction(_input(12, 2))
+    assert INEXACT_COUNT_INSTRUCTION not in two
+    assert UNKNOWN_COUNT_INSTRUCTION in two
+    assert INEXACT_COUNT_INSTRUCTION not in summary_instruction(_input(12, 0))
