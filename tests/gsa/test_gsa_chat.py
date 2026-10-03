@@ -289,3 +289,21 @@ def test_the_matrix_only_reply_offers_no_gene_list() -> None:
     assert "Attach" in chat.HOW_TO_RUN_GSA_WITH_A_MATRIX
     assert "list of genes" not in chat.HOW_TO_RUN_GSA_WITH_A_MATRIX
     assert "list of genes" in chat.HOW_TO_RUN_GSA
+
+
+@pytest.mark.parametrize(
+    ("reply", "reference", "other"),
+    [
+        ("MOCK, MOCK, MCM, MCM", "MOCK", "MCM"),
+        ("WT, KO, WT, KO", "WT", "KO"),
+        ("control, control, Treated, Treated", "control", "Treated"),
+        ("healthy, disease", "healthy", "disease"),
+    ],
+)
+def test_the_first_label_given_is_group_one(
+    reply: str, reference: str, other: str
+) -> None:
+    # It was the alphabetical first, so the baseline depended on spelling
+    # (review, area 2).
+    grouping = chat.parse_grouping(reply, len(reply.split(",")))
+    assert (grouping.group1, grouping.group2) == (reference, other)

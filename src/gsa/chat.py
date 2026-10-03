@@ -114,7 +114,11 @@ def parse_grouping(reply: str, sample_count: int) -> Grouping:
         )
 
     canonical = [seen[label.casefold()] for label in labels]
-    group1, group2 = sorted(seen.values())
+    # The first label to appear is the reference. It was the alphabetical
+    # first, so which group was the baseline -- and so every Up and Down --
+    # depended on spelling: "WT, KO" compared against KO (review, area 2).
+    # People list the control first, as the measured MOCK/MCM run did.
+    group1, group2 = list(seen.values())
     return Grouping(labels=canonical, group1=group1, group2=group2)
 
 
@@ -132,7 +136,7 @@ def describe_progress(status: AnalysisStatus) -> str:
     return f"Running the analysis — {detail}"
 
 
-def describe_result(finished: Finished) -> str:
+def describe_result(finished: Finished, grouping: Grouping | None = None) -> str:
     """What the person reads. Never a prompt.
 
     The Pathway Browser link is included *here* and not in anything the
@@ -148,6 +152,15 @@ def describe_result(finished: Finished) -> str:
         f"**{significant:,} of {total:,} pathways** are significant at FDR < 0.05.",
         "",
     ]
+    if top and grouping is not None:
+        # The table's Direction was never said to be relative to anything.
+        # Only what is certain is stated: which groups, in which order.
+        # ReactomeGSA's own docs do not say which way its sign points.
+        lines += [
+            f"Compared: **{escape(grouping.group1)}** (group 1, the first "
+            f"label you gave) with **{escape(grouping.group2)}** (group 2).",
+            "",
+        ]
     if top:
         lines += [
             "| Pathway | Direction | FDR |",

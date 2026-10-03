@@ -12,17 +12,22 @@ closure`, visible only through `/status`. So `submit_*` returns an ID and
 promises nothing, and `await_result` is where success or failure is decided.
 """
 
+import asyncio
 import contextlib
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
+
+import httpx
 
 from gsa import results as gsa_results
-from gsa.client import AnalysisStatus, GsaClient, GsaError
+from gsa.client import AnalysisStatus, GsaClient, GsaError, GsaNotReadyError
 from gsa.upload import Matrix, discard
 from util.logging import logging
+
+T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +175,7 @@ async def submit_uploaded_matrix(
             method=method,
             dataset_name="uploaded",
             dataset_type=dataset_type,
-            matrix=matrix.text,
+            matrix=await asyncio.to_thread(lambda: matrix.text),
             samples=matrix.samples,
             analysis_group=analysis_group,
             group1=group1,
@@ -254,6 +259,35 @@ def prune_results(
     return removed
 
 
+#: Consecutive failures tolerated on one request before giving up, and the
+#: pause between tries. A run takes up to 30 minutes and ~150 polls; with no
+#: tolerance, one 502 or timeout anywhere lost a finished analysis the reader
+#: could not get back (review, area 2: ~17% of 30-minute runs at a 0.1%
+#: per-request failure rate).
+TRANSIENT_ATTEMPTS = 4
+TRANSIENT_PAUSE_SECONDS = 5.0
+
+
+async def _patiently(call: Callable[[], Awaitable[T]]) -> T:
+    """Retry a request through brief outages; a real refusal still raises."""
+    for attempt in range(1, TRANSIENT_ATTEMPTS + 1):
+        try:
+            return await call()
+        except (GsaNotReadyError, AnalysisFailedError):
+            raise
+        except (GsaError, httpx.HTTPError) as exc:
+            if attempt == TRANSIENT_ATTEMPTS:
+                raise
+            logger.warning(
+                "gsa request failed (%s); retrying, attempt %d of %d",
+                type(exc).__name__,
+                attempt,
+                TRANSIENT_ATTEMPTS,
+            )
+            await _sleep(TRANSIENT_PAUSE_SECONDS * attempt)
+    raise AssertionError("unreachable")
+
+
 async def await_result(
     client: GsaClient,
     analysis_id: str,
@@ -275,7 +309,7 @@ async def await_result(
     polls = 0
 
     while True:
-        status = await client.analysis_status(analysis_id)
+        status = await _patiently(lambda: client.analysis_status(analysis_id))
         polls += 1
         if on_progress is not None:
             await on_progress(status)
@@ -294,7 +328,7 @@ async def await_result(
             )
         await _sleep(poll_interval)
 
-    parsed = gsa_results.parse(await client.result(analysis_id))
+    parsed = gsa_results.parse(await _patiently(lambda: client.result(analysis_id)))
     if not parsed.pathways:
         # Complete, and yet nothing to report. Better to say so than to
         # hand back an empty file and an exact-sounding zero.

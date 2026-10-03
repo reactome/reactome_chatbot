@@ -14,6 +14,8 @@ deserves to hear so immediately and in their own terms.
 """
 
 import contextlib
+import csv
+import io
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,11 +48,24 @@ class Matrix:
     #: the first thing anyone does with a gene count is show it to someone.
     #: "unknown" is a fact; "-1 genes" is a bug wearing a number.
     gene_count: int | None
+    #: How the upload separates cells; `text` always hands the service tabs.
+    delimiter: str = "\t"
 
     @property
     def text(self) -> str:
-        """The matrix itself. Never logged, never shown, never prompted."""
-        return self.path.read_text()
+        """The matrix, tab-separated. Never logged, never shown, never prompted.
+
+        Decoded the way `validate` decoded it -- a strict read here let a
+        Windows-1252 file pass validation and then fail at submit, every
+        retry (review, area 2) -- and tab-separated whatever was uploaded:
+        the service reads only tabs, and a CSV went through unconverted.
+        A blocking read: call it with `asyncio.to_thread`.
+        """
+        text = decode(self.path.read_bytes())
+        if self.delimiter == "\t":
+            return text
+        rows = csv.reader(io.StringIO(text))
+        return "\n".join("\t".join(cell.strip() for cell in row) for row in rows if row)
 
 
 def max_upload_bytes() -> int:
@@ -62,6 +77,29 @@ def max_upload_bytes() -> int:
     except ValueError:
         return DEFAULT_MAX_UPLOAD_BYTES
     return value if value > 0 else DEFAULT_MAX_UPLOAD_BYTES
+
+
+#: More samples than any expression study here; a bound on what one upload
+#: can make the server hold (a 20 MB one-line header was 7 million names).
+MAX_SAMPLES = 1000
+#: Lines read before deciding it is a matrix, blank ones included: blank
+#: lines used to skip the early exit, and 21 million of them stalled every
+#: session for two seconds.
+MAX_LINES_READ = 5000
+
+
+def decode(raw: bytes) -> str:
+    """The file's text: UTF-8 (with or without BOM), UTF-16, or Windows-1252.
+
+    Excel on Windows writes 1252 or UTF-16; reading those as UTF-8 with
+    replacement showed the reader garbled sample names to label.
+    """
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return raw.decode("utf-16")
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return raw.decode("cp1252", errors="replace")
 
 
 def _split(line: str) -> list[str]:
@@ -90,22 +128,39 @@ def validate(path: Path) -> Matrix:
         raise UploadRejectedError("That file is empty.")
 
     header: list[str] = []
+    first_row: list[str] = []
     rows = 0
     counted = True
-    with path.open(encoding="utf-8", errors="replace") as handle:
-        for index, line in enumerate(handle):
-            if not line.strip():
-                continue
-            if not header:
-                header = _split(line.rstrip("\n"))
-                continue
-            rows += 1
-            if index > 5000 and rows > MIN_DATA_ROWS:
-                # Enough to know it is a matrix. Counting every gene of a
-                # 20,000-row file to answer "is this a matrix" is work
-                # nobody asked for.
-                counted = False
-                break
+    delimiter = "\t"
+    # Iterated, not split: 21 million blank lines as a list is the problem
+    # this loop's bound exists to avoid.
+    for index, raw_line in enumerate(io.StringIO(decode(path.read_bytes()))):
+        line = raw_line.rstrip("\r\n")
+        if index > MAX_LINES_READ:
+            # Enough to know whether it is a matrix. Counting every gene of
+            # a 20,000-row file is work nobody asked for -- and a file of
+            # blank lines must not make us read all of it.
+            if rows <= MIN_DATA_ROWS:
+                raise UploadRejectedError(
+                    "That file is mostly empty lines. It needs a header row "
+                    "naming the samples, then one row per gene."
+                )
+            counted = False
+            break
+        if not line.strip():
+            continue
+        if not header:
+            delimiter = "\t" if "\t" in line else ","
+            header = _split(line)
+            if len(header) > MAX_SAMPLES + 1:
+                raise UploadRejectedError(
+                    f"That file has {len(header) - 1:,} columns. This handles up "
+                    f"to {MAX_SAMPLES:,} samples."
+                )
+            continue
+        if not first_row:
+            first_row = _split(line)
+        rows += 1
 
     if len(header) < MIN_COLUMNS:
         raise UploadRejectedError(
@@ -118,7 +173,11 @@ def validate(path: Path) -> Matrix:
 
     # The first header cell labels the gene column and is often blank --
     # the measured example's header starts with a tab.
-    samples = [name.strip() for name in header[1:] if name.strip()]
+    # R's write.table writes no cell for the gene column, so the header is
+    # one short of the rows; taking header[1:] then dropped the first
+    # sample, and its label would have gone to the wrong column (review, 2).
+    names = header if len(first_row) == len(header) + 1 else header[1:]
+    samples = [name.strip() for name in names if name.strip()]
     if len(samples) < 2:
         raise UploadRejectedError(
             "There is only one sample in that file. A gene set analysis "
@@ -130,6 +189,7 @@ def validate(path: Path) -> Matrix:
         size_bytes=size,
         samples=samples,
         gene_count=rows if counted else None,
+        delimiter=delimiter,
     )
 
 

@@ -13,6 +13,7 @@ model is handed only the bounded result at the end, if the user asks for a
 summary at all.
 """
 
+import asyncio
 from pathlib import Path
 from typing import Any, Literal, Protocol, TypedDict
 
@@ -150,7 +151,9 @@ async def _run(
     client: GsaClient | None,
 ) -> None:
     try:
-        matrix = validate(path)
+        # Off the event loop: reading and checking a 20 MB file stalled every
+        # session for seconds (review, area 2).
+        matrix = await asyncio.to_thread(validate, path)
     except UploadRejectedError as refusal:
         await send(str(refusal))
         return
@@ -223,7 +226,12 @@ async def _run(
         return
     except Exception:
         logger.exception("gsa analysis failed", extra={"analysis": analysis_id})
-        await send("Something went wrong while waiting for the analysis.")
+        # With the id: the analysis may well have finished, and the upload is
+        # already deleted, so this is the only way back to it (review, 2).
+        await send(
+            "Something went wrong while waiting for the analysis. It may still "
+            f"finish on Reactome's side, as analysis `{analysis_id}`."
+        )
         return
 
     # `finished.for_model` is deliberately not used here.
@@ -243,6 +251,6 @@ async def _run(
     # way to tell "sent and not shown" from "never sent". This line is the
     # difference.
     logger.info("gsa result sending", extra={"analysis": finished.analysis_id})
-    await send(chat.describe_result(finished))
+    await send(chat.describe_result(finished, grouping))
     await send_file(finished.table_path)
     logger.info("gsa result delivered", extra={"analysis": finished.analysis_id})

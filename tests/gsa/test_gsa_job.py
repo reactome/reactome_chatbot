@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 
 from gsa import job
-from gsa.client import AnalysisStatus, DatasetSummary, LoadingStatus
+from gsa.client import AnalysisStatus, DatasetSummary, GsaError, LoadingStatus
 from gsa.upload import Matrix
 
 FIXTURE = Path(__file__).parent / "result_fixture.json"
@@ -472,3 +472,45 @@ async def test_writing_a_result_prunes_the_directory_first(tmp_path: Path) -> No
 
     assert not stale.exists()
     assert finished.table_path.exists()
+
+
+# --- review, area 2 -----------------------------------------------------------
+
+
+class Flaky(StubClient):
+    """Fails the first `failures` status polls, then behaves."""
+
+    def __init__(self, failures: int, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.failures = failures
+
+    async def analysis_status(self, analysis_id: str) -> AnalysisStatus:
+        if self.failures:
+            self.failures -= 1
+            raise GsaError("GET /status returned 502")
+        return await super().analysis_status(analysis_id)
+
+
+@asyncio_test
+async def test_a_brief_outage_while_waiting_does_not_lose_the_run(
+    tmp_path: Path,
+) -> None:
+    # One 502 anywhere in a 30-minute wait used to end it, and the upload was
+    # already deleted: the finished result was out of reach.
+    finished = await job.await_result(
+        # A fixed count: one derived from TRANSIENT_ATTEMPTS followed a sabotage.
+        Flaky(2),  # type: ignore[arg-type]
+        "an-1",
+        out_dir=tmp_path,
+    )
+    assert finished.analysis_id == "an-1"
+
+
+@asyncio_test
+async def test_a_lasting_outage_still_ends_the_wait(tmp_path: Path) -> None:
+    with pytest.raises(GsaError):
+        await job.await_result(
+            Flaky(job.TRANSIENT_ATTEMPTS),  # type: ignore[arg-type]
+            "an-1",
+            out_dir=tmp_path,
+        )
