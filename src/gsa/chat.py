@@ -122,6 +122,22 @@ def parse_grouping(reply: str, sample_count: int) -> Grouping:
     return Grouping(labels=canonical, group1=group1, group2=group2)
 
 
+def looks_like_labels(reply: str, sample_count: int) -> bool:
+    """Whether a message, sent while a matrix waits, is an attempt at labels.
+
+    A grouping that parses certainly is. One that does not but has the shape
+    of a list -- separators, no question mark, about the right length -- is
+    a mistake to explain, not a question for the model.
+    """
+    try:
+        parse_grouping(reply, sample_count)
+        return True
+    except ReplyUnusableError:
+        pass
+    shaped = any(sep in reply for sep in (",", ";", "\t"))
+    return shaped and "?" not in reply and len(reply) < 40 * sample_count + 200
+
+
 def describe_progress(status: AnalysisStatus) -> str:
     """One line, safe to send repeatedly as an edit.
 
