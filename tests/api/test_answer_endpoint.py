@@ -591,14 +591,84 @@ class TestAnswersAreKeptForContinueInChat:
         assert kept.question == "what does CDK5 phosphorylate?"
         assert kept.citations == (("R-HSA-1", "Apoptosis"),)
 
+    def test_what_is_kept_is_the_stripped_text_not_the_model_output(
+        self, keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The test above passes even if the raw model text is stored: its
+        # stub output has no anchors, no sources list and nothing held back
+        # (review, area 1a). This one has all three.
+        graph = _StubGraph(
+            [
+                AnswerEvent(kind="token", text='CDK5 <a href="https://reactome.org/'),
+                AnswerEvent(kind="token", text='content/detail/R-HSA-1">Apoptosis</a>'),
+                AnswerEvent(kind="token", text=" phosphorylates tau.\n\n## Sources\n"),
+                AnswerEvent(kind="token", text="- Apoptosis\n"),
+                AnswerEvent(kind="done", state="answered"),
+            ]
+        )
+        monkeypatch.setattr("api.answer.get_graph", lambda: graph)
+        done, streamed = self.ask(keys)
+        kept = self.store.get(done["answer_id"])
+        assert kept is not None
+        assert kept.text == streamed
+        assert "<a " not in kept.text
+        assert "## Sources" not in kept.text
+        assert "phosphorylates tau." in kept.text
+
+    def test_text_held_back_until_the_end_is_kept_too(
+        self, keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A trailing heading is held until the stream ends, in case it is the
+        # sources list. Dropping that final flush from what is kept passed
+        # every test (review, area 1a).
+        graph = _StubGraph(
+            [
+                AnswerEvent(kind="token", text="CDK5 phosphorylates tau.\n\n"),
+                AnswerEvent(kind="token", text="## Further reading"),
+                AnswerEvent(kind="done", state="answered"),
+            ]
+        )
+        monkeypatch.setattr("api.answer.get_graph", lambda: graph)
+        done, streamed = self.ask(keys)
+        kept = self.store.get(done["answer_id"])
+        assert kept is not None
+        assert streamed.endswith("## Further reading")
+        assert kept.text == streamed
+
     def test_two_answers_to_one_question_are_kept_apart(
         self, keys: tuple[str, str], stub: _StubGraph
     ) -> None:
         # Keyed by answer, not question: a reader must never continue
         # someone else's answer to the same search.
-        first, _ = self.ask(keys)
+        first, first_text = self.ask(keys)
         second, _ = self.ask(keys)
         assert first["answer_id"] != second["answer_id"]
+        # And each id leads to its own answer, not the latest one.
+        kept = self.store.get(first["answer_id"])
+        assert kept is not None
+        assert kept.text == first_text
+
+    def test_each_id_leads_to_its_own_text(
+        self, keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        texts = iter(["First answer.", "Second answer."])
+
+        class _Varying(_StubGraph):
+            async def astream_answer(
+                self, *_a: Any, **k: Any
+            ) -> AsyncIterator[AnswerEvent]:
+                self.threads.append(k["thread_id"])
+                yield AnswerEvent(kind="token", text=next(texts))
+                yield AnswerEvent(kind="done", state="answered")
+
+        monkeypatch.setattr("api.answer.get_graph", lambda: _Varying())
+        first, _ = self.ask(keys)
+        second, _ = self.ask(keys)
+        a = self.store.get(first["answer_id"])
+        b = self.store.get(second["answer_id"])
+        assert a is not None
+        assert b is not None
+        assert (a.text, b.text) == ("First answer.", "Second answer.")
 
     def test_only_an_answer_gets_an_id(
         self, keys: tuple[str, str], stub: _StubGraph

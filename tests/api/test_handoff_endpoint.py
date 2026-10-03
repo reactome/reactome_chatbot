@@ -157,7 +157,9 @@ def test_cannot_widen_the_disclosure_tier(
     stores[0].put(ANALYSIS, "97", "aggregate", "Aggregate summary.", ())
     response = mint(keys, disclosure="identifiers")
     assert response.status_code == 404
-    assert stores[1].get("anything") is None
+    # Nothing minted at all. The first version asserted get("anything") is
+    # None, which is true of any store (review, area 1a).
+    assert len(stores[1]) == 0
 
 
 def test_a_summary_from_another_release_is_not_handed_off(
@@ -205,18 +207,42 @@ def test_refuses_a_token_signed_by_someone_else(
     assert response.json() == {"reason": "no_caller"}
 
 
-def test_refuses_an_unknown_kind(keys: tuple[str, str]) -> None:
+def test_refuses_an_unknown_kind(
+    keys: tuple[str, str], stores: tuple[SummaryStore, HandoffStore]
+) -> None:
+    # An unknown kind, with every analysis field valid and a summary stored,
+    # and no human claim. The first version posted kind "search", whose 422
+    # came from the missing answer_id -- so routing unknown kinds to the
+    # analysis model, which skips the presence check for anything but
+    # "analysis", still passed (review, area 1a).
+    stores[0].put(ANALYSIS, "97", "aggregate", "Aggregate summary.", ())
     private, public = keys
     response = client(public).post(
         f"{PREFIX}/handoff",
         json={
-            "kind": "search",
+            "kind": "bogus",
             "token": ANALYSIS,
             "disclosure": "aggregate",
-            "caller_token": caller(private),
+            "caller_token": caller(private, human=False),
         },
     )
     assert response.status_code == 422
+    assert len(stores[1]) == 0
+
+
+def test_the_rate_limit_applies(
+    keys: tuple[str, str],
+    stores: tuple[SummaryStore, HandoffStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The fixture's limit is 10,000, so deleting the limiter passed every
+    # test; without it one token could evict a reader's live handoff.
+    monkeypatch.setattr(
+        "api.handoff._limiter", SlidingWindowLimiter(limit=2, window=600.0)
+    )
+    stores[0].put(ANALYSIS, "97", "aggregate", "Aggregate summary.", ())
+    codes = [mint(keys).status_code for _ in range(3)]
+    assert codes == [200, 200, 429]
 
 
 class TestSearchHandoffs:
@@ -302,18 +328,28 @@ class TestSearchHandoffs:
         assert response.status_code == 403
 
     def test_a_search_request_cannot_smuggle_an_analysis_field(
-        self, keys: tuple[str, str]
+        self, keys: tuple[str, str], stores: tuple[SummaryStore, HandoffStore]
     ) -> None:
         # Discriminated by `kind`: a search request carrying `disclosure` or
-        # `token` is not quietly treated as an analysis one.
+        # `token` is not quietly treated as an analysis one. With a valid
+        # answer_id, so a 422 for a missing field cannot be what passes it
+        # (review, area 1a).
         private, public = keys
         response = client(public).post(
             f"{PREFIX}/handoff",
             json={
                 "kind": "search",
+                "answer_id": self.keep(),
                 "token": ANALYSIS,
                 "disclosure": "identifiers",
-                "caller_token": caller(private),
+                "caller_token": caller(private, human=False),
             },
         )
-        assert response.status_code == 422
+        if response.status_code == 200:
+            minted = stores[1].get(response.json()["id"])
+            assert isinstance(minted, SearchHandoff)
+        else:
+            assert response.status_code == 422
+        assert not any(
+            isinstance(h, AnalysisHandoff) for h in stores[1]._entries.values()
+        )
