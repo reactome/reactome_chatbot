@@ -83,6 +83,9 @@ class HandoffStore:
     max_entries: int = DEFAULT_MAX_ENTRIES
     _entries: OrderedDict[str, Handoff] = field(default_factory=OrderedDict)
 
+    def __len__(self) -> int:
+        return len(self._entries)
+
     def put(self, handoff: Handoff) -> str:
         handoff_id = new_id()
         self._entries[handoff_id] = handoff

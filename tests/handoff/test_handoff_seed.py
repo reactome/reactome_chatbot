@@ -1,6 +1,7 @@
 """What a claimed handoff puts into the conversation, and what it must not."""
 
 import asyncio
+import json
 import time
 from typing import Any
 
@@ -226,3 +227,27 @@ def test_a_temporary_failure_is_not_reported_as_deletion() -> None:
     assert "temporary" in failed
     assert "no longer available" not in failed
     assert "no longer available" in gone
+
+
+def test_what_the_model_is_sent_names_no_file_and_no_token() -> None:
+    # Nothing tested what the seeded turn sends to the model: changing the
+    # seed to pass the raw result through -- token, file and sample names --
+    # left every test green (review, area 1a).
+    raw = {
+        **RESULT,
+        "summary": {
+            **RESULT["summary"],
+            "token": "MjAyNjEwMDNfU0VDUkVU",
+            "fileName": "patient_cohort_2026.tsv",
+            "sampleName": "PATIENT-0042",
+        },
+        "expression": {"columnNames": ["PATIENT-0042-tumour"]},
+    }
+    # A throwaway analysis token, not a credential.
+    h = handoff("aggregate", token="MjAyNjEwMDNfU0VDUkVU")  # noqa: S106
+    data = data_for(h, Spy(Fetched("ok", raw)), Spy(None))
+    sent = "".join(str(m.content) for m in seed.seeded_turn(h, data))
+    for secret in ("MjAyNjEwMDNfU0VDUkVU", "patient_cohort_2026", "PATIENT-0042"):
+        assert secret not in sent
+    # And the data is really there, so the test is not passing on nothing.
+    assert "Cell Cycle" in json.dumps(data)
