@@ -1,13 +1,12 @@
-import hashlib
-import hmac
 import os
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from string import Template
+from typing import Any
 from urllib.parse import urlsplit
 
-import requests
+import httpx
 from chainlit.utils import mount_chainlit
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
@@ -17,6 +16,7 @@ from agent.registry import build_graph, set_graph
 from api.analysis_summary import router as analysis_summary_router
 from api.answer import router as answer_router
 from api.handoff import router as handoff_router
+from util import captcha_cookie
 from util.caller_token import load_verifying_key
 from util.captcha_scope import is_captcha_exempt
 from util.embedding_environment import EmbeddingEnvironment
@@ -117,26 +117,67 @@ ERROR_PAGE_TEMPLATE = Template(
 HEADER_DONT_CACHE = {"Cache-Control": "no-store"}
 
 
-def make_signature(value: str) -> str:
-    if CLOUDFLARE_SECRET_KEY is None:
-        raise ValueError("CLOUDFLARE_SECRET_KEY is not set")
-    return hmac.new(
-        CLOUDFLARE_SECRET_KEY.encode(), value.encode(), hashlib.sha256
-    ).hexdigest()
+def _gated(path: str) -> bool:
+    """Whether the human check applies to this path."""
+    return not is_captcha_exempt(
+        path,
+        chainlit_uri=CHAINLIT_URI,
+        # The value resolved through get_secret, not os.environ. get_secret
+        # prefers a mounted Docker secret file, so a deployment that mounts the
+        # key rather than exporting it used to land here with the env var unset
+        # and skip the captcha entirely -- switching off a protection the
+        # operator had configured, silently.
+        captcha_configured=bool(CLOUDFLARE_SECRET_KEY),
+        # The website API verifies its own caller, with a signed token rather
+        # than a captcha, so redirecting it to a captcha page would break it. This
+        # is a deliberate hole in an authentication boundary, which is why the
+        # rule was pinned by tests before it was widened. With the slash: the
+        # bare prefix exempted `/chat/guest/api-anything` too (review, 1b).
+        extra_prefixes=[f"{API_PREFIX}/"],
+    )
 
 
-def create_secure_cookie(value: str) -> str:
-    signature = make_signature(value)
-    return f"{value}|{signature}"
+def _set_pass(response: Response) -> None:
+    response.set_cookie(
+        key=captcha_cookie.COOKIE_NAME,
+        value=captcha_cookie.mint(CLOUDFLARE_SECRET_KEY or "", time.time()),
+        max_age=captcha_cookie.MAX_AGE_SECONDS,
+        secure=True,  # HTTPS only
+        httponly=True,  # inaccessible to client side JS
+    )
 
 
-def verify_secure_cookie(cookie_value: str) -> bool:
-    try:
-        value, signature = cookie_value.split("|", 1)
-        expected_signature = make_signature(value)
-        return hmac.compare_digest(signature, expected_signature)
-    except Exception:
-        return False
+class WebsocketGate:
+    """The human check, for websocket connections.
+
+    `@app.middleware("http")` never sees a websocket. Browsers met the gate only
+    because socket.io starts on HTTP polling; a client opening the websocket
+    directly got the whole chat with no captcha, and -- choosing its own session
+    id -- no per-person limit either (review, area 1b, reproduced).
+
+    Refused before the handshake completes, which the server sends as a 403.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] == "websocket" and _gated(scope.get("path", "")):
+            headers = dict(scope.get("headers") or [])
+            cookie = captcha_cookie.from_cookie_header(
+                headers.get(b"cookie", b"").decode("latin-1")
+            )
+            verdict = captcha_cookie.check(
+                cookie, CLOUDFLARE_SECRET_KEY or "", time.time()
+            )
+            if not verdict.ok:
+                await receive()  # websocket.connect
+                await send({"type": "websocket.close", "code": 1008})
+                return
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(WebsocketGate)
 
 
 @app.middleware("http")
@@ -151,39 +192,27 @@ async def verify_captcha_middleware(
         if ".." not in clean_path:
             return RedirectResponse(url=f"{clean_path}/")
 
-    # Allow access to CAPTCHA pages and static files
-    if is_captcha_exempt(
-        path,
-        chainlit_uri=CHAINLIT_URI,
-        # The value resolved through get_secret, not os.environ. get_secret
-        # prefers a mounted Docker secret file, so a deployment that mounts the
-        # key rather than exporting it used to land here with the env var unset
-        # and skip the captcha entirely -- switching off a protection the
-        # operator had configured, silently.
-        captcha_configured=bool(CLOUDFLARE_SECRET_KEY),
-        # The answer endpoint verifies its own caller, with a signed token rather
-        # than a captcha, so redirecting it to a captcha page would break it. This
-        # is a deliberate hole in an authentication boundary, which is why the
-        # rule was pinned by tests before it was widened.
-        extra_prefixes=[API_PREFIX],
-    ):
+    if not _gated(path):
         return await call_next(request)
 
-    host = request.headers.get("referer")
-    if host and host.startswith("http:"):
-        error_html = ERROR_PAGE_TEMPLATE.substitute(
-            error_title="HTTPS is required for accessing this site",
-        )
-        return Response(content=error_html, status_code=400, media_type="text/html")
+    # There was a check here that refused any request whose Referer was an
+    # http: page. The Referer is the page the reader came from, so it turned
+    # away readers following a link from any plain-http site, and stopped no
+    # one: a script omits the header (review, area 1b). TLS is Apache's job,
+    # and the cookie is Secure.
 
-    # Check if the user has completed the CAPTCHA verification
-    captcha_verified = request.cookies.get("captcha_verified")
-
-    # If CAPTCHA is not verified, block access
-    if not captcha_verified or not verify_secure_cookie(captcha_verified):
+    verdict = captcha_cookie.check(
+        request.cookies.get(captcha_cookie.COOKIE_NAME),
+        CLOUDFLARE_SECRET_KEY or "",
+        time.time(),
+    )
+    if not verdict.ok:
         return RedirectResponse(url=f"{CHAINLIT_URI}/verify_captcha_page")
 
-    return await call_next(request)
+    response = await call_next(request)
+    if verdict.renew:
+        _set_pass(response)
+    return response
 
 
 # Serve the CAPTCHA verification page (basic HTML form)
@@ -227,7 +256,10 @@ async def captcha_page() -> Response:
 
 @app.post(f"{CHAINLIT_URI}/verify_captcha")
 async def verify_captcha(request: Request) -> Response:
-    form_data = await request.form()
+    # Bounded: anyone can reach this route, and the defaults put no cap on
+    # file parts, which were spooled to the disk the whole host shares
+    # (review, area 1b). The form has one field.
+    form_data = await request.form(max_files=0, max_fields=4, max_part_size=8192)
     cf_turnstile_response = form_data.get("cf-turnstile-response")
     if not isinstance(cf_turnstile_response, str):
         error_html = ERROR_PAGE_TEMPLATE.substitute(
@@ -267,9 +299,18 @@ async def verify_captcha(request: Request) -> Response:
         "remoteip": client_ip,
     }
 
-    # Perform request to Cloudflare Turnstile verification endpoint
-    response = requests.post(url, data=data, timeout=10)
-    result = response.json()
+    # Asynchronous: the blocking `requests.post` held the event loop every
+    # session shares for a Cloudflare round trip on each anonymous POST, and
+    # an unreachable or non-JSON reply was an unhandled 500 (review, 1b).
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            reply = await client.post(url, data=data)
+        result = reply.json()
+    except (httpx.HTTPError, ValueError):
+        logging.warning("Turnstile siteverify failed; treating as not verified")
+        result = {}
+    if not isinstance(result, dict):
+        result = {}
 
     # If CAPTCHA validation fails, return an error
     if not result.get("success"):
@@ -283,18 +324,12 @@ async def verify_captcha(request: Request) -> Response:
             media_type="text/html",
         )
 
-    # Set a signed cookie to mark CAPTCHA as verified
-    cookie_value = create_secure_cookie(cf_turnstile_response)
     redirect_response = RedirectResponse(
         url=f"{CHAINLIT_URI}/", status_code=302, headers=HEADER_DONT_CACHE
     )
-    redirect_response.set_cookie(
-        key="captcha_verified",
-        value=cookie_value,
-        max_age=3600,  # Cookie expires in 1 hour
-        secure=True,  # HTTPS only
-        httponly=True,  # inaccessible to client side JS
-    )
+    # A fresh nonce and issue time -- not the Turnstile token, which the old
+    # cookie carried and which named nothing a limit could count.
+    _set_pass(redirect_response)
 
     return redirect_response
 
