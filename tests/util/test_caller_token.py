@@ -282,3 +282,37 @@ def test_an_oversized_token_is_refused_before_it_is_parsed(
     _, public = keys
     with pytest.raises(TokenRejectedError, match="too long"):
         verify("a" * 5000, public)
+
+
+def test_a_website_clock_a_little_ahead_is_tolerated(keys: tuple[str, str]) -> None:
+    # No leeway refused 20% of fresh tokens at 200ms of skew (review, 1b).
+    private, public = keys
+    assert verify(_mint(private, iat=int(time.time()) + 10), public)
+
+
+def test_a_token_from_well_in_the_future_is_refused(keys: tuple[str, str]) -> None:
+    private, public = keys
+    with pytest.raises(TokenRejectedError, match="future"):
+        verify(_mint(private, iat=int(time.time()) + 600), public)
+
+
+@pytest.mark.parametrize("which", ["private", "garbage"])
+def test_a_key_that_cannot_verify_stops_startup(
+    keys: tuple[str, str], tmp_path: Path, which: str
+) -> None:
+    # It passed the emptiness check, then every token was refused as
+    # "unusable" in a log line that blamed the website (review, 1b).
+    private, _ = keys
+    key_file = tmp_path / "key.pem"
+    key_file.write_text(
+        private if which == "private" else "-----BEGIN PUBLIC KEY-----\nAAAA\n"
+    )
+    with pytest.raises(RuntimeError, match="not a PEM public key"):
+        load_verifying_key(str(key_file))
+
+
+def test_the_real_public_key_loads(keys: tuple[str, str], tmp_path: Path) -> None:
+    _, public = keys
+    key_file = tmp_path / "key.pem"
+    key_file.write_text(public)
+    assert load_verifying_key(str(key_file)).startswith("-----BEGIN PUBLIC KEY-----")

@@ -36,12 +36,18 @@ reaches here. What this service keeps is a backstop limit keyed on `sub`.
 """
 
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
 import jwt
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 
 ALGORITHMS = ["EdDSA", "RS256"]
+#: Tolerated difference between the website's clock and ours.
+CLOCK_LEEWAY_SECONDS = 30
 #: A real caller token is a few hundred characters. Bounding it bounds the
 #: parse an unauthenticated request can force.
 MAX_TOKEN_CHARS = 4096
@@ -81,6 +87,22 @@ def load_verifying_key(path: str | None = None) -> str:
         ) from exc
     if not key:
         raise RuntimeError(f"The verifying key at {key_file} is empty.")
+    # Parsed now, not at the first request: a truncated PEM, a certificate or
+    # the *private* key passed the emptiness check, and then every token was
+    # refused as "unusable" -- in a log line that blamed the website (review,
+    # area 1b).
+    try:
+        parsed = serialization.load_pem_public_key(key.encode())
+    except ValueError as exc:
+        raise RuntimeError(
+            f"The verifying key at {key_file} is not a PEM public key. "
+            "(Was the private key, or a certificate, mounted by mistake?)"
+        ) from exc
+    if not isinstance(parsed, Ed25519PublicKey | RSAPublicKey):
+        raise RuntimeError(
+            f"The verifying key at {key_file} is a {type(parsed).__name__}; "
+            f"tokens are signed with one of {ALGORITHMS}."
+        )
     return key
 
 
@@ -115,7 +137,7 @@ def verify(token: str, verifying_key: str, *, audience: str | None = None) -> di
         raise TokenRejectedError("token too long")
     expected = audience or expected_audience()
     try:
-        return dict(
+        claims = dict(
             jwt.decode(
                 token,
                 verifying_key,
@@ -127,9 +149,19 @@ def verify(token: str, verifying_key: str, *, audience: str | None = None) -> di
                 # is expected, so removing it fails no test. It is here so that
                 # behaviour changing in a future PyJWT cannot quietly turn "no
                 # audience" into "nothing to check".
-                options={"require": ["exp", "aud"]},
+                # iat and nbf are checked below, with leeway: clocks differ, and
+                # with none a website clock 200ms ahead had 20% of fresh tokens
+                # refused as not yet valid (review, area 1b). Expiry stays
+                # strict -- leeway in PyJWT would stretch it too.
+                options={
+                    "require": ["exp", "aud"],
+                    "verify_iat": False,
+                    "verify_nbf": False,
+                },
             )
         )
+        _check_not_from_the_future(claims)
+        return claims
     except jwt.ExpiredSignatureError as exc:
         raise TokenRejectedError("token expired") from exc
     except jwt.InvalidAudienceError as exc:
@@ -154,6 +186,18 @@ def verify(token: str, verifying_key: str, *, audience: str | None = None) -> di
         # unauthenticated request turned into a 500 on all three routes
         # (review, area 1a). Every failure path refuses.
         raise TokenRejectedError(f"unusable token: {type(exc).__name__}") from exc
+
+
+def _check_not_from_the_future(claims: dict) -> None:
+    now = time.time()
+    for name in ("iat", "nbf"):
+        value = claims.get(name)
+        if value is None:
+            continue
+        if not isinstance(value, int | float):
+            raise TokenRejectedError(f"invalid token: {name} is not a number")
+        if value > now + CLOCK_LEEWAY_SECONDS:
+            raise TokenRejectedError(f"invalid token: {name} is in the future")
 
 
 # --- human presence, for the analysis-summary endpoint ----------------------

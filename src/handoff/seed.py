@@ -28,7 +28,7 @@ from analysis.client import Fetched, fetch_not_found, fetch_result
 from analysis.disclosure import for_tier
 from analysis.summarise import DATA_RULES, prompt_input, summary_instruction
 from handoff.store import DEFAULT_TTL_SECONDS, AnalysisHandoff, Handoff, SearchHandoff
-from util.markdown import escape
+from util.markdown import escape, inert_html
 
 #: What the reader asked for on the website, stated as what happened.
 HUMAN_TURN = (
@@ -131,12 +131,12 @@ def shown_to_reader(handoff: Handoff) -> str:
             # live markup -- script in a srcdoc iframe -- into the chat of
             # whoever opened it (review, area 1a).
             f"Continuing from your search: **{escape(handoff.question)}**\n\n"
-            f"{handoff.summary}\n\n"
+            f"{inert_html(handoff.summary)}\n\n"
             "---\nAsk a follow-up question."
         )
     return (
         "Continuing from your analysis summary:\n\n"
-        f"{handoff.summary}\n\n"
+        f"{inert_html(handoff.summary)}\n\n"
         "---\nAsk a follow-up question about this analysis."
     )
 

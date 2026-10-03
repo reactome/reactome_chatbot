@@ -6,9 +6,21 @@ from string import Template
 from typing import Any
 from urllib.parse import urlsplit
 
+from dotenv import load_dotenv
+
+from util.secrets import SECRET_NAMES, get_secret, load_secrets_to_environ
+
+# Before anything imports chainlit. `chainlit.utils` loads
+# `chainlit.oauth_providers`, which reads OAUTH_*_CLIENT_SECRET once, at import:
+# loaded after it, an OAuth secret supplied as a Docker secret was never seen,
+# and logged-in chat failed at the OAuth callback (review, area 1b).
+load_dotenv()
+# The same list chat-chainlit uses. This was a second, hand-maintained copy
+# that had already drifted from it in both directions.
+load_secrets_to_environ(SECRET_NAMES)
+
 import httpx
 from chainlit.utils import mount_chainlit
-from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
@@ -21,12 +33,6 @@ from util.caller_token import load_verifying_key
 from util.captcha_scope import is_captcha_exempt
 from util.embedding_environment import EmbeddingEnvironment
 from util.logging import logging
-from util.secrets import SECRET_NAMES, get_secret, load_secrets_to_environ
-
-load_dotenv()
-# The same list chat-chainlit uses. This was a second, hand-maintained copy
-# that had already drifted from it in both directions.
-load_secrets_to_environ(SECRET_NAMES)
 
 
 @asynccontextmanager
@@ -62,7 +68,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(lifespan=lifespan)
 
-CHAINLIT_URI = os.getenv("CHAINLIT_URI")
+# Empty means unset. Compose turns an unset variable into "", and an empty
+# CHAINLIT_URI left the captcha page redirecting to itself (review, 1b).
+CHAINLIT_URI = os.getenv("CHAINLIT_URI") or None
 
 # Defined after CHAINLIT_URI, which it is built from. The endpoint lives under
 # the Chainlit mount point so one nginx location covers both.
@@ -99,6 +107,13 @@ if CHAT_REQUIRES_HUMAN and not CLOUDFLARE_SECRET_KEY:
         "this deployment does not want one."
     )
 CLOUDFLARE_SITE_KEY = os.getenv("CLOUDFLARE_SITE_KEY")
+if CHAT_REQUIRES_HUMAN and not CLOUDFLARE_SITE_KEY:
+    # Without it the check page renders data-sitekey="None", which no one can
+    # pass, while startup reported healthy (review, area 1b).
+    raise RuntimeError(
+        "CHAT_REQUIRES_HUMAN is on and no CLOUDFLARE_SITE_KEY is configured, "
+        "so the human check could not be shown."
+    )
 
 ERROR_PAGE_TEMPLATE = Template(
     f"""
@@ -225,7 +240,7 @@ async def captcha_page() -> Response:
         </head>
         <body>
             <form id="captcha-form" action="{CHAINLIT_URI}/verify_captcha" method="post">
-                <div class="cf-turnstile" data-sitekey="{os.getenv('CLOUDFLARE_SITE_KEY')}" data-callback="onSubmit"></div>
+                <div class="cf-turnstile" data-sitekey="{CLOUDFLARE_SITE_KEY}" data-callback="onSubmit"></div>
             </form>
             <script>
                 // Continue in chat (spec 013): keep a handoff across this page.

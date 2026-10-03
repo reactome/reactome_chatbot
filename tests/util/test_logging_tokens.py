@@ -20,3 +20,26 @@ def test_our_own_info_logs_still_are() -> None:
     # The fix must lower only the request logger, not logging generally.
     root = logging.getLogger()
     assert root.isEnabledFor(logging.getLevelName(util.logging.DEFAULT_LOG_LEVEL))
+
+
+def test_session_ids_are_redacted_from_the_access_log() -> None:
+    # The access log line uvicorn writes for a Chainlit file download.
+    record = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        0,
+        '%s - "%s %s HTTP/%s" %d',
+        (
+            "1.2.3.4:5",
+            "GET",
+            "/chat/guest/project/file/abc?session_id=SECRET-SID",
+            "1.1",
+            200,
+        ),
+        None,
+    )
+    assert logging.getLogger("uvicorn.access").filter(record)
+    line = record.getMessage()
+    assert "SECRET-SID" not in line
+    assert "session_id=[redacted]" in line
