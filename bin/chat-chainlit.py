@@ -53,6 +53,7 @@ from util.chainlit_helpers import (
 from util.config_yml import Config
 from util.config_yml.messages import TriggerEvent
 from util.logging import logging
+from util.markdown import escape_directives
 from util.orcid_provider import ORCIDOAuthProvider
 from util.rate_limit import SlidingWindowLimiter, positive_int
 from util.secrets import (
@@ -525,6 +526,14 @@ async def answer_with_model(content: str, message_id: str) -> None:
         enable_postprocess=enable_postprocess,
     )
     assistant_message: cl.Message | None = chainlit_cb.final_stream
+    if assistant_message is not None:
+        # Once streamed: "CDK5:p25" in a citation or the prose was read as a
+        # markdown directive and dropped. Escaped in the final message; while
+        # it streams it may show briefly without (review follow-up, 10-03).
+        fixed = escape_directives(assistant_message.content)
+        if fixed != assistant_message.content:
+            assistant_message.content = fixed
+            await assistant_message.update()
 
     if (
         enable_postprocess

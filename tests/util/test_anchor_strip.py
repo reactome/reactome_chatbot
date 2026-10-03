@@ -107,3 +107,51 @@ def test_an_unclosed_tag_is_not_swallowed_at_the_end() -> None:
     out = stripper.feed('kept text <a href="https://truncated')
     assert out.startswith("kept text ")
     assert "kept text " + stripper.flush() == 'kept text <a href="https://truncated'
+
+
+# --- markdown links -----------------------------------------------------------
+
+from util.anchor_strip import MarkdownLinkStripper  # noqa: E402
+
+LINKED = (
+    "CDK5 phosphorylates tau "
+    "[Phosphorylation of tau by CDK5](https://reactome.org/content/detail/R-HSA-8863795)"
+    " in neurons."
+)
+
+
+def _through_links(stripper: MarkdownLinkStripper, pieces: list[str]) -> str:
+    return "".join(stripper.feed(p) for p in pieces) + stripper.flush()
+
+
+def test_a_link_becomes_its_label() -> None:
+    assert _through_links(MarkdownLinkStripper(), [LINKED]) == (
+        "CDK5 phosphorylates tau Phosphorylation of tau by CDK5 in neurons."
+    )
+
+
+def test_a_link_split_at_every_character_still_strips() -> None:
+    assert _through_links(MarkdownLinkStripper(), list(LINKED)) == (
+        "CDK5 phosphorylates tau Phosphorylation of tau by CDK5 in neurons."
+    )
+
+
+def test_prose_brackets_are_left_alone_and_not_held() -> None:
+    stripper = MarkdownLinkStripper()
+    # Released as soon as the character after ']' says it is not a link.
+    assert stripper.feed("an array [1, 2] and ") == "an array [1, 2] and "
+    assert (
+        _through_links(MarkdownLinkStripper(), ["see [note] (below)"])
+        == "see [note] (below)"
+    )
+
+
+def test_a_truncated_link_is_flushed_as_text() -> None:
+    assert _through_links(MarkdownLinkStripper(), ["end [Apoptosis](https://reac"]) == (
+        "end [Apoptosis](https://reac"
+    )
+
+
+def test_two_links_side_by_side() -> None:
+    text = "[A](https://a.example) [B](https://b.example)"
+    assert _through_links(MarkdownLinkStripper(), list(text)) == "A B"

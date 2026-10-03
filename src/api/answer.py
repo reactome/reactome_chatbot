@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field
 
 from agent.registry import get_graph
 from api.answer_store import StoredAnswer, answers
-from util.anchor_strip import AnchorStripper
+from util.anchor_strip import AnchorStripper, MarkdownLinkStripper
 from util.caller_token import TokenRejectedError, verify
 from util.logging import logging
 from util.rate_limit import identity_of, limiter_from_env
@@ -135,6 +135,9 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
         # separate events, so they come out here -- across fragment boundaries,
         # because one anchor arrives as twenty-odd fragments.
         stripper = AnchorStripper()
+        # And markdown links, which citations use since the chat stopped
+        # rendering HTML; anchors are still stripped in case one slips through.
+        links = MarkdownLinkStripper()
         # And the trailing source list goes too: this caller renders citations
         # from the `citation` events, so the prose copy is a duplicate -- and a
         # worse one, since `AnchorStripper` has just taken its links off.
@@ -161,7 +164,7 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
                     enable_postprocess=False,
                 ):
                     if event.kind == "token":
-                        text = sources.feed(stripper.feed(event.text))
+                        text = sources.feed(links.feed(stripper.feed(event.text)))
                         if text:
                             tokens_sent += 1
                             shown.append(text)
@@ -232,7 +235,9 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
             # Nothing reads this thread again. A task, not an await: on a
             # hang-up this runs during cancellation, where awaiting is unsafe.
             _forget(graph, thread_id)
-        held = sources.feed(stripper.flush()) + sources.flush()
+        held = (
+            sources.feed(links.feed(stripper.flush()) + links.flush()) + sources.flush()
+        )
         if held:
             shown.append(held)
             yield _sse("token", {"text": held})

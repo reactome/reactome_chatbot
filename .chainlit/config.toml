@@ -20,7 +20,10 @@ allow_origins = ["*"]
 
 [features]
 # Process and display HTML in messages. This can be a security risk (see https://stackoverflow.com/questions/19603097/why-is-it-dangerous-to-render-user-generated-html-or-javascript)
-unsafe_allow_html = true
+# Off since 2026-10-03. Citations are markdown links now, so nothing needs
+# HTML, and with it on any markup that reached a message -- a handed-off
+# summary a visitor had steered -- ran in the reader's browser (review, 1b).
+unsafe_allow_html = false
 
 # Process and display mathematical expressions. This can clash with "$" characters in messages.
 latex = false
