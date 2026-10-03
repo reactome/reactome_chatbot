@@ -73,6 +73,13 @@ class SummaryStore:
         if not text.strip():
             return stored
         key = (token, release, tier)
+        existing = self._entries.get(key)
+        if existing is not None:
+            # The first stored summary stays. Two generations for one key can
+            # finish out of order; overwriting served a reader, on reload or
+            # in Continue in chat, a summary they were never shown (review,
+            # area 1a). The later reader is served this one instead.
+            return existing
         self._entries[key] = stored
         self._entries.move_to_end(key)
         while len(self._entries) > self.max_entries:

@@ -243,11 +243,14 @@ async def continue_from_handoff(handoff_id: str) -> None:
     # before it has run would otherwise seed a thread called "None".
     thread_id: str = current_thread_id()
     data = None
+    outcome = "ok"
     try:
         if isinstance(handoff, AnalysisHandoff):
-            data = await seed.analysis_data(handoff)
+            data, outcome = await seed.analysis_data_and_outcome(handoff)
         seeded = await get_graph().seed_history(
-            profile, thread_id=thread_id, messages=seed.seeded_turn(handoff, data)
+            profile,
+            thread_id=thread_id,
+            messages=seed.seeded_turn(handoff, data, outcome=outcome),
         )
     except Exception:
         # A failed fetch or graph update must not leave the reader in a chat

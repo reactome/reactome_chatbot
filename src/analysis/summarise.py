@@ -249,3 +249,50 @@ INEXACT_COUNT_INSTRUCTION = (
     "state how many of the total were significant, and never imply that only "
     "the pathways listed here passed."
 )
+
+#: When the count is not exact for another reason -- the shown pathways are
+#: not all significant, or their order could not be confirmed -- the
+#: instruction above would tell the model something false (review, 1a).
+UNKNOWN_COUNT_INSTRUCTION = (
+    "Only the highest-ranked pathways are included here, and the number "
+    "significant overall cannot be determined from them. Never state how many "
+    "of the total were significant."
+)
+
+#: The rules for reading this data. The summary endpoint's system prompt
+#: carries them, and so does a handoff's seeded turn: the chat model reads
+#: the same data afterwards, and without them answers follow-ups from the
+#: very input that once produced "12 significant out of 1280".
+DATA_RULES = """
+1. Every quantitative claim must come from the data. Never state a statistic it
+   does not contain.
+2. Follow the verdict instruction exactly. It is computed from the data, not
+   guessed, and it overrides any impression the numbers give you.
+3. Whenever you call a pathway significant, say whether that is before or after
+   multiple-testing correction.
+4. Do not name a pathway that is not in the data.
+5. Never state how many pathways were significant overall unless the data says
+   that count is exact. Only the highest-ranked are included.
+""".strip()
+
+
+def summary_instruction(model_input: dict[str, Any]) -> str:
+    """Every instruction that goes with this data, in one place."""
+    instruction = VERDICT_INSTRUCTION[model_input["verdict"]]
+    if not model_input["significant_count_is_exact"]:
+        all_shown_significant = (
+            model_input["significant_among_shown"] == model_input["pathways_shown"]
+        )
+        instruction = f"{instruction} " + (
+            INEXACT_COUNT_INSTRUCTION
+            if all_shown_significant
+            else UNKNOWN_COUNT_INSTRUCTION
+        )
+    by_type = TYPE_INSTRUCTION.get(str(model_input.get("analysis_type") or "").upper())
+    if by_type:
+        instruction = f"{instruction} {by_type}"
+    instruction = f"{instruction} {STATISTICS_INSTRUCTION}"
+    instruction = f"{instruction} {UNMATCHED_INSTRUCTION}"
+    if model_input.get("identifiers_not_found_names"):
+        instruction = f"{instruction} {NAMED_UNMATCHED_INSTRUCTION}"
+    return instruction

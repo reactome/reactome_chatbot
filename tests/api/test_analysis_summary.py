@@ -98,6 +98,7 @@ def wired(monkeypatch: pytest.MonkeyPatch) -> _Counter:
     # the model is never called -- which looks like the feature being broken
     # and is the tests interfering.
     monkeypatch.setattr("api.analysis_summary._store", SummaryStore())
+    monkeypatch.setattr("api.analysis_summary._generating", {})
     monkeypatch.setattr("api.analysis_summary.get_llm", lambda *a, **k: counter)
     monkeypatch.setattr(
         "api.analysis_summary.resolve_llm_model", lambda _c: ("openai", "m", None)
@@ -819,3 +820,96 @@ def test_a_non_numeric_release_is_null_rather_than_a_string(
     private, public = keys
     start = _events(_post(public, caller_token=_token(private)).text)[0][1]
     assert start["release"] is None
+
+
+# --- review, area 1a ---------------------------------------------------------
+
+
+async def _collect(private: str, public: str) -> str:
+    from types import SimpleNamespace
+
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(caller_token_key=public))
+    )
+    response = await analysis_summary(
+        SummaryRequest(
+            token=SAMPLE_TOKEN, caller_token=_token(private), disclosure="aggregate"
+        ),
+        request,  # type: ignore[arg-type]
+    )
+    iterator = cast("AsyncGenerator[str, None]", response.body_iterator)
+    return "".join([chunk async for chunk in iterator])
+
+
+def test_two_readers_asking_at_once_get_one_summary(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Both missed the cache and generated different texts, and the later one
+    # overwrote what the earlier reader had seen.
+    class _Different(_Counter):
+        async def astream(self, _messages: Any) -> AsyncIterator[Any]:
+            self.calls += 1
+            for piece in (f"version {self.calls} ", "of the summary."):
+                await asyncio.sleep(0.02)
+                yield type("Chunk", (), {"content": piece})()
+
+    model = _Different()
+    monkeypatch.setattr("api.analysis_summary.get_llm", lambda *a, **k: model)
+    private, public = keys
+
+    async def both() -> list[str]:
+        return list(
+            await asyncio.gather(_collect(private, public), _collect(private, public))
+        )
+
+    first, second = asyncio.run(both())
+    assert model.calls == 1
+    assert "version 1" in first
+    assert "version 1" in second
+
+
+def test_content_blocks_are_read_and_an_empty_stream_is_a_failure(
+    keys: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class _Blocks(_Counter):
+        async def astream(self, _messages: Any) -> AsyncIterator[Any]:
+            self.calls += 1
+            yield type(
+                "Chunk", (), {"content": [{"type": "text", "text": "From blocks."}]}
+            )()
+
+    monkeypatch.setattr("api.analysis_summary.get_llm", lambda *a, **k: _Blocks())
+    private, public = keys
+    body = asyncio.run(_collect(private, public))
+    assert "From blocks." in body
+    assert '"state": "summarised"' in body
+
+    class _Silent(_Counter):
+        async def astream(self, _messages: Any) -> AsyncIterator[Any]:
+            self.calls += 1
+            yield type("Chunk", (), {"content": [{"type": "reasoning"}]})()
+
+    monkeypatch.setattr("api.analysis_summary._store", SummaryStore())
+    monkeypatch.setattr("api.analysis_summary.get_llm", lambda *a, **k: _Silent())
+    body = asyncio.run(_collect(private, public))
+    assert '"state": "summarised"' not in body
+
+
+def test_a_fixed_temperature_model_is_sent_its_temperature(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The summary built its own model with the default 0.0, which o3-class
+    # models reject; the chat sent 1.0 and worked.
+    from agent.graph import resolve_temperature
+    from api import analysis_summary as endpoint
+    from util.config_yml import Config
+
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(
+        endpoint, "resolve_llm_model", lambda _c: ("openai", "o3", None)
+    )
+    monkeypatch.setattr(Config, "from_yaml", staticmethod(lambda *a, **k: None))
+    monkeypatch.setattr(endpoint, "get_llm", lambda *a, **k: seen.update(k))
+    endpoint._summary_llm()
+    assert seen["temperature"] == resolve_temperature("o3")
+    assert seen["temperature"] != 0.0

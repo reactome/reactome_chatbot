@@ -205,3 +205,24 @@ def test_a_search_question_is_shown_as_text_not_markup() -> None:
 
     assert re.search(r"(?<!\\)<", shown) is None
     assert "\\<iframe" in shown  # still visible, as text
+
+
+def test_the_seeded_data_carries_the_rules_for_reading_it() -> None:
+    # The chat model reads the same data for every follow-up; without the
+    # summary's rules it answers from input that once gave "12 of 1280".
+    from analysis.summarise import DATA_RULES, prompt_input
+
+    data = prompt_input({"summary": {"type": "OVERREPRESENTATION"}, "pathways": []})
+    text = str(seed.seeded_turn(handoff(), data)[1].content)
+    assert DATA_RULES in text
+    assert "Instructions that go with it" in text
+
+
+def test_a_temporary_failure_is_not_reported_as_deletion() -> None:
+    # Every non-ok outcome said "no longer available", so a timeout told the
+    # model the reader's result had been deleted (review, area 1a).
+    failed = str(seed.seeded_turn(handoff(), None, outcome="failed")[1].content)
+    gone = str(seed.seeded_turn(handoff(), None, outcome="gone")[1].content)
+    assert "temporary" in failed
+    assert "no longer available" not in failed
+    assert "no longer available" in gone
