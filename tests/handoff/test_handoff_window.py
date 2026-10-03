@@ -62,3 +62,10 @@ def test_the_acknowledgement_names_the_id_it_answers() -> None:
     # Two tabs may be retrying at once; each stops only on its own ack.
     ack = window.acknowledgement(VALID)
     assert ack == {"type": window.ACK_TYPE, "id": VALID}
+
+
+def test_a_trailing_newline_is_not_part_of_an_id() -> None:
+    # `^...$` with match() let "id\n" through (review, area 1a).
+    good = "A" * 22
+    assert window.claimed_id({"type": window.CLAIM_TYPE, "id": good}) == good
+    assert window.claimed_id({"type": window.CLAIM_TYPE, "id": good + "\n"}) is None

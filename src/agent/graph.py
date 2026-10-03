@@ -328,6 +328,7 @@ class AgentGraph:
         # The following are set asynchronously by calling initialize()
         self.graph: dict[str, CompiledStateGraph] | None = None
         self.pool: AsyncConnectionPool[AsyncConnection[dict[str, Any]]] | None = None
+        self.checkpointer: BaseCheckpointSaver[str] | None = None
 
     def __del__(self) -> None:
         """Close the connection pool if nothing else did.
@@ -370,6 +371,7 @@ class AgentGraph:
 
     async def initialize(self) -> dict[str, CompiledStateGraph]:
         checkpointer: BaseCheckpointSaver[str] = await self.create_checkpointer()
+        self.checkpointer = checkpointer
         return {
             profile: graph.compile(checkpointer=checkpointer)
             for profile, graph in self.uncompiled_graph.items()
@@ -399,6 +401,17 @@ class AgentGraph:
     async def close_pool(self) -> None:
         if self.pool:
             await self.pool.close()
+
+    async def forget_thread(self, thread_id: str) -> None:
+        """Delete a one-shot thread's checkpoints.
+
+        The search page's answers each run on a fresh thread that nothing
+        reads again. Left in place, every answer kept ~15 KiB of checkpoints
+        in the MemorySaver for the life of the process, which also serves the
+        chat (review, area 1a: 600 answers grew RSS by 22 MiB).
+        """
+        if self.checkpointer is not None:
+            await self.checkpointer.adelete_thread(thread_id)
 
     async def astream_answer(
         self,

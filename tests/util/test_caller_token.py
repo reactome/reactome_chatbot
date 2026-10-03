@@ -258,3 +258,27 @@ def test_the_detail_admits_when_it_has_no_cause_rather_than_inventing_one() -> N
     valid = {"human": True, "human_iat": now - 10}
     assert human_presence_reason(valid, now) is None
     assert "out of step" in human_presence_detail(valid, now)
+
+
+def _b64(data: object) -> str:
+    return base64.urlsafe_b64encode(json.dumps(data).encode()).rstrip(b"=").decode()
+
+
+def test_a_header_naming_the_other_algorithm_is_refused_not_raised(
+    keys: tuple[str, str],
+) -> None:
+    # RS256 is allowed, the key is Ed25519: PyJWT raises InvalidKeyError, which
+    # is not an InvalidTokenError. Uncaught, an unauthenticated request was a
+    # 500 on all three routes (review, area 1a).
+    _, public = keys
+    forged = f'{_b64({"alg": "RS256", "typ": "JWT"})}.{_b64({"aud": DEFAULT_AUDIENCE, "exp": 9999999999})}.AAAA'
+    with pytest.raises(TokenRejectedError):
+        verify(forged, public)
+
+
+def test_an_oversized_token_is_refused_before_it_is_parsed(
+    keys: tuple[str, str],
+) -> None:
+    _, public = keys
+    with pytest.raises(TokenRejectedError, match="too long"):
+        verify("a" * 5000, public)

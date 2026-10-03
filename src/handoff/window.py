@@ -33,7 +33,7 @@ ACK_TYPE = "reactome-handoff-ack"
 
 #: At least 128 bits of URL-safe randomness (22 base64url characters), and a
 #: ceiling so a hostile page cannot post something enormous.
-_ID = re.compile(r"^[A-Za-z0-9_-]{22,128}$")
+_ID = re.compile(r"[A-Za-z0-9_-]{22,128}")
 
 
 def claimed_id(message: Any) -> str | None:
@@ -47,7 +47,8 @@ def claimed_id(message: Any) -> str | None:
     if message.get("type") != CLAIM_TYPE:
         return None
     value = message.get("id")
-    if not isinstance(value, str) or not _ID.match(value):
+    # fullmatch: `^...$` with match() accepted a trailing newline.
+    if not isinstance(value, str) or not _ID.fullmatch(value):
         return None
     return value
 
