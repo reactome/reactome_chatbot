@@ -15,7 +15,7 @@ import time
 from collections import deque
 
 
-def _positive_int(name: str, default: int) -> int:
+def positive_int(name: str, default: int) -> int:
     """Configuration that is absent, empty or nonsense falls back to the default."""
     raw = os.getenv(name, "")
     if not raw.strip():
@@ -98,6 +98,6 @@ def limiter_from_env() -> SlidingWindowLimiter:
     than anyone reads -- and it still caps a leaked token at 180 an hour.
     """
     return SlidingWindowLimiter(
-        limit=_positive_int("ANSWER_RATE_LIMIT", 30),
-        window=float(_positive_int("ANSWER_RATE_WINDOW_SECONDS", 600)),
+        limit=positive_int("ANSWER_RATE_LIMIT", 30),
+        window=float(positive_int("ANSWER_RATE_WINDOW_SECONDS", 600)),
     )

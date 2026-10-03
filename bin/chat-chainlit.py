@@ -4,6 +4,7 @@
 # named with a hyphen, so it cannot be listed in [[tool.mypy.overrides]].
 import asyncio
 import os
+import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -39,6 +40,7 @@ from gsa.chat import HOW_TO_RUN_GSA, HOW_TO_RUN_GSA_WITH_A_MATRIX, asks_to_run_g
 from handoff import seed
 from handoff.store import AnalysisHandoff, handoffs
 from handoff.window import acknowledgement, claimed_id
+from util import captcha_cookie
 from util.chainlit_helpers import (
     PrefixedS3StorageClient,
     is_feature_enabled,
@@ -51,9 +53,11 @@ from util.config_yml import Config
 from util.config_yml.messages import TriggerEvent
 from util.logging import logging
 from util.orcid_provider import ORCIDOAuthProvider
+from util.rate_limit import SlidingWindowLimiter, positive_int
 from util.secrets import (
     SECRET_NAMES,
     get_db_uri,
+    get_secret,
     load_secrets_to_environ,
     mounted_secrets,
 )
@@ -522,6 +526,32 @@ async def answer_with_model(content: str, message_id: str) -> None:
     save_openai_metrics(message_id, openai_cb)
 
 
+#: Guests' messages, limited per human check rather than per session. The
+#: per-session quota is keyed on the session id, which the client chooses, so
+#: a reconnect -- or a script -- started a fresh quota every time (review, 1b).
+_per_solve = SlidingWindowLimiter(
+    limit=positive_int("CHAT_MESSAGES_PER_SOLVE", 100),
+    window=float(positive_int("CHAT_SOLVE_WINDOW_SECONDS", 3 * 60 * 60)),
+)
+PER_SOLVE_LIMITED = (
+    "You've reached the limit on messages for now. Please try again later."
+)
+
+
+def solve_key() -> str:
+    """Which human check this connection passed, or failing that, where from."""
+    environ = context.session.environ or {}
+    verdict = captcha_cookie.check(
+        captcha_cookie.from_cookie_header(environ.get("HTTP_COOKIE")),
+        get_secret("CLOUDFLARE_SECRET_KEY") or "",
+        time.time(),
+    )
+    if verdict.ok:
+        return f"solve:{verdict.nonce}"
+    forwarded = str(environ.get("HTTP_X_FORWARDED_FOR", "")).split(",")[0].strip()
+    return f"ip:{forwarded or environ.get('REMOTE_ADDR', '')}"
+
+
 @cl.on_message
 async def main(message: cl.Message) -> None:
     # First, before any early return: a "yes" means the offer just made, so
@@ -530,6 +560,9 @@ async def main(message: cl.Message) -> None:
     invited = proposals.take_invited(session_id())
 
     if await message_rate_limited(config):
+        return
+    if cl.user_session.get("user") is None and not _per_solve.allow(solve_key()):
+        await cl.Message(content=PER_SOLVE_LIMITED).send()
         return
 
     await static_messages(config, TriggerEvent.on_message)
