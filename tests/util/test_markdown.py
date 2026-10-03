@@ -32,3 +32,20 @@ def test_directive_colons_are_escaped_and_nothing_else(
 def test_names_in_tables_and_handed_off_summaries_get_it_too() -> None:
     assert "CDK5\\:p25" in escape("CDK5:p25 complex")
     assert inert_html("**A:B** <b>") == "**A\\:B** \\<b>"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # The first version only escaped a colon after a letter or digit;
+        # these still broke (review, area 2).
+        ("(ACTA2,ACTG2):ATP", "(ACTA2,ACTG2)\\:ATP"),
+        ("TNF-α:TNFR1", "TNF-α\\:TNFR1"),
+        ("(2xp-2S-SMAD3):SMAD4:SP1", "(2xp-2S-SMAD3)\\:SMAD4\\:SP1"),
+        # Code is shown verbatim: no backslashes there.
+        ("`A:B` and A:B", "`A:B` and A\\:B"),
+        ("```\nA:B\n```", "```\nA:B\n```"),
+    ],
+)
+def test_every_directive_shaped_colon_outside_code(text: str, expected: str) -> None:
+    assert escape_directives(text) == expected

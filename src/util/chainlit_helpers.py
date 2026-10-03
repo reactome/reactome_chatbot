@@ -33,18 +33,30 @@ class PrefixedS3StorageClient(S3StorageClient):
         # content_disposition arrived in chainlit 2.1 and is forwarded, not
         # dropped: it is what makes an attachment download under its original
         # filename instead of the object key.
-        object_key = str(self._prefix / object_key)
+        object_key = self._prefixed(object_key)
         return await super().upload_file(
             object_key, data, mime, overwrite, content_disposition
         )
 
+    def _prefixed(self, object_key: str) -> str:
+        """The key under the prefix -- once.
+
+        `upload_file` returns the key it stored, prefix included, and the data
+        layer saves that and hands it back to `delete_file` and
+        `get_read_url`. Prefixing those again pointed at 'P/P/...': resumed
+        threads' attachments would not load, and deleting a thread "deleted"
+        a key that did not exist, which S3 reports as success, leaving the
+        reader's file in the bucket for good (review, area 2).
+        """
+        if object_key == str(self._prefix) or object_key.startswith(f"{self._prefix}/"):
+            return object_key
+        return str(self._prefix / object_key)
+
     async def delete_file(self, object_key: str) -> bool:
-        object_key = str(self._prefix / object_key)
-        return await super().delete_file(object_key)
+        return await super().delete_file(self._prefixed(object_key))
 
     async def get_read_url(self, object_key: str) -> str:
-        object_key = str(self._prefix / object_key)
-        return await super().get_read_url(object_key)
+        return await super().get_read_url(self._prefixed(object_key))
 
 
 def get_user_id() -> str | None:

@@ -30,6 +30,10 @@ from analysis.summarise import DATA_RULES, prompt_input, summary_instruction
 from handoff.store import DEFAULT_TTL_SECONDS, AnalysisHandoff, Handoff, SearchHandoff
 from util.markdown import escape, inert_html
 
+#: Set on a seeded analysis turn. `AgentGraph.thread_holds_analysis` looks
+#: for it.
+ANALYSIS_SEED_MARK = "reactome_analysis_seed"
+
 #: What the reader asked for on the website, stated as what happened.
 HUMAN_TURN = (
     "Summarise my Reactome pathway analysis. (Asked on the analysis results page.)"
@@ -119,7 +123,17 @@ def seeded_turn(
         )
         if "verdict" in data:
             appendix += f"\nInstructions that go with it: {summary_instruction(data)}"
-    return [HumanMessage(HUMAN_TURN), AIMessage(handoff.summary + appendix)]
+    # Marked, so "this thread holds a reader's analysis" is read from the
+    # thread itself. It was a flag in the browser session, which a reconnect
+    # after an hour or a restart lost while the thread lived on -- and web
+    # search, rephrased from that history, came back on (review, area 2).
+    return [
+        HumanMessage(HUMAN_TURN),
+        AIMessage(
+            handoff.summary + appendix,
+            additional_kwargs={ANALYSIS_SEED_MARK: True},
+        ),
+    ]
 
 
 def shown_to_reader(handoff: Handoff) -> str:
