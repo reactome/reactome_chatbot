@@ -40,6 +40,16 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+#: Deletions in flight, so they are not garbage-collected before they run.
+_forgetting: set[asyncio.Task[None]] = set()
+
+
+def _forget(graph: Any, thread_id: str) -> None:
+    task = asyncio.get_running_loop().create_task(graph.forget_thread(thread_id))
+    _forgetting.add(task)
+    task.add_done_callback(_forgetting.discard)
+
+
 PROFILE = "react-to-me"
 
 # One limiter for the process, built at import so the window is not reset by a
@@ -135,12 +145,13 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
         # text after stripping, because that is what the page renders.
         shown: list[str] = []
         cited: list[tuple[str, str]] = []
+        thread_id = f"search-{uuid.uuid4()}"
         try:
             async with asyncio.timeout(ANSWER_TIMEOUT_SECONDS):
                 async for event in graph.astream_answer(
                     body.question,
                     PROFILE,
-                    thread_id=f"search-{uuid.uuid4()}",
+                    thread_id=thread_id,
                     # The postprocess node runs a Tavily web search after the
                     # answer, and `astream_answer` has no event to carry the
                     # result -- so on this path it was paid for and discarded,
@@ -217,6 +228,10 @@ async def answer(request: Request, body: AnswerRequest) -> StreamingResponse:
             # terminal event to stop waiting.
             logger.exception("answering %r failed", body.question[:80])
             state = "failed"
+        finally:
+            # Nothing reads this thread again. A task, not an await: on a
+            # hang-up this runs during cancellation, where awaiting is unsafe.
+            _forget(graph, thread_id)
         held = sources.feed(stripper.flush()) + sources.flush()
         if held:
             shown.append(held)

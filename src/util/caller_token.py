@@ -42,6 +42,9 @@ from pathlib import Path
 import jwt
 
 ALGORITHMS = ["EdDSA", "RS256"]
+#: A real caller token is a few hundred characters. Bounding it bounds the
+#: parse an unauthenticated request can force.
+MAX_TOKEN_CHARS = 4096
 """What the website may sign with. Both are asymmetric; no HS* symmetric option is
 offered, because accepting one would let a leaked verifying key mint tokens."""
 
@@ -108,6 +111,8 @@ def verify(token: str, verifying_key: str, *, audience: str | None = None) -> di
     """
     if not token:
         raise TokenRejectedError("no token presented")
+    if len(token) > MAX_TOKEN_CHARS:
+        raise TokenRejectedError("token too long")
     expected = audience or expected_audience()
     try:
         return dict(
@@ -142,6 +147,13 @@ def verify(token: str, verifying_key: str, *, audience: str | None = None) -> di
         ) from exc
     except jwt.InvalidTokenError as exc:
         raise TokenRejectedError(f"invalid token: {type(exc).__name__}") from exc
+    except (jwt.PyJWTError, ValueError, TypeError, RecursionError) as exc:
+        # Not every rejection is an InvalidTokenError: a header naming an
+        # allowed algorithm that does not match the key raises InvalidKeyError,
+        # and a deeply nested header RecursionError. Uncaught, an
+        # unauthenticated request turned into a 500 on all three routes
+        # (review, area 1a). Every failure path refuses.
+        raise TokenRejectedError(f"unusable token: {type(exc).__name__}") from exc
 
 
 # --- human presence, for the analysis-summary endpoint ----------------------

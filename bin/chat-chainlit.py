@@ -255,19 +255,17 @@ async def continue_from_handoff(handoff_id: str) -> None:
         logger.exception("handoff seeding failed")
         seeded = False
     if not seeded:
-        logger.warning("handoff not seeded", extra={"profile": profile})
+        logger.warning("handoff not seeded: profile %r", profile)
         await cl.Message(content=seed.UNAVAILABLE).send()
         return
 
     if isinstance(handoff, AnalysisHandoff):
         cl.user_session.set("analysis_seeded", True)
     logger.info(
-        "handoff claimed",
-        extra={
-            "kind": handoff.kind,
-            "tier": getattr(handoff, "tier", None),
-            "with_data": data is not None,
-        },
+        "handoff claimed: %s, tier %s, with data %s",
+        handoff.kind,
+        getattr(handoff, "tier", None),
+        data is not None,
     )
     await cl.Message(content=seed.shown_to_reader(handoff)).send()
 
@@ -460,11 +458,18 @@ async def on_window_message(message: object) -> None:
     if handoff_id is None:
         return
 
-    claimed: set[str] = cl.user_session.get("handoff_claimed") or set()
-    if handoff_id not in claimed:
-        claimed.add(handoff_id)
-        cl.user_session.set("handoff_claimed", claimed)
-        await continue_from_handoff(handoff_id)
+    # One claim per session: a tab opens on one handoff. Any page can post
+    # into this channel and it has no rate limit, so redeeming every distinct
+    # id let one session send unbounded messages, log lines and state (review,
+    # area 1a). Later ids are acknowledged -- so the tab's retries stop -- and
+    # otherwise ignored. A string, not a set: user_session is saved as JSON.
+    if cl.user_session.get("handoff_claimed") is None:
+        cl.user_session.set("handoff_claimed", handoff_id)
+        # As a task, like a message: sending is blocked and Stop is shown while
+        # the summary's data loads. Otherwise a question asked meanwhile ran on
+        # the same thread, and the seed landed beside it and was lost -- while
+        # the chat still said it was continuing from the summary.
+        run_as_task(lambda: continue_from_handoff(handoff_id))
 
     await cl.send_window_message(acknowledgement(handoff_id))
 

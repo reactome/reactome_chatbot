@@ -37,6 +37,8 @@ class _StubGraph:
 
     def __init__(self, events: list[AnswerEvent] | None = None) -> None:
         self.calls = 0
+        self.threads: list[str] = []
+        self.forgotten: list[str] = []
         self._events = events or [
             AnswerEvent(kind="citation", st_id="R-HSA-1", display_name="Apoptosis"),
             AnswerEvent(kind="token", text="CDK5 "),
@@ -44,15 +46,20 @@ class _StubGraph:
             AnswerEvent(kind="done", state="answered"),
         ]
 
-    async def astream_answer(self, *_a: Any, **_k: Any) -> AsyncIterator[AnswerEvent]:
+    async def astream_answer(self, *_a: Any, **k: Any) -> AsyncIterator[AnswerEvent]:
         self.calls += 1
+        self.threads.append(k["thread_id"])
         for event in self._events:
             yield event
 
+    async def forget_thread(self, thread_id: str) -> None:
+        self.forgotten.append(thread_id)
+
 
 class _ExplodingGraph(_StubGraph):
-    async def astream_answer(self, *_a: Any, **_k: Any) -> AsyncIterator[AnswerEvent]:
+    async def astream_answer(self, *_a: Any, **k: Any) -> AsyncIterator[AnswerEvent]:
         self.calls += 1
+        self.threads.append(k["thread_id"])
         yield AnswerEvent(kind="token", text="partial ")
         raise RuntimeError("upstream died mid-answer")
 
@@ -612,3 +619,22 @@ class TestAnswersAreKeptForContinueInChat:
         done, _ = self.ask(keys)
         assert done["state"] == "failed"
         assert "answer_id" not in done
+
+
+@pytest.mark.parametrize("graph_class", [_StubGraph, _ExplodingGraph])
+def test_the_one_shot_thread_is_deleted_afterwards(
+    keys: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    graph_class: type[_StubGraph],
+) -> None:
+    # Each answer runs on a fresh thread nothing reads again. Kept, every one
+    # stayed in the checkpointer for the life of the process (review, 1a).
+    graph = graph_class()
+    monkeypatch.setattr("api.answer.get_graph", lambda: graph)
+    private, public = keys
+    _client(public).post(
+        f"{PREFIX}/answer",
+        json={"question": "what is CDK5", "caller_token": _token(private)},
+    )
+    assert graph.threads, "the graph was never asked"
+    assert graph.forgotten == graph.threads

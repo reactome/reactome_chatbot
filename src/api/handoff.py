@@ -79,7 +79,9 @@ HandoffRequest = Annotated[
 
 
 def _refuse(status: int, reason: str, log: str) -> JSONResponse:
-    logger.info("handoff refused", extra={"reason": reason, "detail": log})
+    # In the message, not `extra=`: the only formatter prints the message, so
+    # every refusal logged a bare "handoff refused" (review, area 1a).
+    logger.info("handoff refused: %s (%s)", reason, log)
     return JSONResponse(status_code=status, content={"reason": reason})
 
 
