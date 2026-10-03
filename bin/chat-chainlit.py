@@ -10,6 +10,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import chainlit as cl
+from chainlit.chat_context import chat_contexts
 from chainlit.context import context
 from chainlit.data.base import BaseDataLayer
 from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
@@ -168,6 +169,16 @@ async def resume(thread: ThreadDict) -> None:
 @cl.on_chat_end
 async def end() -> None:
     await static_messages(config, TriggerEvent.on_chat_end)
+    # Nothing of a finished session should outlive it in memory (review,
+    # area 2): Chainlit's own per-session message list, our offers, and -- for
+    # a guest, who can never resume -- the conversation's checkpoints.
+    sid = session_id()
+    chat_contexts.pop(sid, None)
+    proposals.drop_session(sid)
+    _seeding.pop(sid, None)
+    if cl.user_session.get("user") is None:
+        with contextlib.suppress(Exception):
+            await get_graph().forget_thread(current_thread_id())
 
 
 async def run_gsa_analysis(attachment: Attachment) -> None:
@@ -319,13 +330,17 @@ async def propose_gene_list(
         Proposal(
             # Declined, this goes to the model: name the genes when they came
             # from an earlier message, or "the list I gave you" means nothing.
+            # Bounded: each offer kept the whole message (up to 60K) and every
+            # identifier, ~0.85 MB, though only 3,000 can be submitted and the
+            # text only matters if the reader declines (review, area 2).
             text=(
-                f"{message.content}\n\n(The genes: {', '.join(identifiers)})"
+                f"{message.content[:MAX_MODEL_CHARS]}\n\n"
+                f"(The genes: {', '.join(identifiers[:50])})"
                 if earlier
-                else message.content
+                else message.content[:MAX_MODEL_CHARS]
             ),
             message_id=message.id,
-            identifiers=tuple(identifiers),
+            identifiers=tuple(identifiers[:MAX_SUBMITTED_IDENTIFIERS]),
             actions=((run.name, run.id), (decline.name, decline.id)),
         ),
     )
@@ -443,7 +458,10 @@ async def run_gene_list_analysis(text: str, identifiers: list[str]) -> None:
         seeded = await get_graph().seed_history(
             profile,
             thread_id=current_thread_id(),
-            messages=[HumanMessage(content=text), AIMessage(content=reply.for_model)],
+            messages=[
+                HumanMessage(content=text[:MAX_MODEL_CHARS]),
+                AIMessage(content=reply.for_model),
+            ],
         )
     except Exception:
         # The reader has their result; only follow-ups lose it.
@@ -550,6 +568,14 @@ async def answer_with_model(content: str, message_id: str) -> None:
     save_openai_metrics(message_id, openai_cb)
 
 
+#: What a question to the model may be. A gene list may be longer (it is
+#: read, not sent): `gene_list.MAX_MESSAGE_CHARS`.
+MAX_MODEL_CHARS = 8_000
+TOO_LONG = (
+    "That message is too long for me to answer. Please shorten it -- or, for "
+    "an expression matrix, attach it as a file with 📎."
+)
+
 #: Handoffs being seeded, per session. A message waits for its session's seed
 #: before touching the thread, or the seed lands beside a running turn and is
 #: lost while the chat says it is continuing from the summary.
@@ -592,6 +618,16 @@ def solve_key() -> str:
 
 @cl.on_message
 async def main(message: cl.Message) -> None:
+    try:
+        await handle_message(message)
+    finally:
+        # Chainlit appends every message to a per-session list before this
+        # runs, and nothing removes them: rejected ones too, kept until
+        # restart. Nothing here reads that list (review, area 2).
+        chat_contexts.pop(session_id(), None)
+
+
+async def handle_message(message: cl.Message) -> None:
     await wait_for_seed()
 
     # First, before any early return: a "yes" means the offer just made, so
@@ -603,6 +639,12 @@ async def main(message: cl.Message) -> None:
         return
     if cl.user_session.get("user") is None and not _per_solve.allow(solve_key()):
         await cl.Message(content=PER_SOLVE_LIMITED).send()
+        return
+    if len(message.content or "") > gene_list.MAX_MESSAGE_CHARS:
+        # Engine.io delivers up to a million characters. Each was kept in the
+        # thread's checkpoints and sent to the model on every later turn
+        # (review, area 2).
+        await cl.Message(content=TOO_LONG).send()
         return
 
     await static_messages(config, TriggerEvent.on_message)
@@ -666,4 +708,9 @@ async def main(message: cl.Message) -> None:
         proposals.invite(session_id())
         return
 
+    if len(message.content or "") > MAX_MODEL_CHARS:
+        # Long enough to be a gene list, which has been handled above; too
+        # long for a question. The search page caps questions at 2,000.
+        await cl.Message(content=TOO_LONG).send()
+        return
     await answer_with_model(message.content, message.id)

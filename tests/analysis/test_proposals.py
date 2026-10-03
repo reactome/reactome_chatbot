@@ -108,3 +108,14 @@ def test_the_last_list_is_kept_per_session() -> None:
     store.remember_list("s", ["EGFR", "KRAS"])
     assert store.last_list("s") == ["EGFR", "KRAS"]
     assert store.last_list("other") is None
+
+
+def test_a_finished_session_is_forgotten() -> None:
+    store = ProposalStore()
+    store.put("s", "p", offer())
+    store.invite("s")
+    store.remember_list("s", ["TP53", "MDM2"])
+    store.drop_session("s")
+    assert store.take("s", "p") is None
+    assert store.take_invited("s") is False
+    assert store.last_list("s") is None

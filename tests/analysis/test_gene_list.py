@@ -615,3 +615,13 @@ def test_the_model_never_gets_the_link_that_carries_the_token() -> None:
     assert url in reply.text
     assert token not in reply.for_model
     assert "Regulation of TP53 Expression" in reply.for_model
+
+
+def test_a_padded_message_cannot_stall_the_yes_check() -> None:
+    # "y" plus spaces backtracked quadratically: ~90 minutes at 990K on the
+    # shared event loop (review, area 2). Bounded and possessive now.
+    started = time.perf_counter()
+    assert not confirms("y" + " " * 990_000 + "x")
+    assert not confirms("yes" + " " * 30 + "x")
+    assert time.perf_counter() - started < 0.1
+    assert confirms("yes  !")
