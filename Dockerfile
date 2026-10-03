@@ -24,7 +24,11 @@ RUN \
     $POETRY_VENV/bin/pip install poetry~=$POETRY_VERSION && \
     $POETRY_VENV/bin/poetry config virtualenvs.in-project true && \
     $POETRY_VENV/bin/poetry install --no-root --without dev && \
-    rm -rf $POETRY_VENV
+    rm -rf $POETRY_VENV /home/appuser/.cache/pypoetry /home/appuser/.cache/pip
+# The caches go in the same layer they were made in: a later `rm` would hide
+# them but still ship them. Poetry's download cache alone was ~370M of every
+# image, and the dev host keeps two (live + rollback) on a disk that has been
+# the binding constraint on deploys.
 
 # NLTK data, at build time. BM25 tokenises with
 # word_tokenize(..., language="english"), which needs punkt_tab -- without it
