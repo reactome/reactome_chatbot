@@ -604,3 +604,14 @@ def test_reading_a_whole_message_is_fast(invited: bool) -> None:
         started = time.perf_counter()
         read_message(text, invited=invited)
         assert time.perf_counter() - started < 2.0
+
+
+def test_the_model_never_gets_the_link_that_carries_the_token() -> None:
+    # The Pathway Browser link embeds the analysis token; anyone holding it can
+    # fetch the result. It is for the reader, never the model (review, 1a).
+    token = MEASURED["summary"]["token"]  # type: ignore[index]
+    url = f"https://beta.reactome.org/PathwayBrowser/#/DTAB=AN&ANALYSIS={token}"
+    reply = describe_overrepresentation(SUBMITTED, MEASURED, url, ["NOTAGENE1"])
+    assert url in reply.text
+    assert token not in reply.for_model
+    assert "Regulation of TP53 Expression" in reply.for_model

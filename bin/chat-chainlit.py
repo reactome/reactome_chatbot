@@ -259,6 +259,8 @@ async def continue_from_handoff(handoff_id: str) -> None:
         await cl.Message(content=seed.UNAVAILABLE).send()
         return
 
+    if isinstance(handoff, AnalysisHandoff):
+        cl.user_session.set("analysis_seeded", True)
     logger.info(
         "handoff claimed",
         extra={
@@ -434,7 +436,7 @@ async def run_gene_list_analysis(text: str, identifiers: list[str]) -> None:
         seeded = await get_graph().seed_history(
             profile,
             thread_id=current_thread_id(),
-            messages=[HumanMessage(content=text), AIMessage(content=reply.text)],
+            messages=[HumanMessage(content=text), AIMessage(content=reply.for_model)],
         )
     except Exception:
         # The reader has their result; only follow-ups lose it.
@@ -482,7 +484,12 @@ async def answer_with_model(content: str, message_id: str) -> None:
     )
     openai_cb = OpenAICallbackHandler()
 
-    enable_postprocess: bool = is_feature_enabled(config, "postprocessing")
+    # Not on a thread seeded with a reader's analysis: the rephrased question
+    # sent to the web search is built from the history, which then holds
+    # data they agreed to show the model provider -- not a search engine.
+    enable_postprocess: bool = is_feature_enabled(
+        config, "postprocessing"
+    ) and not cl.user_session.get("analysis_seeded", False)
     result: OutputState = await get_graph().ainvoke(
         content,
         chat_profile.lower(),

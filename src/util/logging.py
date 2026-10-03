@@ -17,6 +17,14 @@ LOGGING_CONFIG = {
             "level": DEFAULT_LOG_LEVEL,  # Change to WARNING, ERROR, or CRITICAL
         },
     },
+    "loggers": {
+        # httpx logs every request URL at INFO. Analysis Service URLs carry
+        # the reader's analysis token -- a bearer capability for their full
+        # result -- in the path, so at INFO every summary and handoff wrote
+        # tokens into the logs (review, area 1a).
+        "httpx": {"level": "WARNING"},
+        "httpcore": {"level": "WARNING"},
+    },
     "root": {
         "handlers": ["console"],
         "level": DEFAULT_LOG_LEVEL,  # Set the default log level for all loggers

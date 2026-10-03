@@ -476,6 +476,10 @@ class Overrepresentation:
     text: str
     #: False when nothing matched -- nothing for a follow-up to be about.
     has_pathways: bool
+    #: What the model may see: `text` without the Pathway Browser link. The
+    #: link embeds the analysis token, and anyone holding the token can
+    #: fetch the result; it goes to the reader, never to the model.
+    for_model: str = ""
 
 
 def _fdr(value: Any) -> str:
@@ -564,7 +568,12 @@ def describe_overrepresentation(
             f"Not found in Reactome: {shown}"
             + (f" and {more} more" if more > 0 else ""),
         ]
-    return Overrepresentation(text="\n".join(lines), has_pathways=bool(pathways))
+    text = "\n".join(lines)
+    return Overrepresentation(
+        text=text,
+        has_pathways=bool(pathways),
+        for_model="\n".join(line for line in lines if browser_url not in line),
+    )
 
 
 FAILED = (
