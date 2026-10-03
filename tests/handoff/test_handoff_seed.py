@@ -181,3 +181,27 @@ def test_an_empty_answer_is_never_kept() -> None:
         )
     )
     assert kept is None
+
+
+def test_a_search_question_is_shown_as_text_not_markup() -> None:
+    # Review, area 1a: the question is whatever the search request carried,
+    # the chat renders HTML, and a handoff link can be shared. Unescaped, it
+    # put live markup into the chat of whoever opened the link.
+    from handoff.store import SearchHandoff
+
+    hostile = '<iframe srcdoc="<script>alert(1)</script>"></iframe> CDK5'
+    shown = seed.shown_to_reader(
+        SearchHandoff(
+            kind="search",
+            question=hostile,
+            summary="CDK5 phosphorylates tau.",
+            citations=(),
+            created_at=time.time(),
+        )
+    )
+    # Every "<" is escaped, so markdown yields text and no HTML node; the
+    # browser check is in ~/chat-uitest/handoff_markup.py.
+    import re
+
+    assert re.search(r"(?<!\\)<", shown) is None
+    assert "\\<iframe" in shown  # still visible, as text
