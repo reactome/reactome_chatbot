@@ -17,7 +17,19 @@ The event sequences below are copied from a real run against beta's MCP sibling.
 import asyncio
 from typing import Any, cast
 
+import pytest
+
 from agent.graph import AgentGraph
+
+
+@pytest.fixture(autouse=True)
+def _live_tools_ready(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The live path is answered from tools; by default they are up."""
+
+    async def tools() -> list[Any]:
+        return [object()]
+
+    monkeypatch.setattr("agent.graph.get_mcp_tools", tools)
 
 
 def _chunk(text: str) -> Any:
@@ -120,3 +132,31 @@ def test_a_non_live_route_still_waits_for_retrieval() -> None:
     assert state == "answered"
     assert "".join(text) == "The actual answer."
     assert "expanded query" not in "".join(text)
+
+
+def test_without_live_tools_the_fallback_still_waits_for_retrieval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Routed to live, but the MCP is down: the same node falls back to
+    retrieval, whose query expander streams first. Opening the boundary at
+    preprocess put its alternate questions on the search page as the answer
+    (review, area 3)."""
+
+    async def no_tools() -> None:
+        return None
+
+    monkeypatch.setattr("agent.graph.get_mcp_tools", no_tools)
+    events = [
+        _preprocess_end(["live"]),
+        _model_stream("Which organisms are represented in Reactome?"),  # expander
+        {
+            "event": "on_retriever_end",
+            "name": "retriever",
+            "metadata": {},
+            "data": {"output": []},
+        },
+        _model_stream("Reactome covers 15 species."),
+    ]
+    state, text = _drive(events)
+    assert state == "answered"
+    assert "".join(text) == "Reactome covers 15 species."

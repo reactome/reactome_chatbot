@@ -98,7 +98,10 @@ def test_a_failing_tool_is_reported_to_the_model_not_raised() -> None:
 
     assert "could not" in answer.lower()
     tool_messages = [m for m in llm.seen[-1] if isinstance(m, ToolMessage)]
-    assert any("the service is down" in str(m.content) for m in tool_messages)
+    # Told that it failed, and of what type -- not the message, which carried
+    # the MCP's internal URL to OpenAI (review, area 3).
+    assert any("lookup failed" in str(m.content) for m in tool_messages)
+    assert not any("the service is down" in str(m.content) for m in tool_messages)
 
 
 def test_an_invented_tool_name_is_survivable() -> None:
@@ -279,3 +282,30 @@ def test_the_report_is_optional_so_existing_callers_are_unaffected() -> None:
             answer_from_live_services(llm, [failing_tool], "anything")
         ).lower()
     )
+
+
+def test_the_analysis_token_never_reaches_the_model() -> None:
+    from reactome_mcp.tools import without_token
+
+    raw = (
+        "## Analysis\n**Token:** MjAyNjEwMDRfMTIz\n"
+        "View: https://reactome.org/PathwayBrowser/#/DTAB=AN&ANALYSIS=MjAyNjEwMDRfMTIz\n"
+        "1. Cell Cycle (R-HSA-1640170) p=1e-6 FDR=1e-4\n"
+    )
+    shown = without_token(raw)
+    assert "MjAyNjEwMDRfMTIz" not in shown
+    assert "Cell Cycle (R-HSA-1640170)" in shown
+
+
+def test_a_round_runs_at_most_a_few_tool_calls() -> None:
+    # 150 calls in one round ran 300 upstream requests, one after another
+    # (review, area 3). The rest are answered, so the next request is valid.
+    from reactome_mcp.answer import MAX_CALLS_PER_ROUND
+
+    calls = [_call("reactome_species", str(i)) for i in range(20)]
+    llm = _FakeLLM([AIMessage("", tool_calls=calls), AIMessage("Done.")])
+    asyncio.run(answer_from_live_services(llm, [reactome_species], "many"))
+    tool_messages = [m for m in llm.seen[-1] if isinstance(m, ToolMessage)]
+    assert len(tool_messages) == 20  # every call answered
+    ran = [m for m in tool_messages if "Not run" not in str(m.content)]
+    assert len(ran) == MAX_CALLS_PER_ROUND

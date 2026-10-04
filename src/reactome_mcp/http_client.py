@@ -21,6 +21,8 @@ and neither fails loudly:
     text that is perfectly valid.
 """
 
+import asyncio
+import itertools
 import json
 import logging
 from typing import Any
@@ -43,6 +45,13 @@ class MCPHttpClient:
         self.timeout = timeout
         self._session_id: str | None = None
         self._client = httpx.AsyncClient(timeout=timeout)
+        # A fresh id for every request. Every call used to send id 2 on the
+        # one session the whole process shares, and the server matches
+        # replies by id: two users' overlapping lookups got each other's
+        # results -- one of them another reader's identifiers and analysis
+        # token -- and the other call hung (review, area 3).
+        self._ids = itertools.count(2)
+        self._init_lock = asyncio.Lock()
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json", "Accept": ACCEPT}
@@ -51,7 +60,9 @@ class MCPHttpClient:
         return headers
 
     @staticmethod
-    def _parse(response: httpx.Response) -> dict[str, Any]:
+    def _parse(
+        response: httpx.Response, expected_id: int | None = None
+    ) -> dict[str, Any]:
         """Read one JSON-RPC message out of a JSON or SSE body."""
         body = response.text
         if "text/event-stream" in response.headers.get("content-type", ""):
@@ -74,6 +85,12 @@ class MCPHttpClient:
         if not isinstance(message, dict):
             raise MCPToolError(
                 f"MCP returned a {type(message).__name__}, expected an object"
+            )
+
+        if expected_id is not None and message.get("id") != expected_id:
+            # Never someone else's answer: refuse rather than hand it on.
+            raise MCPToolError(
+                f"MCP replied to request {message.get('id')!r}, not {expected_id}"
             )
 
         if "error" in message:
@@ -128,23 +145,50 @@ class MCPHttpClient:
         )
         return result
 
+    async def _ensure_session(self) -> None:
+        async with self._init_lock:
+            if self._session_id is None:
+                await self.initialize()
+
+    @staticmethod
+    def _session_lost(response: httpx.Response) -> bool:
+        """The server no longer knows our session -- it restarted, or evicted
+        it. Answered 400 "No valid session" by reactome-mcp, 404 by the spec."""
+        if response.status_code == 404:
+            return True
+        return response.status_code == 400 and "session" in response.text.lower()
+
     async def call(
         self, method: str, params: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        response = await self._client.post(
-            self.endpoint,
-            headers=self._headers(),
-            json={"jsonrpc": "2.0", "id": 2, "method": method, "params": params or {}},
-        )
-        response.raise_for_status()
-        return self._parse(response)
+        await self._ensure_session()
+        for attempt in (1, 2):
+            request_id = next(self._ids)
+            response = await self._client.post(
+                self.endpoint,
+                headers=self._headers(),
+                json={
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "method": method,
+                    "params": params or {},
+                },
+            )
+            if attempt == 1 and self._session_lost(response):
+                # Re-initialize once. Without this, one MCP restart turned
+                # live lookups off until the chatbot restarted (review, 3).
+                logger.info("MCP session lost; initializing a new one")
+                async with self._init_lock:
+                    self._session_id = None
+                    await self.initialize()
+                continue
+            response.raise_for_status()
+            return self._parse(response, request_id)
+        raise MCPToolError("unreachable")
 
     async def call_tool(
         self, name: str, arguments: dict[str, Any] | None = None
     ) -> str:
-        if self._session_id is None:
-            await self.initialize()
-
         result = await self.call(
             "tools/call", {"name": name, "arguments": arguments or {}}
         )
@@ -161,8 +205,6 @@ class MCPHttpClient:
         return text
 
     async def list_tools(self) -> list[dict[str, Any]]:
-        if self._session_id is None:
-            await self.initialize()
         tools = (await self.call("tools/list")).get("tools", [])
         if not isinstance(tools, list):
             raise MCPToolError(f"MCP returned a {type(tools).__name__} tool list")

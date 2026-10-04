@@ -16,6 +16,7 @@ tool -- not because the tool exists.
 """
 
 import logging
+import re
 from typing import Any, Protocol
 
 from langchain_core.tools import BaseTool, tool
@@ -29,6 +30,21 @@ class ToolCaller(Protocol):
     async def call_tool(
         self, name: str, arguments: dict[str, Any] | None = None
     ) -> str: ...
+
+
+#: A line naming the analysis token, or a link that carries it.
+_TOKEN_LINE = re.compile(r"token|ANALYSIS=|/AnalysisService/", re.IGNORECASE)
+
+
+def without_token(text: str) -> str:
+    """An analysis result as the model may see it: no token, no token links.
+
+    The token is a bearer capability for the full result, the reader's
+    identifiers included. reactome-mcp's reply opens with it, and the live
+    loop put the reply verbatim into the model's context (review, area 3).
+    The chat's own gene-list path already drops the same line.
+    """
+    return "\n".join(line for line in text.splitlines() if not _TOKEN_LINE.search(line))
 
 
 def create_mcp_tools(client: ToolCaller) -> list[BaseTool]:
@@ -63,8 +79,10 @@ def create_mcp_tools(client: ToolCaller) -> list[BaseTool]:
         run by Reactome, not a lookup: do not answer such a question from
         retrieved documents instead.
         """
-        return await client.call_tool(
-            "reactome_analyze_identifiers", {"identifiers": identifiers}
+        return without_token(
+            await client.call_tool(
+                "reactome_analyze_identifiers", {"identifiers": identifiers}
+            )
         )
 
     @tool
