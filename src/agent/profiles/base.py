@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import Annotated, Literal, TypedDict
 
 from langchain_core.embeddings import Embeddings
@@ -85,14 +86,25 @@ class BaseGraphBuilder:
             config["configurable"].get("enable_postprocess")
             and state["safety"] == "true"
         ):
-            result: SearchState = await self.search_workflow.ainvoke(
-                SearchState(
-                    input=state["rephrased_input"],
-                    generation=state["answer"],
-                ),
-                config=RunnableConfig(callbacks=config["callbacks"]),
-            )
-            search_results = result["search_results"]
+            try:
+                result: SearchState = await self.search_workflow.ainvoke(
+                    SearchState(
+                        input=state["rephrased_input"],
+                        generation=state["answer"],
+                    ),
+                    config=RunnableConfig(callbacks=config["callbacks"]),
+                )
+                search_results = result["search_results"]
+            except Exception:
+                # Optional, and after the answer has already streamed and been
+                # saved. A failed grader or search used to fail the whole turn:
+                # the reader saw "something went wrong" under a complete
+                # answer, and a retry re-sent a question already in the
+                # history (review, area 3).
+                logging.getLogger(__name__).warning(
+                    "post-answer web search failed; answering without it",
+                    exc_info=True,
+                )
         return BaseState(
             additional_content=AdditionalContent(search_results=search_results)
         )

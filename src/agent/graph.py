@@ -237,7 +237,12 @@ def _citation_for(document: "Document") -> "AnswerEvent | None":
         return AnswerEvent(
             kind="citation",
             st_id=str(stable_id),
-            display_name=str(metadata.get("display_name") or ""),
+            # Disease-variant documents have no display_name; their name is
+            # the variant ("ABCA1 W590S [plasma membrane]"). Every one of
+            # their citations went out unlabelled (review, area 3).
+            display_name=str(
+                metadata.get("display_name") or metadata.get("variant") or ""
+            ),
         )
     source = str(metadata.get("source") or "")
     # Only a real web URL. `source` is a generic LangChain field, and the CSV
