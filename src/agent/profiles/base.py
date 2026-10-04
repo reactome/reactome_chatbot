@@ -7,6 +7,7 @@ from langchain_core.messages import BaseMessage
 from langchain_core.runnables import Runnable, RunnableConfig
 from langgraph.graph.message import add_messages
 
+from agent.history import recent
 from agent.tasks.detect_language import create_language_detector
 from agent.tasks.rephrase import create_rephrase_chain
 from agent.tasks.safety_checker import SafetyCheck, create_safety_checker
@@ -54,7 +55,7 @@ class BaseGraphBuilder:
         rephrased_input: str = await self.rephrase_chain.ainvoke(
             {
                 "user_input": state["user_input"],
-                "chat_history": state.get("chat_history", []),
+                "chat_history": recent(state.get("chat_history")),
             },
             config,
         )

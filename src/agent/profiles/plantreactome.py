@@ -6,6 +6,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import Runnable, RunnableConfig
 from langgraph.graph.state import StateGraph
 
+from agent.history import recent
 from agent.profiles.base import BaseGraphBuilder, BaseState
 from agent.tasks.unsafe_question import create_unsafe_answer_generator
 from retrievers.plantreactome.rag import create_plantreactome_rag
@@ -85,7 +86,7 @@ class PlantReactomeGraphBuilder(BaseGraphBuilder):
                 # anything folded into it reaches BM25 and the query expander.
                 "detected_language": state["detected_language"],
                 "chat_history": (
-                    state["chat_history"]
+                    recent(state["chat_history"])
                     if state["chat_history"]
                     else [HumanMessage(state["user_input"])]
                 ),
