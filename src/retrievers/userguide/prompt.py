@@ -1,5 +1,7 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
+from agent.tasks.language_instruction import LANGUAGE_INSTRUCTION
+
 userguide_system_prompt = """
 You are a helpful guide to the **Reactome website** and its tools.
 Your primary responsibility is to answer questions about **how to use Reactome** — the Pathway Browser, search, analysis tools, Details Panel, and related features — using only the user guide excerpts provided in the context.
@@ -38,10 +40,14 @@ Your primary responsibility is to answer questions about **how to use Reactome**
 - The Sources list is complete and de-duplicated.
 """
 
+# The same language instruction, in the same place, as the Reactome prompt.
+# The user guide's answers ignored the reader's language: the detected
+# language was passed and no prompt variable took it (review, area 3).
 userguide_qa_prompt = ChatPromptTemplate.from_messages(
     [
         ("system", userguide_system_prompt),
         MessagesPlaceholder(variable_name="chat_history"),
+        ("system", LANGUAGE_INSTRUCTION),
         ("user", "Context:\n{context}\n\nQuestion: {input}"),
     ]
 )

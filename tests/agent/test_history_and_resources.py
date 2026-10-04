@@ -89,3 +89,50 @@ def test_the_graph_is_compiled_once_under_concurrency() -> None:
 
     asyncio.run(many())
     assert calls == [1]
+
+
+# --- answer quality, review area 3 ------------------------------------------------
+
+
+def test_a_disease_variant_citation_is_labelled_with_its_variant() -> None:
+    # Disease-variant documents carry no display_name; every one of their
+    # citations went out with an empty label.
+    from agent.graph import _citation_for
+
+    doc = Document(
+        page_content="...",
+        metadata={"st_id": "R-HSA-5682201", "variant": "PTEN R130G [cytosol]"},
+    )
+    citation = _citation_for(doc)
+    assert citation is not None
+    assert citation.display_name == "PTEN R130G [cytosol]"
+
+
+def test_a_failed_post_answer_step_does_not_fail_the_turn() -> None:
+    from agent.profiles.base import BaseGraphBuilder
+
+    class _Failing:
+        async def ainvoke(self, *_a: Any, **_k: Any) -> Any:
+            raise RuntimeError("429 from the grader")
+
+    builder = BaseGraphBuilder.__new__(BaseGraphBuilder)
+    builder.search_workflow = _Failing()  # type: ignore[assignment]
+    state: Any = {"safety": "true", "rephrased_input": "q", "answer": "a"}
+    config: Any = {"configurable": {"enable_postprocess": True}, "callbacks": None}
+    result = asyncio.run(builder.postprocess(state, config))
+    assert result["additional_content"]["search_results"] == []
+
+
+def test_a_refused_safety_check_is_an_unsafe_verdict() -> None:
+    from langchain_openai.chat_models.base import OpenAIRefusalError
+
+    from agent.profiles.react_to_me import ReactToMeGraphBuilder
+
+    class _Refusing:
+        async def ainvoke(self, *_a: Any, **_k: Any) -> Any:
+            raise OpenAIRefusalError("I can't help with that.")
+
+    builder = ReactToMeGraphBuilder.__new__(ReactToMeGraphBuilder)
+    builder.safety_checker = _Refusing()  # type: ignore[assignment]
+    verdict = asyncio.run(builder._check_safety("something", {}))
+    assert verdict.safety == "false"

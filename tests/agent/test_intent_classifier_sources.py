@@ -18,12 +18,18 @@ THREE: frozenset[SourceName] = frozenset({"reactome", "userguide", "live"})
 ONE: frozenset[SourceName] = frozenset({"reactome"})
 
 
-def test_without_the_mcp_the_prompt_is_byte_for_byte_what_it_was() -> None:
-    """FR-007: with the new step disabled, behaviour is exactly as before.
+def test_without_the_mcp_the_prompt_never_mentions_live() -> None:
+    """Without live services the classifier must not be told they exist.
 
-    Not "similar" -- identical. A deployment with no MCP server must classify
-    the same questions the same way, and pay the same tokens doing it.
+    This replaced a test that compared the prompt with a constant built by
+    the same function at import, so it could never fail -- and its claim,
+    "byte-for-byte what it was", had stopped being true when the routing
+    rules were extended (review, area 3).
     """
+    import re
+
+    message = build_classifier_message(TWO)
+    assert re.search(r"\blive\b", message, re.IGNORECASE) is None
     assert build_classifier_message(TWO) == intent_classifier_message
 
 

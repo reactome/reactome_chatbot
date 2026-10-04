@@ -6,6 +6,7 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import Runnable, RunnableConfig
+from langchain_openai.chat_models.base import OpenAIRefusalError
 from langgraph.graph.state import StateGraph
 
 from agent.history import recent
@@ -164,7 +165,7 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         safety_check: SafetyCheck
         intent: QueryIntent
         safety_check, intent = await asyncio.gather(
-            self.safety_checker.ainvoke({"rephrased_input": rephrased_input}, config),
+            self._check_safety(rephrased_input, config),
             self.intent_classifier.ainvoke(
                 {"rephrased_input": rephrased_input}, config
             ),
@@ -185,6 +186,24 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
             active_sources=active_sources,
             collections=intent.collections,
         )
+
+    async def _check_safety(
+        self, rephrased_input: str, config: RunnableConfig
+    ) -> SafetyCheck:
+        """The safety verdict -- and a refusal to give one is a "no".
+
+        With json_schema output, a model that refuses to classify a question
+        raises OpenAIRefusalError rather than answering "false"; the turn then
+        failed outright, and a harmful question got an error instead of the
+        polite refusal (review, area 3).
+        """
+        try:
+            result: SafetyCheck = await self.safety_checker.ainvoke(
+                {"rephrased_input": rephrased_input}, config
+            )
+        except OpenAIRefusalError:
+            return SafetyCheck(safety="false", reason_unsafe="the request was declined")
+        return result
 
     async def _answer_from_live_services(
         self, state: ReactToMeState, config: RunnableConfig

@@ -23,11 +23,20 @@ from langchain_core.runnables import Runnable
 from nltk.tokenize import word_tokenize
 from pydantic import ConfigDict
 
+from data_generation.disease_variant import (
+    CONTENT_COLUMNS as DISEASE_VARIANT_CONTENT_COLUMNS,
+)
 from data_generation.metadata_csv_loader import MetaDataCSVLoader
 from util.logging import logging
 
 logger = logging.getLogger(__name__)
 
+
+#: Collections whose vectors were built from a subset of the CSV's columns;
+#: the keyword index must see the same text. Others embed every column.
+EMBEDDED_CONTENT_COLUMNS: dict[str, list[str]] = {
+    "disease_variants": DISEASE_VARIANT_CONTENT_COLUMNS,
+}
 
 #: Distinct query tokens BM25 scores. rank_bm25 scans every document once per
 #: query token, repeats included: ~45 ms each over Release 97, so a 2,000-
@@ -433,10 +442,25 @@ class HybridRetriever(BaseRetriever):
             # fusion.
             #
             # Every column is promoted, from the header, so this cannot drift
-            # from whatever the CSV holds. Content is unchanged: the loader only
-            # trims content when `content_columns` is given, which it is not.
+            # from whatever the CSV holds.
+            #
+            # Content follows what was embedded. The disease-variant store was
+            # built from 12 of its 21 columns; indexing all 21 here meant the
+            # two retrievers never returned the same text for a variant, so RRF
+            # -- which keys on the text -- never fused them: 0 of 300 matched,
+            # and "Which ABCA1 variants are there?" filled its 10 slots with 5
+            # variants, each twice (review, area 3).
             loader = MetaDataCSVLoader(
-                file_path=str(csv_path), metadata_columns=_csv_column_names(csv_path)
+                file_path=str(csv_path),
+                metadata_columns=_csv_column_names(csv_path),
+                # Only columns the file has: none at all would leave every
+                # document empty, and BM25 divides by their mean length.
+                content_columns=[
+                    column
+                    for column in EMBEDDED_CONTENT_COLUMNS.get(subdirectory, [])
+                    if column in _csv_column_names(csv_path)
+                ]
+                or None,
             )
             data = loader.load()
             bm25_retriever = BoundedBM25Retriever.from_documents(
