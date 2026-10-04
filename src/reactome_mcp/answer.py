@@ -27,6 +27,8 @@ from langchain_core.tools import BaseTool
 
 logger = logging.getLogger(__name__)
 
+#: Tool calls run per round; the rest are answered without running.
+MAX_CALLS_PER_ROUND = 6
 MAX_TOOL_ROUNDS = 2
 
 
@@ -118,7 +120,19 @@ async def answer_from_live_services(
         if not calls:
             break
 
-        for call in calls:
+        for index, call in enumerate(calls):
+            if index >= MAX_CALLS_PER_ROUND:
+                # Answered, not dropped: every tool call needs a reply for the
+                # next request to be valid. One question had 150 calls in a
+                # round, 300 upstream requests, run one after another with no
+                # overall deadline (review, area 3).
+                messages.append(
+                    ToolMessage(
+                        content="Not run: too many lookups at once. Use the results above.",
+                        tool_call_id=call["id"],
+                    )
+                )
+                continue
             tool = by_name.get(call["name"])
             if tool is None:
                 # The model invented a tool name. Tell it so, rather than
@@ -138,7 +152,9 @@ async def answer_from_live_services(
                 # A failed lookup is information, not a crash. The model needs
                 # to say it could not find out, rather than invent.
                 logger.warning("live tool %s failed: %s", call["name"], exc)
-                result = f"This lookup failed: {exc}"
+                # The type, not the message: it carried the MCP's internal URL
+                # ("... for url 'http://reactome_mcp:4320/mcp'") to OpenAI.
+                result = f"This lookup failed ({type(exc).__name__})."
                 # Recorded before it is stringified into the model's context,
                 # which is the last point at which it is still a fact rather
                 # than a paraphrase.

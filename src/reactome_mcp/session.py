@@ -20,6 +20,7 @@ import atexit
 import contextlib
 import logging
 import os
+import time
 from pathlib import Path
 
 from langchain_core.tools import BaseTool
@@ -35,7 +36,13 @@ _lock = asyncio.Lock()
 _manager: MCPProcessManager | None = None
 _http: MCPHttpClient | None = None
 _tools: list[BaseTool] | None = None
-_failed = False
+#: When starting the MCP last failed. Retried after `RETRY_AFTER_SECONDS`:
+#: remembered for the life of the process, one failed first connect -- the
+#: MCP not up yet after a deploy -- turned live lookups off until the
+#: chatbot restarted, while the router kept sending questions to them
+#: (review, area 3).
+_failed_at: float | None = None
+RETRY_AFTER_SECONDS = 60.0
 
 
 def mcp_server_path() -> Path | None:
@@ -53,6 +60,12 @@ def is_configured() -> bool:
     return mcp_server_url() is not None or mcp_server_path() is not None
 
 
+def _recently_failed() -> bool:
+    return (
+        _failed_at is not None and time.monotonic() - _failed_at < RETRY_AFTER_SECONDS
+    )
+
+
 async def get_mcp_tools() -> list[BaseTool] | None:
     """The MCP tools, starting the server if it is not already running.
 
@@ -61,18 +74,18 @@ async def get_mcp_tools() -> list[BaseTool] | None:
     every question would turn one misconfiguration into a stall on every
     request.
     """
-    global _manager, _tools, _failed
+    global _manager, _http, _tools, _failed_at
 
     if _tools is not None:
         return _tools
-    if _failed or not is_configured():
+    if not is_configured() or _recently_failed():
         return None
 
     async with _lock:
         # Another coroutine may have finished while this one waited.
         if _tools is not None:
             return _tools
-        if _failed:
+        if _recently_failed():
             return None
 
         url = mcp_server_url()
@@ -101,7 +114,7 @@ async def get_mcp_tools() -> list[BaseTool] | None:
                 return None
             _tools = create_mcp_tools(client)
         except Exception as exc:
-            _failed = True
+            _failed_at = time.monotonic()
             stderr = ""
             with contextlib.suppress(Exception):
                 # Best effort: this runs while reporting another failure and
@@ -109,9 +122,10 @@ async def get_mcp_tools() -> list[BaseTool] | None:
                 if _manager is not None:
                     stderr = await _manager.stderr_tail()
             logger.warning(
-                "MCP server unavailable (%s); live Reactome tools are off for this "
-                "process. Checked %s.%s",
+                "MCP server unavailable (%s); live Reactome tools are off for "
+                "%.0fs, then retried. Checked %s.%s",
                 exc,
+                RETRY_AFTER_SECONDS,
                 where,
                 f" Server said: {stderr}" if stderr else "",
             )

@@ -22,6 +22,7 @@ from agent.models import get_embedding, get_llm
 from agent.profile_names import ProfileName
 from agent.profiles import create_profile_graphs
 from agent.profiles.base import InputState, OutputState
+from reactome_mcp.session import get_mcp_tools
 from util.config_yml.models import LLMConfig
 from util.embedding_environment import EmbeddingEnvironment
 from util.logging import logging
@@ -492,8 +493,14 @@ class AgentGraph:
                 # retriever, so nothing else is streaming at the answer node and
                 # there is nothing to tell apart.
                 output = event["data"].get("output")
-                if isinstance(output, dict) and "live" in (
-                    output.get("active_sources") or []
+                if (
+                    isinstance(output, dict)
+                    and "live" in (output.get("active_sources") or [])
+                    # Only if live tools will really answer. Without them the
+                    # same node falls back to retrieval, whose query expander
+                    # streams first -- and the search page showed its
+                    # alternate questions as the answer (review, area 3).
+                    and await get_mcp_tools() is not None
                 ):
                     retrieval_done = True
                 continue

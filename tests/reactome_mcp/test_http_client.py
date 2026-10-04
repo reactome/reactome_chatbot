@@ -49,7 +49,7 @@ def test_the_session_id_is_read_from_the_header_and_resent() -> None:
                 text=sse(
                     {
                         "jsonrpc": "2.0",
-                        "id": 1,
+                        "id": json.loads(request.content).get("id"),
                         "result": {"serverInfo": {"name": "reactome"}},
                     }
                 ),
@@ -60,7 +60,7 @@ def test_the_session_id_is_read_from_the_header_and_resent() -> None:
             text=sse(
                 {
                     "jsonrpc": "2.0",
-                    "id": 2,
+                    "id": json.loads(request.content).get("id"),
                     "result": {"content": [{"type": "text", "text": "96"}]},
                 }
             ),
@@ -87,7 +87,13 @@ def test_an_sse_framed_reply_is_parsed() -> None:
         return httpx.Response(
             200,
             headers={"content-type": "text/event-stream", "mcp-session-id": "s"},
-            text=sse({"jsonrpc": "2.0", "id": 1, "result": result}),
+            text=sse(
+                {
+                    "jsonrpc": "2.0",
+                    "id": json.loads(request.content).get("id"),
+                    "result": result,
+                }
+            ),
         )
 
     assert asyncio.run(_client(handler).call_tool("x")) == "hello"
@@ -104,7 +110,11 @@ def test_a_plain_json_reply_is_also_accepted() -> None:
         return httpx.Response(
             200,
             headers={"content-type": "application/json", "mcp-session-id": "s"},
-            json={"jsonrpc": "2.0", "id": 1, "result": result},
+            json={
+                "jsonrpc": "2.0",
+                "id": json.loads(request.content).get("id"),
+                "result": result,
+            },
         )
 
     assert asyncio.run(_client(handler).call_tool("x")) == "json"
@@ -117,7 +127,13 @@ def test_a_missing_session_id_is_refused_up_front() -> None:
         return httpx.Response(
             200,
             headers={"content-type": "text/event-stream"},
-            text=sse({"jsonrpc": "2.0", "id": 1, "result": {}}),
+            text=sse(
+                {
+                    "jsonrpc": "2.0",
+                    "id": json.loads(request.content).get("id"),
+                    "result": {},
+                }
+            ),
         )
 
     with pytest.raises(MCPToolError, match="no mcp-session-id"):
@@ -131,7 +147,13 @@ def test_a_jsonrpc_error_is_raised() -> None:
             return httpx.Response(
                 200,
                 headers={"content-type": "text/event-stream", "mcp-session-id": "s"},
-                text=sse({"jsonrpc": "2.0", "id": 1, "result": {}}),
+                text=sse(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": json.loads(request.content).get("id"),
+                        "result": {},
+                    }
+                ),
             )
         return httpx.Response(
             200,
@@ -139,7 +161,7 @@ def test_a_jsonrpc_error_is_raised() -> None:
             text=sse(
                 {
                     "jsonrpc": "2.0",
-                    "id": 2,
+                    "id": json.loads(request.content).get("id"),
                     "error": {"code": -32601, "message": "no such tool"},
                 }
             ),
@@ -163,7 +185,13 @@ def test_a_tool_error_result_raises() -> None:
         return httpx.Response(
             200,
             headers={"content-type": "text/event-stream", "mcp-session-id": "s"},
-            text=sse({"jsonrpc": "2.0", "id": 1, "result": result}),
+            text=sse(
+                {
+                    "jsonrpc": "2.0",
+                    "id": json.loads(request.content).get("id"),
+                    "result": result,
+                }
+            ),
         )
 
     with pytest.raises(MCPToolError, match="pathway not found"):
@@ -187,12 +215,18 @@ def test_the_last_data_line_wins() -> None:
             return httpx.Response(
                 200,
                 headers={"content-type": "text/event-stream", "mcp-session-id": "s"},
-                text=sse({"jsonrpc": "2.0", "id": 1, "result": {}}),
+                text=sse(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": json.loads(request.content).get("id"),
+                        "result": {},
+                    }
+                ),
             )
         stream = sse({"jsonrpc": "2.0", "method": "notifications/progress"}) + sse(
             {
                 "jsonrpc": "2.0",
-                "id": 2,
+                "id": json.loads(request.content).get("id"),
                 "result": {"content": [{"type": "text", "text": "the answer"}]},
             }
         )
@@ -201,3 +235,82 @@ def test_the_last_data_line_wins() -> None:
         )
 
     assert asyncio.run(_client(handler).call_tool("x")) == "the answer"
+
+
+# --- review, area 3 -----------------------------------------------------------
+
+
+def _echoing_server(
+    log: list[dict[str, Any]], lost_once: list[bool] | None = None
+) -> Any:
+    """Answers each request under its own id; can forget the session once."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        log.append(body)
+        if body.get("method") == "initialize":
+            result: dict[str, Any] = {"serverInfo": {"name": "fake"}}
+        elif lost_once and lost_once[0] and body.get("method") == "tools/call":
+            lost_once[0] = False
+            return httpx.Response(
+                400,
+                json={
+                    "jsonrpc": "2.0",
+                    "error": {
+                        "code": -32000,
+                        "message": "No valid session. Send initialize first.",
+                    },
+                    "id": None,
+                },
+            )
+        else:
+            name = (body.get("params") or {}).get("name", "")
+            result = {"content": [{"type": "text", "text": f"answer to {name}"}]}
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream", "mcp-session-id": "s"},
+            text=sse({"jsonrpc": "2.0", "id": body.get("id"), "result": result}),
+        )
+
+    return handler
+
+
+def test_every_request_has_its_own_id() -> None:
+    # Every call sent id 2 on the shared session; the server matched replies
+    # by id, so overlapping users got each other's results (review, area 3).
+    log: list[dict[str, Any]] = []
+    client = _client(_echoing_server(log))
+
+    async def both() -> list[str]:
+        return list(
+            await asyncio.gather(
+                client.call_tool("search"), client.call_tool("species")
+            )
+        )
+
+    assert asyncio.run(both()) == ["answer to search", "answer to species"]
+    ids = [b["id"] for b in log if b.get("method") == "tools/call"]
+    assert len(ids) == len(set(ids)) == 2
+
+
+def test_a_reply_to_another_request_is_refused() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        reply_id = body.get("id") if body.get("method") == "initialize" else 999
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream", "mcp-session-id": "s"},
+            text=sse({"jsonrpc": "2.0", "id": reply_id, "result": {"content": []}}),
+        )
+
+    with pytest.raises(MCPToolError, match="not"):
+        asyncio.run(_client(handler).call_tool("x"))
+
+
+def test_a_lost_session_is_renewed_once() -> None:
+    # reactome-mcp answers 400 "No valid session" after it restarts; the
+    # client never re-initialized, so live lookups stayed off.
+    log: list[dict[str, Any]] = []
+    client = _client(_echoing_server(log, lost_once=[True]))
+    assert asyncio.run(client.call_tool("search")) == "answer to search"
+    assert [b.get("method") for b in log].count("initialize") == 2
