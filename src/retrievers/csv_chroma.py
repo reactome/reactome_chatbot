@@ -29,6 +29,24 @@ from util.logging import logging
 logger = logging.getLogger(__name__)
 
 
+#: Distinct query tokens BM25 scores. rank_bm25 scans every document once per
+#: query token, repeats included: ~45 ms each over Release 97, so a 2,000-
+#: character question cost ~16 s of CPU and an 8,000-character chat message
+#: ~60 s, slowing every session (review, area 3). Questions are a few dozen
+#: tokens; this bounds the hostile case and leaves real ones untouched.
+MAX_QUERY_TOKENS = 64
+
+
+class BoundedBM25Retriever(BM25Retriever):
+    """BM25 with the query -- only the query -- deduplicated and capped."""
+
+    def _get_relevant_documents(
+        self, query: str, *, run_manager: CallbackManagerForRetrieverRun
+    ) -> list[Document]:
+        tokens = list(dict.fromkeys(self.preprocess_func(query)))[:MAX_QUERY_TOKENS]
+        return list(self.vectorizer.get_top_n(tokens, self.docs, n=self.k))
+
+
 def chroma_settings() -> chromadb.config.Settings:
     """A *fresh* Settings object for every Chroma store.
 
@@ -421,7 +439,7 @@ class HybridRetriever(BaseRetriever):
                 file_path=str(csv_path), metadata_columns=_csv_column_names(csv_path)
             )
             data = loader.load()
-            bm25_retriever = BM25Retriever.from_documents(
+            bm25_retriever = BoundedBM25Retriever.from_documents(
                 data,
                 preprocess_func=lambda text: word_tokenize(
                     text.casefold(), language="english"

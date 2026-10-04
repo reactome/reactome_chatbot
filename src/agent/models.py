@@ -7,6 +7,9 @@ from langchain_ollama.chat_models import ChatOllama
 from langchain_openai.chat_models.base import ChatOpenAI
 from langchain_openai.embeddings import OpenAIEmbeddings
 
+#: Seconds for one embedding request.
+EMBEDDING_TIMEOUT_SECONDS = 30.0
+
 
 def get_embedding(
     provider: (
@@ -25,7 +28,13 @@ def get_embedding(
     if model is None:
         provider, model = provider.split("/", 1)
     if provider == "openai":
-        return OpenAIEmbeddings(model=model, base_url=base_url)
+        # With a timeout. The client default is none, and embedding calls run
+        # in the shared thread pool: a stalled endpoint pinned ~5 workers per
+        # question, which no cancellation could free, until every to_thread
+        # in the process queued behind them (review, area 3).
+        return OpenAIEmbeddings(
+            model=model, base_url=base_url, timeout=EMBEDDING_TIMEOUT_SECONDS
+        )
     if provider == "huggingfacehub":
         return HuggingFaceEndpointEmbeddings(model=model)
     if provider == "huggingfacelocal":

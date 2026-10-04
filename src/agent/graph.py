@@ -370,6 +370,20 @@ class AgentGraph:
             "application shutdown hook."
         )
 
+    async def _ensure_graph(self) -> dict[str, CompiledStateGraph]:
+        """Compile once. Concurrent first requests each compiled the graph and
+        opened their own Postgres pool, and close_pool closed only the last
+        (review, area 3)."""
+        if self.graph is not None:
+            return self.graph
+        lock = getattr(self, "_init_lock", None)
+        if lock is None:
+            lock = self._init_lock = asyncio.Lock()
+        async with lock:
+            if self.graph is None:
+                self.graph = await self.initialize()
+            return self.graph
+
     async def initialize(self) -> dict[str, CompiledStateGraph]:
         checkpointer: BaseCheckpointSaver[str] = await self.create_checkpointer()
         self.checkpointer = checkpointer
@@ -409,7 +423,12 @@ class AgentGraph:
         Read from the thread's own history, so it holds for as long as the
         history does -- across reconnects and restarts.
         """
-        if self.graph is None or profile not in self.graph:
+        # Built here rather than answering "no": the app's startup never
+        # initializes the compiled graph, so after a restart this said "no
+        # analysis" until something else did -- and web search ran on a
+        # thread seeded with a reader's analysis (review, area 3).
+        self.graph = await self._ensure_graph()
+        if profile not in self.graph:
             return False
         state = await self.graph[profile].aget_state(
             RunnableConfig(configurable={"thread_id": thread_id})
@@ -428,6 +447,9 @@ class AgentGraph:
         in the MemorySaver for the life of the process, which also serves the
         chat (review, area 1a: 600 answers grew RSS by 22 MiB).
         """
+        # Initialized first: before anything else had built the graph this was
+        # a silent no-op, and on Postgres the thread stayed (review, area 3).
+        self.graph = await self._ensure_graph()
         if self.checkpointer is not None:
             await self.checkpointer.adelete_thread(thread_id)
 
@@ -453,8 +475,7 @@ class AgentGraph:
         tags. What does separate them is order -- the expander runs *inside*
         retrieval, the answer after it. So a retriever completing is the boundary.
         """
-        if self.graph is None:
-            self.graph = await self.initialize()
+        self.graph = await self._ensure_graph()
         if profile not in self.graph:
             yield AnswerEvent(kind="done", state="failed")
             return
@@ -577,8 +598,7 @@ class AgentGraph:
 
         Returns False, and changes nothing, for an unknown profile.
         """
-        if self.graph is None:
-            self.graph = await self.initialize()
+        self.graph = await self._ensure_graph()
         if profile not in self.graph:
             return False
         await self.graph[profile].aupdate_state(
@@ -597,8 +617,7 @@ class AgentGraph:
         thread_id: str,
         enable_postprocess: bool = True,
     ) -> OutputState:
-        if self.graph is None:
-            self.graph = await self.initialize()
+        self.graph = await self._ensure_graph()
         if profile not in self.graph:
             return OutputState()
         # ainvoke is typed dict[str, Any] | Any; the graph's output schema is

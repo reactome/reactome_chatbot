@@ -8,6 +8,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import Runnable, RunnableConfig
 from langgraph.graph.state import StateGraph
 
+from agent.history import recent
 from agent.profiles.base import BaseGraphBuilder, BaseState
 from agent.tasks.intent_classifier import (
     QueryIntent,
@@ -154,7 +155,7 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
             self.rephrase_chain.ainvoke(
                 {
                     "user_input": state["user_input"],
-                    "chat_history": state.get("chat_history", []),
+                    "chat_history": recent(state.get("chat_history")),
                 },
                 config,
             ),
@@ -230,7 +231,7 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
             tools,
             state["rephrased_input"],
             language=state["detected_language"],
-            chat_history=state["chat_history"] or None,
+            chat_history=recent(state["chat_history"]) or None,
             config=config,
             report=report,
         )
@@ -293,7 +294,7 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
                     # the query expander.
                     "detected_language": state["detected_language"],
                     "chat_history": (
-                        state["chat_history"]
+                        recent(state["chat_history"])
                         if state["chat_history"]
                         else [HumanMessage(state["user_input"])]
                     ),
