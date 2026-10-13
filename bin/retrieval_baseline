@@ -267,15 +267,45 @@ def compare(args: argparse.Namespace) -> None:
 
     changed = 0
     total = 0
+    mismatch = False
+
+    for question in sorted(set(after) - set(before)):
+        print(f"! unexpected question in the newer capture: {question}")
+        mismatch = True
+
     for question, collections in before.items():
         if question not in after:
             print(f"! question missing from the newer capture: {question}")
+            mismatch = True
             continue
+        for collection in sorted(set(collections) - set(after[question])):
+            print(
+                f"! collection missing from the newer capture: [{collection}]  {question}"
+            )
+            mismatch = True
+        for collection in sorted(set(after[question]) - set(collections)):
+            print(
+                f"! unexpected collection in the newer capture: [{collection}]  {question}"
+            )
+            mismatch = True
         for collection, retrievers in collections.items():
+            if collection not in after[question]:
+                continue
+            after_retrievers = after[question][collection]
+            for name in sorted(set(retrievers) - set(after_retrievers)):
+                print(
+                    f"! retriever missing from the newer capture: [{collection}/{name}]  {question}"
+                )
+                mismatch = True
+            for name in sorted(set(after_retrievers) - set(retrievers)):
+                print(
+                    f"! unexpected retriever in the newer capture: [{collection}/{name}]  {question}"
+                )
+                mismatch = True
             for name, ids in retrievers.items():
-                new_ids = after[question].get(collection, {}).get(name)
-                if new_ids is None:
+                if name not in after_retrievers:
                     continue
+                new_ids = after_retrievers[name]
                 total += 1
                 if new_ids == ids:
                     continue
@@ -290,7 +320,7 @@ def compare(args: argparse.Namespace) -> None:
                     print(f"    added:   {sorted(set(new_ids) - set(ids))}")
 
     print(f"\n{changed}/{total} retriever results changed.")
-    if changed:
+    if changed or mismatch:
         sys.exit(1)
 
 
