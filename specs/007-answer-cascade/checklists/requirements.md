@@ -1,25 +1,12 @@
-# Specification Quality Checklist: The Answer Cascade
+# Claim Checks: The Answer Cascade
 
-**Purpose**: Validate completeness and quality before planning
 **Created**: 2026-09-14
 **Feature**: [spec.md](../spec.md)
 
-## Content Quality
+Historical. How the specification's claims were checked when it was written. The
+template's completion checkboxes are in git history up to 75ca531.
 
-- [x] Focused on user value and business needs
-- [x] Written for non-technical stakeholders
-- [x] All mandatory sections completed
-
-## Requirement Completeness
-
-- [x] No [NEEDS CLARIFICATION] markers remain
-- [x] Requirements are testable and unambiguous
-- [x] Success criteria are measurable
-- [x] Edge cases identified
-- [x] Scope clearly bounded
-- [x] Dependencies and assumptions identified
-
-## Adversarial review of this specification
+## Adversarial review of this specification (2026-09-14)
 
 | claim | how it was checked | verdict |
 |---|---|---|
@@ -40,9 +27,8 @@ no obviously right answer.
 Writing it as though the signal were obvious would have been the easy mistake, and
 would have hidden the only hard decision in the document.
 
-### Not verified
+### Not verified at the time (2026-09-14)
 
-Nobody has measured how often a question would actually fall through to the Search
-API. That number decides whether this cascade is worth building or whether the
-bundle is simply stale — and the Release 98 rebuild may change it substantially.
-Worth measuring before, not after.
+Nobody had measured how often a question would actually fall through to the Search
+API. That number would decide whether this cascade was worth building or whether the
+bundle was simply stale. It has not been measured since, and the cascade was not built.

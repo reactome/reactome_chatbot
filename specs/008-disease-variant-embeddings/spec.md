@@ -4,14 +4,19 @@
 
 **Created**: 2026-09-16
 
-**Status**: Implemented. Both decisions were delegated back and are recorded below,
-with one of the original recommendations withdrawn as impossible.
+**Status**: Historical record of the disease-variant collection work, 2026-09-16 to
+2026-09-17. Built 2026-09-16 (2855de4, review fixes 7b733ea) and merged in #225 on
+2026-09-17. The two decisions were delegated to the implementer, who recorded them
+below; one original recommendation was withdrawn as impossible. They were made for
+that work, not for later changes. Current behaviour is in
+`src/data_generation/disease_variant/__init__.py`, with the retrieval-side handling in
+`src/retrievers/csv_chroma.py:35-39`.
 
 **Input**: Add disease and variant data to the embeddings, from
 `disease_variant_ewas_mapping.tsv` in the release download directory. Do it as a new
 collection alongside regenerating the existing ones for Release 97.
 
-## Why: the chatbot answers about diseases, but cannot name a variant
+## Why (2026-09-16): the chatbot answered about diseases, but could not name a variant
 
 Asked on 2026-09-16 against beta running `a4de878`, with live MCP:
 
@@ -39,21 +44,22 @@ document for is the individual variant entity. It therefore answers a level up f
 the question and hedges, which is the failure mode this project keeps finding: a
 fluent answer that does not contain the fact asked for.
 
-## Why this one is worth doing now
+## Why it could be done first (2026-09-16)
 
-It is the only part of the embeddings work that is **not blocked**.
+It was the only part of the embeddings work that was **not blocked**.
 
 | | source | needs |
 |---|---|---|
-| `complexes`, `ewas`, `reactions`, `summations` | Neo4j at `bolt://localhost:7687` | credentials we do not have |
+| `complexes`, `ewas`, `reactions`, `summations` | Neo4j at `bolt://localhost:7687` | credentials not available at the time |
 | **disease/variant** | **a flat TSV in the download directory** | **nothing** |
 
 `generate_reactome_embeddings` reads Neo4j. `generate_alliance_embeddings` does not --
-it reads flat files through `MetaDataCSVLoader` and `build_embeddings`. That is the
-precedent to follow, and it means this collection can be built, installed and tested
-today while the Release 97 regeneration waits on access.
+it reads flat files through `MetaDataCSVLoader` and `build_embeddings`. That was the
+precedent followed, so this collection could be built, installed and tested while the
+Release 97 regeneration of the other four waited on access. This spec does not record
+whether that regeneration has since been done.
 
-## The data
+## The data (Release 97 file, examined 2026-09-16)
 
 `.../static/download/97/disease_variant_ewas_mapping.tsv`, 5.3 MB, **6,294 rows**,
 26 columns, one row per variant entity (6,294 distinct `stable_id`, so no duplication).
@@ -69,15 +75,16 @@ reaction the variant takes part in, its functional status, **and the normal reac
 and pathway it is the defective counterpart of**.
 
 Fill rates are high: 20 of 26 columns are ≥95% populated. Two are effectively empty
-and should be dropped (`normal_reaction_like_event_go_biological_process_*`, 6.3%);
-`entityWithAccessionedSequence_literatureReference_pubMedIdentifier` is 30%.
+(`normal_reaction_like_event_go_biological_process_*`, 6.3%), and
+`entityWithAccessionedSequence_literatureReference_pubMedIdentifier` is 30%. All three
+are dropped (see D1).
 
 ## Decisions
 
 Both were delegated: *"I think you should decide on the columns ... make your best
 design and go ahead."*
 
-### D1 -- what is embedded, and what is metadata: decided
+### D1 -- what is embedded, and what is metadata (decided by the implementer, 2026-09-16)
 
 The loader renders each field as `name: value`, so the **column names are embedded
 too**. The release names are the query paths that produced them, up to 104 characters
@@ -101,18 +108,33 @@ normal_reaction: 4xPALM-C-p-2S-ABCA1 tetramer transports CHOL from transport ves
 ```
 
 Metadata, not embedded: every identifier -- `st_id`, `uniprot_id`, `disease_id`,
-`disease_cross_reference`, and the four Reactome stable IDs. Nobody types
+`cross_references`, the four Reactome stable IDs and `reaction_pubmed_ids`. The
+metadata also repeats `gene`, `protein`, `disease` and `mutation_type`, which are
+embedded too (`METADATA_COLUMNS`, `src/data_generation/disease_variant/__init__.py:86-100`).
+`cross_references` was first named `disease_cross_reference`. It was renamed in
+7b733ea because it also carries COSMIC, ClinVar, ClinGen and LOVD *variant* ids
+(`:51-55`). Nobody types
 `R-HSA-5682201` at a chatbot, and embedding it costs tokens in every document. The
 variant's own identifier is named **`st_id`** because that is the key `csv_chroma`
 de-duplicates on; a different name would silently disable de-duplication here.
 
-Dropped: the two `go_biological_process` columns at 6.3% fill, and
-`first_entitySet`. A column empty in 94% of documents earns nothing and costs a line
-of `name:` in every one.
+Dropped: five of the 26 columns -- the two `normal_reaction_like_event_go_biological_process_*`
+columns at 6.3% fill; `entityWithAccessionedSequence_pathway_normalPathway_goBiologicalProcess_accession`
+(the process name is kept as `normal_process`); the entity-level
+`entityWithAccessionedSequence_literatureReference_pubMedIdentifier` (30% fill); and
+`first_entitySet` (`DROPPED`, `__init__.py:102-110`; the CSV keeps only the 21 columns
+named in `COLUMNS`, `:36-65`). The recorded reason covers the sparse ones: a column
+empty in 94% of documents earns nothing and costs a line of `name:` in every one. No
+reason is recorded for the other three.
 
-Median document: 556 characters, about 140 tokens.
+Median document: 556 characters, about 140 tokens (measured 2026-09-16).
 
-### D2 -- the pipe-delimited `disease` field: decided, and the earlier recommendation withdrawn
+The keyword (BM25) index has used the same 12 content columns since f0e8581
+(2026-10-04). Before that it indexed all 21 CSV columns, so BM25 and vector results
+for the same variant never had the same text, and RRF, which keys on the text, could
+not fuse them (`src/retrievers/csv_chroma.py:35-39`, `:447-463`).
+
+### D2 -- the pipe-delimited `disease` field (decided by the implementer, 2026-09-16; the earlier recommendation withdrawn)
 
 This spec first recommended splitting the field into a list for metadata. **That is
 not possible**: Chroma accepts only `str`, `int`, `float` or `bool` as a metadata
@@ -127,17 +149,18 @@ Decided: **one document per variant**, with `|` rewritten to `, ` so the field r
 as a list rather than a path. All disease names stay searchable in the content, and
 the metadata value stays a string Chroma will accept.
 
-## Scope
+## Scope of this work
 
 In: one new collection built from this one file; wiring it into the retriever
 alongside the existing four; answer-sweep expectations that fail if it regresses.
 
 Out: `HumanDiseasePathways.txt` and `Reactome2OMIM.txt` -- not needed for this
 (confirmed 2026-09-16); regenerating the four Neo4j-backed collections for Release 97;
-publishing to S3, which is blocked separately -- this host's instance profile is
-`EC2CloudwatchAgentRole` and `head_bucket` on `download.reactome.org` returns 403.
+publishing to S3, which was blocked separately at the time -- the build host's instance
+profile was `EC2CloudwatchAgentRole` and `head_bucket` on `download.reactome.org`
+returned 403.
 
-## Result, measured
+## Result, measured (2026-09-16, before the BM25 column fix noted under D1)
 
 Built into a scratch bundle and asked through the real retriever:
 
@@ -147,22 +170,30 @@ Built into a scratch bundle and asked through the real retriever:
 | PTEN | *"PTEN Loss of Function in Cancer"* -- a pathway | **Q17\*, Q97\*, Q171\***, named against endometrial cancer |
 
 Two answer-sweep expectations pin this. They match a *pattern* for a named variant
-(`\bABCA1 [A-Z]\d{2,4}[A-Z*]`) rather than a specific one, because which of the six
-come back depends on retrieval order and pinning one would fail a good answer --
-the mistake made in `007` and fixed there. Checked against the recorded answers: the
-pattern does not match the old answer and does match the new one.
+rather than a specific one, because which of the six come back depends on retrieval
+order and pinning one would fail a good answer -- the mistake made in `007` and fixed
+there. The pattern was first `\bABCA1 [A-Z]\d{2,4}[A-Z*]`, checked against the
+recorded answers on 2026-09-16. On 2026-09-19 (7598b17) it failed a correct answer that
+listed the variants as `**C1417R**` without the gene beside them. Both expectations
+now use `\b[A-Z]\d{2,4}[A-Z*]\b`, anchored to the topic by `must=("Tangier",)` and
+`must=("PTEN",)` (`src/evaluation/answer_sweep.py:125-148`; pinned by
+`tests/evaluation/test_answer_sweep.py:244`).
 
-They carry `needs_collection="disease_variants"` and skip, loudly, until the bundle
-ships -- otherwise they would turn the deploy gate red for a reason nobody can act
-on. A test covers the direction that matters: that they run once it is installed.
+They carry `needs_collection="disease_variants"` and are skipped, with a reason, when
+the installed bundle has no such collection (`answer_sweep.py:266-285`), rather than
+turning the deploy gate red for a reason nobody can act on. A test covers the
+direction that matters: that they run once it is installed
+(`tests/evaluation/test_answer_sweep.py:209`).
 
 Cost was cents. The collection is a fraction of the 3.4 GB the existing four take.
 
-## Installing it
+## Installing it (beta host, as found 2026-09-16)
 
-The embeddings tree is root-owned, so installing needs sudo -- and using sudo is what
-keeps it root-owned. It is not the container's doing: the image has run as `appuser`
-(uid 3001) since 2025-04-17 and the bundle was created 2026-09-02, so something was
-run under sudo on the host. `~/fix-embeddings-ownership.sh` sets `awright:reactome`
-with world-read, which suits both: the owner can manage bundles without sudo, and the
-container, whose uid is not a host user and which only reads at runtime, still can.
+The embeddings tree on that host was root-owned, so installing needed sudo -- and
+using sudo kept it root-owned. It was not the container's doing: the image has run as
+`appuser` (uid 3001) since 2025-04-17 and the bundle was created 2026-09-02, so
+something had been run under sudo on the host. A host-side script,
+`~/fix-embeddings-ownership.sh` (not in this repository), set the tree to the
+operator's own user, group `reactome`, with world-read. That suits both: the owner can
+manage bundles without sudo, and the container, whose uid is not a host user and which
+only reads at runtime, still can. The host's current state is not recorded here.

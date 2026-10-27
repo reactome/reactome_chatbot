@@ -2,7 +2,16 @@
 
 **Feature Branch**: `011-summarise-analysis-results`
 **Created**: 2026-09-18
-**Status**: Draft
+**Status**: Historical record of the analysis-summary work, 2026-09-18 to
+2026-09-21. The endpoint was built 2026-09-19 to 2026-09-20 (4e2d8ab, 9fe1461)
+and was live on beta on 2026-09-21; review fixes followed on 2026-10-03
+(d153fbf). Two pieces were not built: a durable summary store (research D4)
+and a rate limit per analysis token (research D6). The spec's status field was
+never moved past "Draft". FR-011 to FR-015 record the answers to two
+clarification questions (privacy and stability) given on 2026-09-18. The
+requirements below were set for that work, not for later changes. Current
+behaviour is in `src/api/analysis_summary.py`, `src/analysis/` and
+[contracts/summary_endpoint.md](./contracts/summary_endpoint.md).
 **Input**: Summarise Reactome analysis results in natural language, for users who have run an analysis and want to know what it means.
 
 ## Why this exists
@@ -19,7 +28,10 @@ than a biological absence. That knowledge is exactly what the curators put in th
 user guide and exactly what a reader does not have to hand at the moment they get
 their result.
 
-## User Scenarios & Testing *(mandatory)*
+## User stories (as specified 2026-09-18)
+
+The stories and acceptance scenarios were the targets for the work. Notes dated
+2026-10-21 say where the built feature differs.
 
 ### User Story 1 - What does my result say? (Priority: P1)
 
@@ -31,10 +43,6 @@ common biologically — instead of reading the table themselves.
 **Why this priority**: It is the question every user of every analysis type has,
 and it is answerable from the result alone. On its own it is a usable feature:
 someone with a result gets a readable account of it.
-
-**Independent Test**: Submit a known analysis token, and check the summary names
-the pathways the result actually ranks highest, describes their significance in
-terms the result supports, and cites each pathway it discusses by stable id.
 
 **Acceptance Scenarios**:
 
@@ -59,10 +67,6 @@ analysis, and it has a small number of well-understood causes — an identifier 
 Reactome does not index, the wrong species, or identifiers that are genuinely
 absent. It is independently valuable: a user can ask only this and be helped.
 
-**Independent Test**: Submit a token from an analysis with a deliberate identifier
-mismatch and check the summary reports the proportion unmatched and names the
-likely cause from the evidence in the result.
-
 **Acceptance Scenarios**:
 
 1. **Given** a result where most identifiers were not found and the matched ones
@@ -74,6 +78,14 @@ likely cause from the evidence in the result.
 3. **Given** a result whose unmatched proportion is high enough to undermine the
    findings, **Then** the summary says the result should be treated with caution
    and why.
+
+*Built differently (found 2026-09-20).* The aggregate result carries how many
+identifiers were not found and nothing about how many were submitted, so no
+proportion can be derived without the reader's identifiers. The summary
+reports the count and is told never to state a proportion
+(`src/analysis/summarise.py:155-171`). Scenarios 1 and 3 therefore hold only as
+far as the count and `resourceSummary`/`speciesSummary` allow; nothing computes
+a "too many unmatched" threshold.
 
 ---
 
@@ -87,9 +99,10 @@ whether a hit resting on very few entities is worth pursuing.
 types, but a user can get value from stories 1 and 2 without it, and it is closest
 to material the user guide already covers.
 
-**Independent Test**: Request an explanation for a specific pathway in a result and
-check the explanation uses that pathway's own numbers rather than generic
-definitions.
+*As built (2026-09-20).* There is no request for one pathway. Every pathway
+sent to the model carries its own counts and a flag, computed in code, for a
+hit resting on fewer than five matched entities (`src/analysis/summarise.py:18-48`).
+The model is told to explain those in the reader's terms.
 
 **Acceptance Scenarios**:
 
@@ -113,9 +126,9 @@ types, but story 1 must be right first. Deferring it is safe because the type is
 visible in the result, so a summary can decline to make type-specific claims until
 this is built.
 
-**Independent Test**: Submit an expression result and a species-comparison result,
-and check each summary addresses what is specific to that type and neither
-describes the other's.
+*Built 2026-09-20* as per-type instructions to the model
+(`TYPE_INSTRUCTION`, `src/analysis/summarise.py:178-209`), including one for
+over-representation results.
 
 **Acceptance Scenarios**:
 
@@ -127,69 +140,39 @@ describes the other's.
 
 ---
 
-### Edge Cases
+### Edge cases identified, and how they are handled (checked 2026-10-21)
 
-- A token that does not exist, or has expired, or belongs to an analysis that has
-  been discarded.
-- A result too large to summarise in full: hundreds of significant pathways, or an
-  expression matrix with many columns.
-- A result whose findings are entirely disease pathways, which is often an artefact
-  of the submitted list rather than a finding.
-- An analysis run against a species the summary's knowledge does not cover well.
-- A result already summarised: a reader who reloads should not be told something
-  materially different about a fixed artefact (see Assumptions).
-- An identifier list that is itself the user's unpublished research data.
+| Edge case | Today |
+|---|---|
+| A token that does not exist, has expired, or belongs to a discarded analysis | `not_found` for 404, 500 or a malformed token; `gone` for 410 (FR-009) |
+| A result too large to summarise in full | Only the first 12 pathways are sent, and the model is told when the significant count is a lower bound (research D9). Expression values are sent for every column; the number of columns is not bounded |
+| Findings that are entirely disease pathways, often an artefact of the list | Not handled. `inDisease` is allow-listed but not given to the model (`src/analysis/summarise.py:99-125`) |
+| A species the summary's knowledge does not cover well | Not handled specifically. `speciesSummary` is given to the model; `summary.species` is not |
+| A result already summarised | The stored summary is reused (FR-014) |
+| An identifier list that is the user's unpublished data | The `aggregate` tier never sends identifiers; `identifiers` sends up to 50 unmatched ones (FR-012) |
 
-## Requirements *(mandatory)*
+## Requirements of this work, and where they stand (checked 2026-10-21)
 
-### Functional Requirements
+"Instructed" means the behaviour is asked of the model in its prompt, not
+checked in code.
 
-- **FR-001**: The system MUST summarise an analysis result the user has already run,
-  identified by its analysis token, and MUST NOT run, re-run or re-implement any
-  analysis.
-- **FR-002**: The system MUST derive every quantitative claim from the analysis
-  result itself, and MUST NOT state statistics the result does not contain.
-- **FR-003**: The system MUST distinguish significance before and after multiple
-  testing correction whenever it describes a pathway as significant.
-- **FR-004**: The system MUST report when a result is weak, empty, or heavily
-  unmatched, rather than describing the strongest available row as a finding.
-- **FR-005**: Every pathway the summary discusses MUST be attributable by Reactome
-  stable id, so a reader can open it.
-- **FR-006**: The system MUST identify which of the analysis types it is
-  summarising, and MUST NOT make claims specific to a type the result is not.
-- **FR-007**: The system MUST refuse a request that does not carry a verified
-  caller, before any model call, on the same terms as the existing answer endpoint.
-  That is the floor, not the bar — see FR-013.
-- **FR-008**: The system MUST fail invisibly to the caller: any error, timeout or
-  refusal yields a terminal state the caller can render as "no summary", never a
-  broken panel or an HTTP error.
-- **FR-009**: The system MUST treat an unknown, expired or malformed token as a
-  normal negative outcome, not an error condition.
-- **FR-010**: The system MUST read analysis results from the beta Analysis Service
-  for now, never from production.
-- **FR-011**: Summarising MUST be opt-in. The system MUST NOT send any part of an
-  analysis result to a model provider until the user has actively asked for a
-  summary. A result being viewed is not consent; nothing is summarised in the
-  background or in anticipation.
-- **FR-012**: The user MUST be offered a choice of what is shared, and the choice
-  MUST be meaningful — at least one option MUST produce a useful summary without
-  transmitting their submitted identifiers. The user is choosing between summaries
-  of different quality at different disclosure, and MUST be told which is which
-  before choosing, not after.
-- **FR-013**: The system MUST require evidence that a person is present, not merely
-  that a known service is calling. This is a stricter bar than the answer
-  endpoint's, which verifies caller identity and deliberately asserts nothing about
-  humanity, and it exists because this feature discloses a user's own uploaded data
-  rather than public pathway text.
-- **FR-014**: A summary MUST be stable for a given analysis token: the same token
-  MUST yield the same summary on request after request, so that a reader who
-  reloads, or who cites it, sees what they saw before. An analysis result is a
-  fixed artefact and its summary must behave like one.
-- **FR-015**: The system MUST be transparent about what a summary is: that it was
-  generated rather than curated, which analysis it describes, and that regenerating
-  it may produce different wording. Stability under FR-014 is achieved by reuse,
-  not by the generator being deterministic, and the interface MUST NOT imply
-  otherwise.
+| ID | Required by this work (2026-09-18) | Today |
+|---|---|---|
+| FR-001 | Summarise a result the user has already run, by token; never run, re-run or re-implement an analysis | Holds for this endpoint, which takes only a token. (`src/analysis/client.py` gained `submit_identifiers` on 2026-09-25 for the chat's gene-list feature, 3b2c792; this endpoint does not call it.) |
+| FR-002 | Derive every quantitative claim from the result; state no statistic it does not contain | Instructed (`DATA_RULES` rule 1, `src/analysis/summarise.py:266-276`). The input says when the significant count is only a lower bound (research D9). Not checked mechanically |
+| FR-003 | Distinguish significance before and after multiple-testing correction | Instructed (`STATISTICS_INSTRUCTION`, `src/analysis/summarise.py:213-226`; `DATA_RULES` rule 3) |
+| FR-004 | Report a weak, empty or heavily unmatched result rather than presenting the top row as a finding | Empty and nothing-significant are decided in code (`verdict`, `src/analysis/summarise.py:58-66`) with a matching instruction. Hits on fewer than five entities are flagged in code (`:38-48`). "Heavily unmatched" cannot be judged as a proportion (US2 note) |
+| FR-005 | Every pathway discussed attributable by stable id | Holds: a `citation` event for every pathway sent to the model (`src/api/analysis_summary.py:263-278`) |
+| FR-006 | Identify the analysis type; no claims specific to another type | `analysis_type` on `start`; per-type instructions (`src/analysis/summarise.py:178-209`); ReactomeGSA types declined (`src/analysis/client.py:84-109`) |
+| FR-007 | Refuse without a verified caller, before any model call, on the answer endpoint's terms | Holds: the same `verify` (`src/api/analysis_summary.py:133-140`); zero model calls tested (`tests/api/test_analysis_summary.py:215-222`) |
+| FR-008 | Fail invisibly: a terminal state, never a broken panel or an HTTP error | Holds for refusals, lookup outcomes, failures and timeouts (HTTP 200 with `done`). A malformed request body gets HTTP 422 (`tests/api/test_analysis_summary.py:285-292`) |
+| FR-009 | An unknown, expired or malformed token is a normal negative outcome | Holds: 404, 500 and a malformed token give `not_found`; 410 gives `gone` (`src/analysis/client.py:127-148`) |
+| FR-010 | Read from beta's Analysis Service, never production | Beta is the default; `ANALYSIS_BASE_URL` overrides it (`src/analysis/client.py:22-23`, `:63-64`) |
+| FR-011 | Opt-in: nothing sent to a model provider until the user asks | This endpoint generates only when called and keeps no consent state. When it is called is the website's decision |
+| FR-012 | A meaningful choice of what is shared, with one useful option sending no identifiers, explained before choosing | `disclosure` is required with no default (`src/api/analysis_summary.py:88-89`); `aggregate` sends no identifiers. How the choice is presented is the website's (contract, question 2) |
+| FR-013 | Evidence that a person is present, not only a known service | Holds: `human` and a 30-minute `human_iat` (`src/util/caller_token.py:228`, `:280-309`); research D6 |
+| FR-014 | The same token yields the same summary on every request | Holds within one process while the summary stays in the 512-entry store and the release is unchanged; lost on deploy. A durable store was not built (research D4) |
+| FR-015 | Transparent that it is generated, which analysis it describes, and that regenerating may differ; stability by reuse | `cached`, `release`, `analysis_type` and `disclosure` on `start` (`src/api/analysis_summary.py:241-261`). Telling the reader is the website's |
 
 ### Key Entities
 
@@ -204,46 +187,39 @@ describes the other's.
 - **Summary**: the natural-language account produced for a result, with the pathway
   citations that let a reader check it.
 
-## Success Criteria *(mandatory)*
+## Success criteria of this work, and what was checked
 
-### Measurable Outcomes
+| ID | Criterion (2026-09-18) | Checked |
+|---|---|---|
+| SC-001 | For a result whose top pathways pass FDR, the summary names the pathways the result ranks highest, across a tracked analysis set | Once live, on one token, 2026-09-21 ([quickstart.md](./quickstart.md) scenario 1). This repository records no tracked analysis set or evaluation over one |
+| SC-002 | When nothing passes correction, the summary says so and presents no p-value as a finding | Unit-tested on the model input (`tests/analysis/test_summarise.py`). Not run live: no such result could be produced on 2026-09-21 |
+| SC-003 | Every pathway named resolves to a stable id present in the result, checked mechanically | Holds by construction: citations come from the result (`tests/api/test_analysis_summary.py:225-233`) |
+| SC-004 | Zero model calls without a verified caller | `tests/api/test_analysis_summary.py:187-222`, counted on a patched model |
+| SC-005 | An unknown or expired token gives a terminal "no summary" outcome | `not_found` / `gone` in an HTTP 200 stream (`tests/api/test_analysis_summary.py:256-282`) |
+| SC-006 | A reader can tell from the summary whether to trust the result, by curator review | This repository records no curator review |
 
-- **SC-001**: For a result whose top pathways pass FDR correction, the summary names
-  the same pathways the result ranks highest, verified against the result across the
-  tracked analysis set.
-- **SC-002**: For a result where nothing passes correction, the summary says so; it
-  never presents the lowest p-value as a finding. Verified with deliberately null
-  results.
-- **SC-003**: Every pathway named in a summary resolves to a real Reactome stable id
-  present in that result — no invented or mismatched identifiers, checked
-  mechanically rather than by reading.
-- **SC-004**: Zero model calls for requests without a verified caller, measured by
-  counting calls under unauthenticated load.
-- **SC-005**: An unknown or expired token produces a terminal "no summary" outcome,
-  and never an error the caller must special-case.
-- **SC-006**: A reader can tell, from the summary alone, whether the result is
-  trustworthy enough to act on — assessed by curator review of summaries for a set
-  of results chosen to span strong, weak and empty outcomes.
-
-## Assumptions
+## Assumptions at the time (2026-09-18)
 
 - The caller has already run the analysis and holds its token; this feature never
   accepts a raw identifier list, which keeps it clear of the Analysis Service's job.
-- The caller is the Reactome website, reached through its server-side proxy, and
-  presents the same caller token the answer endpoint verifies. No new
-  authentication mechanism is introduced.
+- The caller is the Reactome website, reached through its server-side proxy,
+  presenting the caller token the answer endpoint verifies. That held, but the
+  token gained human-presence claims for this endpoint (FR-013, research D6;
+  `src/util/caller_token.py:203-309`), so the assumption that no new
+  authentication would be needed did not.
 - Delivery follows the existing answer endpoint's shape — progressive output,
   citations as structured events, failure as a terminal state — because a summary
   takes comparable time to produce and the website already renders that shape.
+  The state names differ (see the contract).
 - Results are read from beta's Analysis Service, consistent with the standing
-  instruction to keep off production.
-- ReactomeGSA results are recognised from the result, but summarising them is a
-  later increment: GSA is a separate service with its own result shape, and
-  including it in the first increment would double the surface.
+  instruction to keep off production (FR-010).
+- ReactomeGSA results are recognised from the result, but summarising them was
+  left for a later increment: GSA is a separate service with its own result
+  shape. It has not been built.
 - The measured non-reproducibility of generated answers applies here too, which is
-  why FR-012 asks the question rather than assuming stability.
+  why FR-014 and FR-015 make stability a matter of reuse rather than assuming it.
 
-## Scope
+## Scope (as set 2026-09-18)
 
 **In scope**: summarising a completed analysis result; explaining its statistics;
 explaining unmatched identifiers; recognising the analysis type.
@@ -252,7 +228,7 @@ explaining unmatched identifiers; recognising the analysis type.
 the result does not contain; comparing two analyses; storing results; the analysis
 UI itself.
 
-## Dependencies
+## Dependencies (as of 2026-09-18)
 
 - The Analysis Service on beta, for retrieving results by token.
 - The existing caller-token verification and streaming answer surface, reused

@@ -1,29 +1,16 @@
-# Specification Quality Checklist: Hosting reactome-mcp
+# Claim Checks: Hosting reactome-mcp
 
-**Purpose**: Validate completeness and quality before planning
 **Created**: 2026-09-14
 **Feature**: [spec.md](../spec.md)
 
-## Content Quality
+Historical. How the specification's claims were checked when it was written. The
+template's completion checkboxes are in git history up to 75ca531.
 
-- [x] Focused on user value and business needs
-- [x] Written for non-technical stakeholders
-- [x] All mandatory sections completed
-
-## Requirement Completeness
-
-- [x] No [NEEDS CLARIFICATION] markers remain
-- [x] Requirements are testable and unambiguous
-- [x] Success criteria are measurable
-- [x] Edge cases identified
-- [x] Scope clearly bounded
-- [x] Dependencies and assumptions identified
-
-## Adversarial review of this specification
+## Adversarial review of this specification (2026-09-14)
 
 | claim | how it was checked | verdict |
 |---|---|---|
-| "`reactome-mcp` is stdio-only" | `src/index.ts` constructs `StdioServerTransport`; no SSE, express or `listen(` anywhere in `src/` | **verified** |
+| "`reactome-mcp` is stdio-only" | `src/index.ts` constructs `StdioServerTransport`; no SSE, express or `listen(` anywhere in `src/` | **verified** on 2026-09-14; reactome-mcp gained Streamable HTTP by 2026-09-15 (c02219a) |
 | "the SDK ships Streamable HTTP" | unpacked `@modelcontextprotocol/sdk@1.30.0`: `server/streamableHttp.js` present | **verified** |
 | "available without changing the pin" | `reactome-mcp` pins `^1.12.0`, which resolves to 1.30.0 | **verified** |
 | "Cypher tools are not registered when Neo4j is unset" | `if (isNeo4jConfigured()) registerCypherTools(server)`, and `isNeo4jConfigured()` is `Boolean(NEO4J_URI)` | **verified** — not registered, so not merely disabled |
@@ -40,9 +27,11 @@ top of this specification rather than quietly.
 The lesson is the same one spec 004 recorded: check the thing, not the description
 of the thing.
 
-### Not verified
+### Not verified at the time (2026-09-14)
 
-**The server has still never been run from here.** Tool latency, Analysis Service
-behaviour under load, and what a failure looks like to a client are all unobserved.
-Every number in this document is a count of code, not a measurement of behaviour. A
-plan should open by running it once.
+When this was written the server had not been run from here, so every number in the
+specification is a count of code, not a measurement of behaviour. Later the same day
+it was run: spec 007 measured an analysis at 0.2s over stdio, and `bin/mcp-probe`
+recorded per-tool latencies (`src/reactome_mcp/README.md:34-43`). The HTTP client was
+verified end to end against a real server on 2026-09-15 (c02219a). Analysis Service
+behaviour under load has not been recorded here.
