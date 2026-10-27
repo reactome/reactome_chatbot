@@ -1,18 +1,50 @@
 # Contract: the search-page answer endpoint
 
-What this repo commits to providing, and what the website repo can build against.
-Shapes are proposals until both sides agree; the *properties* below are the parts
-worth arguing about.
+What the endpoint does, for the website repo to build against. Checked against the
+code on 2026-10-21 (`src/api/answer.py`, `src/agent/graph.py`,
+`src/util/caller_token.py`, `src/util/rate_limit.py`). The website built against an
+earlier version of this file from 2026-09-18. Where the code differs from something
+this file or the spec earlier promised, the difference is listed under "Known gaps"
+at the end, not resolved here. Measurements are dated and describe the code of their
+day.
 
 ## Request
 
 ```
-POST /chat/api/answer
+POST <CHAINLIT_URI>/api/answer
 Content-Type: application/json
 
 { "question": "what does CDK5 phosphorylate in Alzheimer disease?",
   "caller_token": "<a token the website minted for this call>" }
 ```
+
+The path sits under the chat's mount point, so one nginx location covers both
+(`bin/chat-fastapi.py:73-78`). On beta `CHAINLIT_URI=/chat/guest`, so the path is
+`/chat/guest/api/answer` (`deploy/beta/env.beta.template:21`). `/chat/api/answer` is
+used only when `CHAINLIT_URI` is unset.
+
+- `question`: 1 to 2,000 characters. A body that is not valid JSON, or a missing,
+  empty or overlong `question`, gets HTTP **422** with FastAPI's JSON error body, not
+  an event stream (`src/api/answer.py:70-72`)
+- `caller_token`: may be omitted; an absent or empty token is refused like any other
+  invalid one
+
+To watch it stream:
+
+```bash
+curl -N -X POST https://beta.reactome.org/chat/guest/api/answer \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"what does CDK5 phosphorylate in Alzheimer disease?",
+       "caller_token":"<token>"}'
+```
+
+`-N` matters: without it curl buffers, and the stream looks like one slow response.
+(The 2026-09-18 handover mentioned an nginx rule answering some user agents with 403;
+nginx configuration is not in this repository.)
+
+No CORS headers are sent (`bin/chat-fastapi.py` adds no CORS middleware), so browser
+script on another origin cannot read the response. The website calls the endpoint
+from its own server (D1).
 
 **`caller_token` is settled (D1, 2026-09-18), and it does not assert humanity.**
 The field was `human_token` and the premise was wrong: there is no human gate on
@@ -24,29 +56,42 @@ The website mints it server-side, per request, and verification here is:
 | claim | required | checked against |
 |---|---|---|
 | signature | yes | the public key, EdDSA or RS256 -- never an HS* algorithm |
-| `exp` | yes | now; they mint at +120s |
+| `exp` | yes | now, with no leeway; they mint at +120s. No maximum lifetime is enforced here |
 | `aud` | yes | `reactome-chatbot`, overridable with `CALLER_TOKEN_AUDIENCE` |
-| `sub` | no, but expected | not validated; used as the rate-limit key |
+| `iat`, `nbf` | no | if present, must be numbers no more than 30s in the future (clock leeway) |
+| `sub` | no, but expected | not validated; the rate-limit key, else `jti`, else a hash of the token |
 | `iss` | no | not currently checked -- the signature already identifies the minter |
 
-`sub` is an opaque per-visit id, 128 random bits, not derived from anything about
-the reader. The backstop limit keys on it, so repeat questions in one reading
-session count as one caller and a freshly minted token does not buy a fresh
-allowance.
+A token longer than 4,096 characters is refused without being parsed
+(`src/util/caller_token.py:49-53`, `:134-137`). The reason for a refusal is logged
+here and never returned to the caller.
+
+`sub` is 128 random bits, not derived from anything about the reader. For a reader
+who has passed the website's Turnstile challenge it is that identity cookie's
+subject, so it lasts as long as the cookie, across visits; otherwise it is a
+per-visit id (`src/util/caller_token.py:15-22`, corrected 2026-09-19). The backstop
+limit keys on it, so a freshly minted token does not buy a fresh allowance.
 
 **A token with no `aud`, or one minted for a different audience, is refused.**
 Worth stating because the earlier code refused *every* token carrying an `aud`
 claim -- PyJWT rejects one when no audience is expected -- so this had to change
 before the first real token could ever have been accepted.
 
-Abuse control is the website's: the panel is opt-in behind a click, so a crawled
-search never reaches a model, and their proxy rate limits by address.
+Abuse control is mainly the website's. As they described it on 2026-09-18, the panel
+is opt-in behind a click, so a crawled search never reaches a model, and their proxy
+rate limits by address. This service adds a backstop: 30 answers per caller per 600s
+by default, set by `ANSWER_RATE_LIMIT` and `ANSWER_RATE_WINDOW_SECONDS`
+(`src/util/rate_limit.py:94-103`). A request over it is refused like an invalid token
+and is not counted.
 
 ## Response: Server-Sent Events
 
-Streaming rather than a single JSON body, because the whole answer currently takes
-25-32s and a search page cannot wait. Streaming turns that into "something appears in
-about two seconds".
+HTTP 200 and `text/event-stream` for every request that passes validation, including
+refusals. Streaming rather than a single JSON body so text renders as it arrives. It
+was chosen when a whole answer took 25-32s, in the hope that something would appear
+in about two seconds. It does not, because the first answer token waits for
+preprocessing and retrieval: last measured 2026-09-20, first token p50 5.57s and
+complete p50 8.90s (see "Budget").
 
 ```
 event: start
@@ -59,18 +104,46 @@ event: citation
 data: {"st_id": "R-HSA-8862803", "display_name": "Deregulated CDK5 triggers..."}
 
 event: done
-data: {"state": "answered", "seconds": 8.4, "answer_id": "Ev3z3JDmIIUF4gkKTfrn9VF83H"}
+data: {"state": "answered", "seconds": 8.4, "answer_id": "Ev3z3JDmIIUF4gkKTfrn9VF8"}
 ```
 
-`state` is one of `answered`, `nothing_found`, `refused`, `failed`.
+Events, in order:
 
-**`answer_id` is present only when `state` is `answered`** (added 2026-09-25,
-spec 013). It names the answer exactly as this stream sent it -- the text after
-anchors and the sources list were stripped, and the citations -- kept for an
-hour so "Continue in chat" can open the chat on *that* answer rather than a
-regenerated one (the same question scores ~0.33 similarity run to run). Pass it
-to `POST /api/handoff` as `{"kind": "search", "answer_id": ...}`. It is keyed per
-answer, not per question, so two readers of the same search never share one.
+- `start`, once, before any model work. `release` is the Reactome release of the
+  bundle the service started with (an integer such as 97), or `null` if it cannot be
+  determined (`bin/chat-fastapi.py:55-59`). `answered` is always `true` and predicts
+  nothing; read the state on `done`
+- `citation`, zero to 12 (below)
+- `token`, zero or more
+- `done`, once, last
+
+A refusal is the exception. It is **only** a `done`, with no `start`:
+
+```
+event: done
+data: {"state": "refused", "seconds": 0.0}
+```
+
+`state` is one of `answered`, `nothing_found`, `refused`, `failed`:
+
+| state | when |
+|---|---|
+| `answered` | at least one answer token was produced |
+| `nothing_found` | the stream ended without an answer token. The measured case (2026-09-18) is a question the safety check refused, whose reply is not streamed. A question retrieval cannot answer usually ends `answered`, with text saying it was not found |
+| `refused` | the token was missing or invalid, or the caller is over the rate limit. No model call was made |
+| `failed` | an error, or the 120s bound was reached. Tokens sent before it stay sent |
+
+**`answer_id` appears only when `state` is `answered`** (added 2026-09-25,
+spec 013), and not always then: it is omitted when the text left after stripping is
+empty (`src/api/answer_store.py:47-59`). It is 24 URL-safe characters. It names the
+answer exactly as this stream sent it -- the text after links and the sources list
+were stripped, and the citations -- kept in process memory for an hour (at most
+2,048 answers; lost on restart) so "Continue in chat" can open the chat on *that*
+answer rather than a regenerated one (the same question scores ~0.33 similarity run
+to run). Pass it to `POST <CHAINLIT_URI>/api/handoff`, under the same prefix as this
+endpoint (`bin/chat-fastapi.py:84`), as `{"kind": "search", "answer_id": ...}`. It is
+keyed per answer, not per question, so two readers of the same search never share
+one.
 Every other `done` has exactly `state` and `seconds`; a caller that ignores
 unknown keys parses them all the same way.
 
@@ -87,38 +160,40 @@ unknown keys parses them all the same way.
 
 ### Why citations are separate events
 
-So the website renders links in its own style. Returning prose with embedded HTML
-anchors -- what the chat UI does today -- would force the search page to parse them
-back out and re-style them. Stable IDs resolve at
-`reactome.org/content/detail/<st_id>`.
+So the website renders links in its own style. Returning prose with embedded links
+-- what the chat UI shows, as HTML anchors until 2026-10-03 and markdown links since
+(d71f6de) -- would force the search page to parse them back out and re-style them.
+Stable IDs resolve at `reactome.org/content/detail/<st_id>`.
 
-At most **12** citations are sent. Measured against the live endpoint this cap is
-binding on ordinary questions, so treat it as the most relevant few rather than
-the complete set.
+At most **12** citations are sent, in retrieval's fused order
+(`src/agent/graph.py:200`, `:548-571`). They are what retrieval found, not what the
+prose cited (research R3). On 2026-09-17 the cap was binding on ordinary questions;
+that was before citations were taken from the fused result only (38f8885,
+2026-09-18), and it has not been re-measured. Treat them as the most relevant few
+rather than the complete set. `display_name` can be an empty string.
 
-### Some answers have no citations at all, by construction
+### Some answers have no citations at all
 
-A `citation` carries `st_id`, a Reactome stable identifier, and only the Reactome
-and disease-variant collections have them. The userguide collection indexes
-documentation pages whose metadata is a page URL, so a userguide-routed question
-produces **zero citations** -- measured 2026-09-18: "How do I use the pathway
-browser?" returned 0 citations and 452 tokens.
+A question routed to the live lookup (the Reactome MCP tools) is answered from tool
+calls with no retrieval, so it streams tokens and **no `citation` events**
+(`src/agent/graph.py:500-532`; live-path streaming added 2026-09-18, d3740aa). When
+the live tools are unavailable, the same question falls back to retrieval and is
+cited as usual.
 
-That is a good answer with no sources, not a failure. Two things follow for a
-caller:
+That is a good answer with no sources, not a failure. Render nothing rather than an
+empty heading; the website's panel keeps its heading and list inside one conditional
+for this reason.
 
-- Render nothing rather than an empty heading. The website's panel keeps its
-  heading and list inside one conditional for this reason.
-- It correlates with the **fastest** answers -- the userguide question is also
-  the 3.3s-to-first-token one -- so it is common rather than exotic, and it is
-  precisely what the four questions anyone would naturally test with fail to
-  produce.
+*History: until 2026-09-18 user-guide answers had no citations either, because
+user-guide documents carry no `st_id`. Measured 2026-09-18, "How do I use the pathway
+browser?" returned 0 citations and 452 tokens, and was also the fastest answer (3.3s
+to first token). They are now cited by `url` (next section).*
 
-**Citations always precede prose**, and that is structural rather than
-incidental: citations are emitted only on `on_retriever_end`, and token events
-are gated on that same event, because retrieval completing is how the answer's
-tokens are told apart from the query expander's. So sources are complete at the
-moment the first token arrives, and a panel may render them before any prose.
+**On the retrieval path, citations precede prose**, and that is structural:
+citations are emitted only on the fused retriever's `on_retriever_end`, and answer
+tokens are gated on that same event, because retrieval completing is how the
+answer's tokens are told apart from the query expander's. So sources are complete
+when the first token arrives, and a panel may render them before any prose.
 
 #### Userguide pages are cited by `url` (implemented 2026-09-18)
 
@@ -158,21 +233,24 @@ tests, which used fixtures too clean to contain one.
 
 ### What `token` text contains
 
-**Markdown, never HTML.** Headings and lists appear; anchors do not. The answer
-prompt is the chat UI's and does emit inline `<a href=...>` links, so the endpoint
-strips them -- across fragment boundaries, because the model streams one anchor as
-twenty-odd pieces (`' <'`, `'a'`, `' href'`, `'="'`, `'https'`, ...). A caller that
-rendered fragments as they arrived would otherwise show the raw tag before it
-became a link.
+**Markdown without links.** Headings and lists appear; links do not. The answer
+prompt is the chat UI's and asks for inline markdown links, `[display_name](URL)`
+(`src/retrievers/reactome/prompt.py:20`; HTML `<a href=...>` anchors until
+2026-10-03), so the endpoint strips both forms (`src/api/answer.py:133-144`,
+`src/util/anchor_strip.py`) -- across fragment boundaries, because the model streams
+one link as many pieces (one anchor arrived as twenty-odd: `' <'`, `'a'`, `' href'`,
+`'="'`, `'https'`, ...). A caller that rendered fragments as they arrived would
+otherwise show the raw link before it was complete. Text that might still become a
+link is held back briefly; anything held at the end is sent as a final `token`.
 
-The anchor's *text* is kept, since removing it would break any sentence with a
+The link's *text* is kept, since removing it would break any sentence with a
 linked phrase in the middle. Where the model used a link as a trailing citation,
 that leaves the pathway title as a bare clause -- cosmetic, and the structured
 `citation` events are the reliable source for links.
 
 **No trailing source list.** The answer prompts ask for a bullet list of every
 citation at the end, which the chat UI renders. This caller gets its links from
-the `citation` events, so that list is a duplicate -- and after the anchors come
+the `citation` events, so that list is a duplicate -- and after the links come
 off, a duplicate with no links in it. The endpoint drops the heading and
 everything after it.
 
@@ -192,38 +270,53 @@ and `SourcesSectionStripper` removes it on the served path. The stripper still
 accepts the older variants, because a prompt is an instruction and not a
 guarantee, but no caller needs to know that.
 
-## Properties worth holding to
+## Properties
 
-**It must be safe to ignore.** Any failure, timeout, refusal or unverified caller
-produces a `done` with a non-`answered` state. The website renders no panel. The
-search page must never be slower or broken because this service is down (FR-006,
-SC-004).
+**Safe to ignore, within the stream.** Every failure, timeout, refusal or unverified
+caller ends with a `done` whose state is not `answered`, and the website renders no
+panel (FR-006). Two cases fall outside that: a malformed request gets HTTP 422 JSON
+rather than a stream, and a failure after tokens have started leaves those tokens
+sent, followed by `done` `failed` (see Known gaps). Keeping the search page from
+being slowed or broken when this service is down (FR-006, SC-004) is the website's
+side.
 
-**Hanging up cancels the work.** Measured: when the caller closes the connection
-mid-stream, `CancelledError` is raised inside the answer generator and nothing
-further is produced -- 3 tokens read, 3 produced, then cancelled. So a reader who
-navigates away does not cost a full model call, and there is nothing for the
-proxy to cancel upstream beyond closing the connection.
+**Hanging up cancels the work.** Measured 2026-09-18: when the caller closes the
+connection mid-stream, `CancelledError` is raised inside the answer generator and
+nothing further is produced -- 3 tokens read, 3 produced, then cancelled. So a reader
+who navigates away does not cost a full model call, and there is nothing for the
+proxy to cancel upstream beyond closing the connection (`src/api/answer.py:192-218`).
 
 **The stream is bounded.** The server gives up after 120 seconds and sends `done`
-with `state: failed`. A caller still needs its own timeout -- a dropped connection
-sends nothing -- but the server will not hold one open indefinitely. 120s is about
-twice the slowest complete answer measured; it is a ceiling, not a target.
+with `state: failed` (`src/api/answer.py:67`). A caller still needs its own timeout
+-- a dropped connection sends nothing -- but the server will not hold one open
+indefinitely. 120s was set at about twice the slowest complete answer measured then;
+it is a ceiling, not a target.
 
 **No answer without a token.** Refused before any model call, not after (FR-003).
 Search pages get crawled, and every crawled search reaching the model is a bill.
 
-**Not every search gets a panel.** The caller may ask for every query; this service
-decides, and may answer `nothing_found` because the question is navigational rather
-than answerable (D2, User Story 3).
+**Every request that passes the checks is answered.** Nothing decides that a search
+is not worth answering; earlier versions said navigational questions might get
+`nothing_found`, which was never built (D2, User Story 3).
 
 **The answer is tied to a release.** `start` carries it so a cached answer can be
-invalidated after a release (FR-007).
+invalidated after a release (FR-007). It can be `null`, and no cache exists on this
+side (D3).
 
-**One brain.** The endpoint and the chat UI share a graph. If they can disagree about
-the same question, that is a defect.
+**One graph.** The endpoint and the chat UI share one graph instance and profile
+(`src/agent/registry.py`; `tests/api/test_answer_matches_chat.py`). The endpoint
+skips the post-answer web search the chat runs (`src/api/answer.py:158-164`), which
+does not change the answer text. The same question still gets differently worded
+answers run to run on either surface (~0.33 similarity, 2026-09-18), so identical
+text is not something either side can rely on.
 
 ## Budget
+
+No latency is promised. The latest recorded measurement is 2026-09-20, on
+`astream_answer` (the graph method this endpoint streams from), arms interleaved,
+n=25: first token p50 **5.57s** (range 2.26s-11.44s), complete p50 **8.90s** (T022 in
+[research.md](../research.md)). The rest of this section is the 2026-09-18 record
+the website first built against, kept with its corrections.
 
 Measured 2026-09-18 over the fifteen tracked sweep questions, two runs each, warm
 process, `gpt-4o-mini` at temperature 0.
@@ -239,23 +332,23 @@ first token p50 10.8s, p90 12.2s.
 
 **An earlier version of this contract said the first token arrives "around 36
 seconds". That was wrong** -- it came from a single question, and it has not been
-reproducible since. Two things changed underneath it: collection routing narrowed
-retrieval to the sources a question actually needs, and the four preprocessing
+reproducible since. Two things changed underneath it: source routing sent each
+question to the source it needs (Reactome bundle, user guide or live lookup), and the four preprocessing
 calls now run in two rounds instead of four. Preprocessing is 2.6s of the total,
 not the ~16s previously recorded.
 
-**The first increment still makes no latency promise**, and ten seconds is still
-far from the two an AI overview is reported to take. But design the panel for ten
-seconds, not thirty: the gap between those is the difference between a brief wait
-and an abandoned page.
+**The first increment made no latency promise**, and none has been made since. The
+advice given on 2026-09-18 was to design the panel for about ten seconds, not
+thirty; the 2026-09-20 figures above are within that, with a long tail on the first
+token.
 
-Four of the thirty runs produce no answer token at all. Those are the two
-deliberately unsafe questions, which return `nothing_found` in about 4.5s with an
-empty body. A panel must handle "nothing, quickly" as a normal outcome.
+Four of the thirty runs produced no answer token at all. Those were the two
+deliberately unsafe questions, which returned `nothing_found` in about 4.5s with an
+empty body. A panel has to handle "nothing, quickly" as a normal outcome.
 
 A naive measurement reports 3.0s to first token. That token is the rephraser's.
 
-**Where the time goes now**, at the median of a four-question repeated measure:
+**Where the time went on 2026-09-18**, at the median of a four-question repeated measure:
 
 | phase | seconds |
 |---|---|
@@ -263,15 +356,17 @@ A naive measurement reports 3.0s to first token. That token is the rephraser's.
 | query expansion and retrieval | 2.3 |
 | retrieval finishing to the answer's first token | 6.1 |
 
-The largest block is no longer retrieval or preprocessing: it is the answer model's
-own time to first token with a retrieved context.
+On these figures the largest block was the answer model's own time to first token
+with a retrieved context. The 2026-09-20 measurement puts the answer model at 0.84s
+and retrieval at 3.15s, the largest; the two records are not reconciled
+(research.md, T022).
 
 **A correction to an earlier version of this file**, which said collection routing
-had landed and explained the improvement. It has not. What landed is *source*
-routing -- a question goes to the Reactome bundle, the user guide, or a live
-lookup -- while [009](../../009-collection-routing/spec.md), selecting among the
-collections *within* the Reactome bundle, is still unimplemented; retrieval
-searches all five.
+had landed and explained the improvement. It had not then: what had landed was
+*source* routing. Collection routing ([009](../../009-collection-routing/spec.md)),
+which selects among collections *within* the Reactome bundle, landed later, on
+2026-09-19 (0fe7d88). The figures in this section were measured before it, with
+retrieval searching all five collections.
 
 So the honest position on why the earlier 12.5s and ~36s figures no longer
 reproduce is that we do not fully know. Source routing accounts for the fast
@@ -279,16 +374,37 @@ user-guide answers (3.3s to first token). Running preprocessing in two rounds
 accounts for about 2.5s. The rest may simply be that those figures came from one
 question and were never representative.
 
-One measurement worth keeping in view for anyone optimising this: the async
-retrieval path is **not faster than the sync one** here -- 12.5s against 10.9s on the
-same five queries. The concurrency in `aretrieve_documents` is not currently buying
-throughput, so a plan that assumes it will is assuming something unmeasured.
+One measurement worth keeping in view for anyone optimising this (2026-09-17, before
+collection routing): the async retrieval path was **not faster than the sync one**
+-- 12.5s against 10.9s on the same five queries. The concurrency in
+`aretrieve_documents` was not buying throughput then, and it has not been
+re-measured.
 
-## What the website side needs to decide
+## Questions put to the website side (2026-09-17), and where they stand
 
-1. How a verified person is represented (D1) -- the security boundary
-2. Whether it calls this service directly from the browser, or proxies server-side.
-   Proxying makes the token question easier and keeps this service off the public
-   internet
-3. What it renders for each `state`, particularly `nothing_found` -- probably nothing
-4. Whether repeat searches are cached at its layer or this one (D3)
+1. How a caller is represented -- the security boundary. Settled 2026-09-18 (D1): a
+   token the website mints per call, verified as above
+2. Whether it calls this service from the browser or through a server-side proxy. It
+   proxies: the token is minted on its server and its proxy rate limits (D1)
+3. What it renders for each `state`, particularly `nothing_found`. The website's
+   choice; not recorded here
+4. Whether repeat searches are cached at its layer or this one (D3). Open; no cache
+   exists on this side
+
+## Known gaps
+
+Differences between what this file or the spec earlier promised and what the code
+does, as of 2026-10-21. Recorded, not resolved: which side should change has not been
+decided.
+
+- **First token in about two seconds.** Given as the reason for streaming; last
+  measured at p50 5.57s (2026-09-20). FR-005a is an unmet target
+- **Navigational searches answered `nothing_found`.** Earlier versions said this
+  service might decline navigational queries (D2, User Story 3). Not built
+- **"No panel" after tokens have started.** A failure or timeout after the first
+  token leaves the streamed text with the caller, then sends `done` `failed` with no
+  `answer_id` (`src/api/answer.py:219-262`). Task T018 described failure as "no
+  partial answer". A panel that shows tokens as they arrive has to discard them on
+  `failed` to show nothing
+- **Malformed requests** get HTTP 422 JSON, not a `done` event
+- **Caching by question and release** (FR-007, D3). `release` is sent; no cache exists

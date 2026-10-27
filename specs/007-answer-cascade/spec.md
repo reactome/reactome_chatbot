@@ -4,13 +4,23 @@
 
 **Created**: 2026-09-14
 
-**Status**: Draft. One decision (D1) for the team, and it is the hard one.
+**Status**: Historical record of the answer-cascade proposal and the observations
+behind it, 2026-09-14. Drafted as a proposal; this file records no approval of its
+requirements, and D1 was never recorded as decided. Of what it proposed, only FR-012
+(questions about the database answered from live services) was built as written
+(4c4e8a7, PR #216, 2026-09-14), off unless an MCP server is configured. Analysis was
+built differently: the chat recognises gene lists and analysis requests before the
+graph rather than through the classifier. The Search API step was not built. Whether
+the unbuilt parts are still wanted is not recorded. The requirements below were set
+for that proposal, not for later changes; their status is in "Requirements, and where
+they stand". Current routing is in `src/agent/tasks/intent_classifier.py`,
+`src/agent/profiles/react_to_me.py` and `handle_message` in `bin/chat-chainlit.py`.
 
 **Input**: Detect when a question wants an analysis. Otherwise check the embeddings;
 if they have no match, search the Reactome Search API for the term; if that finds
 nothing, fall back to Tavily.
 
-## The shape
+## The proposed shape
 
 ```
                     ┌─ analysis question? ──> MCP analysis agent
@@ -23,19 +33,19 @@ Two different mechanisms, and the distinction matters: **analysis is a branch ta
 up front**, because it is a different kind of question. The rest is a **cascade**,
 each step tried only when the one before it found nothing.
 
-## Half of it already exists
+## What existed on 2026-09-14, and since
 
-| step | today |
-|---|---|
-| classify the question | `intent_classifier` — routes `reactome` / `userguide` |
-| embeddings | the RAG chain |
-| "was that good enough?" | `completeness_grader` |
-| Tavily | `tavily_wrapper`, run in `postprocess` |
-| **Reactome Search API** | **nothing** |
-| **analysis routing** | **nothing** |
+| step | 2026-09-14 | since (checked 2026-10-21) |
+|---|---|---|
+| classify the question | `intent_classifier` — routes `reactome` / `userguide` | also `live` when an MCP server is configured (4c4e8a7), and picks collections (spec 009) |
+| embeddings | the RAG chain | same role |
+| "was that good enough?" | `completeness_grader` | still gates only the Tavily step (`src/tools/external_search/workflow.py:16-19, 73-79`) |
+| Tavily | `tavily_wrapper`, run in `postprocess` | unchanged; chat only — the answer endpoint turns postprocess off (`src/api/answer.py:164`) |
+| **Reactome Search API** | **nothing** | still no cascade step; the MCP's `reactome_search` tool is reachable only from `live`-routed questions |
+| **analysis routing** | **nothing** | in the chat, by pattern matching before the graph (`bin/chat-chainlit.py:699-760`), not by the classifier |
 
-So the cascade's skeleton is real: retrieval, a grader that decides whether the
-answer was good enough, and a web search when it was not. What is being asked for is
+So the cascade's skeleton was real: retrieval, a grader that decides whether the
+answer was good enough, and a web search when it was not. What was asked for was
 one new step inserted in the middle, and one new branch at the top.
 
 ## The hard part is the signal, not the order
@@ -45,7 +55,7 @@ equally easy.
 
 ### Search API — free and unambiguous
 
-Measured against `ContentService/search/query`:
+Measured 2026-09-14 against `ContentService/search/query`:
 
 | query | entries |
 |---|---|
@@ -78,29 +88,36 @@ This is D1, and it is the only decision here that is not obvious.
 ### Analysis — a classifier, and there is one already
 
 Detecting "this wants an analysis" is classification, and `intent_classifier` already
-classifies. It should gain the destination rather than acquire a sibling, which is
-the mistake #142 makes: a second LLM classification call on the same question, in a
+classified. The proposal was for it to gain the destination rather than acquire a
+sibling, which was the mistake #142 made: a second LLM classification call on the same question, in a
 pipeline where cutting calls from 21 to one was the point of spec 001.
 
 Analysis questions look different enough to be tractable — they carry a list of
 identifiers, and ask what is enriched or over-represented.
 
-## What it costs
+**What was built instead (checked 2026-10-21).** The classifier has no analysis
+destination (`src/agent/tasks/intent_classifier.py:10`). The chat recognises gene
+lists and analysis requests by pattern on the user's own message, before the graph
+runs and so before the rephrase (`src/analysis/gene_list.py:41-80, 419`;
+`bin/chat-chainlit.py:699-760`). That costs no LLM call; a recognised list is offered
+an analysis and run only on confirmation. The search page has no analysis path.
+
+## What it would cost (estimate, 2026-09-14)
 
 Worst case, a question that falls all the way through: classification, retrieval and
 generation, a completeness judgement, a Search API call, and a Tavily call. On a
-surface already at ~22s per question, each step must earn its place.
+surface then at ~22s per question, each step had to earn its place.
 
-Two mitigations are inherent to the design. Most questions stop at the embeddings, so
-the deep path is rare. And the two new steps are the cheap ones — the Search API
-measured at well under a second, and analysis at **0.2s** measured through
-`reactome-mcp`.
+Two mitigations were expected. Most questions would stop at the embeddings, so the
+deep path would be rare (assumed, never measured). And the two new steps were the
+cheap ones — the Search API measured at well under a second, and analysis at **0.2s**
+measured through `reactome-mcp`, both on 2026-09-14.
 
 ## Observed, 2026-09-14
 
 Two questions asked on beta by a Reactome developer. Beta was running `e398a37`
 — production's commit, which predates both the intent classifier and the user
-guide source — so this is not a report on current `main`. It is recorded because
+guide source — so this is not a report on `main` as it then was. It is recorded because
 it is what the cascade is for, asked by a real user in their own words.
 
 ### "I want to run a gsea with my list of genes"
@@ -127,13 +144,19 @@ vector store did not have this" from "Reactome does not have this". That is the
 "user cannot tell which source answered" edge case, showing up as an assertion
 rather than as a gap.
 
-It is also a user guide question. `main` has a user guide source and routes to
-it — but the user guide bundle is not installed on the beta host, so `main`
+Later change (3ad234f, 2026-09-18): the Reactome answer prompt now tells the model to
+say an answer was not found "in the Reactome pathway content searched", never that
+Reactome lacks it (`src/retrievers/reactome/prompt.py:17-18`).
+
+It is also a user guide question. `main` had a user guide source and routed to
+it — but the user guide bundle was not installed on the beta host, so `main`
 would log `User guide embeddings not configured; routing will use reactome only`
 and fall back the same way. **Routing is necessary and not sufficient**; the
-source has to be present, and its absence currently degrades silently.
+source has to be present. Its absence still degrades silently: a missing user guide
+bundle is reported only by that INFO log line, and the classifier is then simply not
+offered `userguide` (`src/agent/profiles/react_to_me.py:94-97, 120-125`).
 
-### Reactome does do GSEA — through a service nothing here talks to
+### Reactome does do GSEA — through a service nothing here talked to (2026-09-14)
 
 An earlier draft of this spec asserted that Reactome performs
 over-representation analysis and not GSEA, and that the honest reply was to say
@@ -145,20 +168,25 @@ There are two analysis services:
 | | | |
 |---|---|---|
 | `AnalysisService` | over-representation over an identifier list | what `reactome-mcp` wraps |
-| **ReactomeGSA** (`gsa.reactome.org`) | **PADOG, Camera, ssGSEA, terapadog** | **nothing here talks to it** |
+| **ReactomeGSA** (`gsa.reactome.org`) | **PADOG, Camera, ssGSEA, terapadog** | **nothing here talked to it** on 2026-09-14; `src/gsa/` does since 2026-09-21 |
 
 Camera is described by the service itself as *"a gene set analysis algorithm
 similar to the classical GSEA algorithm"*. Verified 2026-09-14 against
 `GET https://gsa.reactome.org/0.1/methods`, and `reactome.org/gsa/` is a live
 page.
 
-So the answer to "I want to run a GSEA" is not "Reactome does ORA instead". It
-is ReactomeGSA — a Reactome product — and the reason the beta chatbot sent a
-user to `fgsea` and a YouTube tutorial is that **no part of this system knows
-ReactomeGSA exists**.
+So the answer to "I want to run a GSEA" was not "Reactome does ORA instead". It
+was ReactomeGSA — a Reactome product — and the reason the beta chatbot sent a
+user to `fgsea` and a YouTube tutorial was that **no part of this system knew
+ReactomeGSA existed**. This spec treated that as a gap in `reactome-mcp` first.
 
-That is a gap in `reactome-mcp` before it is a gap in the cascade: routing the
-question correctly cannot help while there is no tool behind the route.
+**What was built instead (checked 2026-10-21).** The chat talks to ReactomeGSA
+itself, without MCP: an attached expression matrix runs a ReactomeGSA analysis
+(`src/gsa/client.py:50`; `bin/chat-chainlit.py:699-701`), and a request to run one in
+words is answered with how to do it in the chat (`src/gsa/chat.py:242-253`;
+`bin/chat-chainlit.py:757`). A pasted gene list — identifiers without per-sample
+measurements — is offered an over-representation analysis, never ReactomeGSA
+(93827ea, 2026-10-02; `src/analysis/gene_list.py`).
 
 ### The rephrase turns "do this" into "how do I do this"
 
@@ -181,7 +209,10 @@ alone while the step in front of it is rewriting requests-to-act into
 questions-about-how — by the time the classifier sees the question, the
 signal it needs is gone. **FR-011.**
 
-### What `main`'s classifier actually does with them
+In the chat this was resolved by detecting analysis requests on the raw message,
+before the graph and its rephrase (`bin/chat-chainlit.py:732`).
+
+### What `main`'s classifier did with them (2026-09-14)
 
 Measured 2026-09-14, `gpt-4o-mini`, **three runs per question, classifying the
 rephrased form as production does**. Every question routed identically on all
@@ -204,23 +235,26 @@ hiding variance:
 
 Three things follow.
 
-**The second beta failure is already routed correctly.** "what tools are
-available for me to run on here" classifies as `userguide` on `main` today. The
-classifier is not the problem for that question; the missing bundle is. Install
-it on the beta host and that failure goes away without any cascade work — which
-is a cheaper fix than this spec, and should be done first.
+**The second beta failure was already routed correctly.** "what tools are
+available for me to run on here" classified as `userguide` on `main` at the time. The
+classifier was not the problem for that question; the missing bundle was. Installing
+it on the beta host was proposed as a cheaper first fix than any cascade work. This
+repository does not record whether that was done.
 
-**The analysis questions land wherever the two existing destinations allow.**
-Two go to `reactome`, one to `userguide` — not wrong given the choices, simply
+**The analysis questions landed wherever the two existing destinations allowed.**
+Two went to `reactome`, one to `userguide` — not wrong given the choices, simply
 unable to express the right answer. That is the case for FR-001, measured
 rather than argued.
 
 **A question that belongs nowhere is forced somewhere.** The Nature subscription
-question routes to `userguide`, because with two destinations and a required
-choice there is no way to say "neither". Today the completeness grader catches
-this downstream and Tavily answers it, so the outcome is acceptable by accident.
-Adding destinations makes the guess worse, not better: the more sources, the
-more confident the misrouting. FR-010.
+question routed to `userguide`, because with two destinations and a required
+choice there was no way to say "neither". The completeness grader caught this
+downstream and Tavily answered it, so the outcome was acceptable by accident. The
+argument was that adding destinations makes the guess worse, not better: the more
+sources, the more confident the misrouting. FR-010. Since then `live` has been added
+as a third destination, and there is still no way to decline
+(`src/agent/tasks/intent_classifier.py:10, 151-154`). The grader and Tavily run only in
+the chat, not on the search page's answer endpoint (`src/api/answer.py:164`).
 
 ### The strongest case is not the cascade at all
 
@@ -247,26 +281,29 @@ There is a class of these:
 | Which release is this? | cannot know; the bundle is a snapshot | `reactome_database_info` |
 | Is pathway X in Reactome? | only if X was sampled | `reactome_search` |
 
-All three tools are already wrapped in `src/reactome_mcp/tools.py`, chosen for
-exactly this reason. They are not wired to anything.
+All three tools were already wrapped in `src/reactome_mcp/tools.py`, chosen for
+exactly this reason, and not wired to anything.
 
-**This lowers the cost of the first useful MCP work.** It needs no answer to D1,
-no cascade, and no new capability — only that these questions reach a tool
-instead of the vector store. The analysis branch is the larger prize; this is
-the one available now.
+That made it the cheapest useful MCP work: it needed no answer to D1, no cascade,
+and no new capability — only that these questions reach a tool instead of the
+vector store. **Built the same day** as the `live` destination (4c4e8a7, PR #216;
+FR-012), offered only when an MCP server is configured.
 
-### Where these questions live now
+### Where these questions were recorded
 
 `tests/golden/cascade-questions.txt`, alongside the cases for every other branch
-of the cascade — including two that must be answered from the embeddings exactly
-as they are today, and one identifier that should stop at the Search API rather
-than reach Tavily.
+of the proposed cascade — including two to be answered from the embeddings exactly
+as before, and one identifier meant to stop at the Search API step, which was not
+built. No code reads the file; it is a question list, not a test.
 
 They are kept out of `tests/golden/questions.txt` deliberately: that file is a
 fixed baseline for comparing retrieval captures over time, and adding to it
 would invalidate every capture taken before.
 
-## User Scenarios & Testing *(mandatory)*
+## User stories as proposed (2026-09-14)
+
+Proposed, not recorded as approved. What became of each is in "Requirements, and
+where they stand" below.
 
 ### User Story 1 — A gene list gets an analysis (Priority: P1)
 
@@ -290,7 +327,7 @@ analysis rather than retrieval, and comes back with pathways and p-values.
 A user asks about something in Reactome that retrieval does not surface — a recently
 added pathway, or an exact identifier. The Search API finds it.
 
-**Why this priority**: this is the step being added, and the gap it closes is real —
+**Why this priority**: this was the step being proposed, and the gap it would close is real —
 the bundle is a snapshot, while the Search API is live.
 
 **Acceptance Scenarios**:
@@ -325,61 +362,35 @@ marked as external.
   pathway answer that is not an analysis, and nothing says so.
 - **Latency on the deep path.** Four steps before an answer appears.
 
-## Requirements *(mandatory)*
+## Requirements, and where they stand (checked 2026-10-21)
 
-- **FR-001**: Analysis questions MUST be routed to analysis, by extending the existing
-  classifier rather than adding a second one.
-- **FR-002**: The cascade MUST stop at the first step that finds something.
-- **FR-003**: The Search API step MUST use its own result count as the match signal —
-  no model call, no tuned threshold.
-- **FR-004**: A step that finds nothing MUST fall through, never fabricate.
-- **FR-005**: The source of an answer MUST be distinguishable: bundle, live Reactome,
-  or the open web.
-- **FR-006**: Tavily results MUST remain links beside the answer, not generated into
-  it.
-- **FR-007**: With the new steps disabled, behaviour and call count MUST be exactly as
-  today.
-- **FR-008**: An analysis request MUST be answered with the Reactome service
-  that performs it, and MUST name which was used. Over-representation
-  (`AnalysisService`) and gene set analysis (ReactomeGSA: PADOG, Camera, ssGSEA,
-  terapadog) are different analyses; satisfying a request for one with the other
-  without saying so is the failure this spec exists to prevent, not relocate.
-  A request naming GSEA MUST NOT be answered "Reactome does not do that" — it
-  does, at `gsa.reactome.org`.
-- **FR-009**: A source that is configured but unavailable MUST be
-  distinguishable from a source that had no answer. The user guide falls back to
-  `reactome` with only a log line when its bundle is missing, so a routing
-  success and a missing bundle produce the same reply.
-- **FR-010**: The classifier MUST be able to decline. It currently returns one
-  of a closed set and cannot say "none of these" — measured 2026-09-14, "What is
-  the current price of a Nature subscription?" routes to `userguide`. The
-  downstream grader rescues that today; adding destinations without adding a way
-  to decline makes misrouting more confident, not less.
-- **FR-012**: A question about the database itself — its species coverage, its
-  release, whether it contains something — MUST be answered from the live
-  services, not from the vector store. Measured 2026-09-14: asked which species
-  Reactome includes, retrieval answered "primarily Homo sapiens ... no
-  indications of other species". Reactome has 96. This is not a retrieval
-  defect; a sample of the content cannot describe the scope of the database, so
-  no improvement to retrieval can fix it.
-- **FR-011**: The signal the analysis branch routes on MUST survive the
-  rephrase, or be taken before it. Measured 2026-09-14: the rephrase rewrites
-  "I want to run a gsea with my list of genes" as "How can I perform a Gene Set
-  Enrichment Analysis…", which is a user-guide shape. An intent to *act* becomes
-  a question about *how to act*, and the classifier cannot recover what the
-  rephrase removed.
+Proposed by this spec; no approval is recorded. Where one is not built, whether it is
+still wanted is not recorded. The measurements behind FR-010 to FR-012 are in
+"Observed, 2026-09-14" above.
 
-## Success Criteria *(mandatory)*
+| ID | Proposed | Status |
+|---|---|---|
+| FR-001 | Analysis questions routed to analysis, by extending the existing classifier | Built differently. In the chat, gene lists and analysis requests are recognised by pattern before the graph (`src/analysis/gene_list.py:41-80, 419`; `bin/chat-chainlit.py:699-760`) and proposed, then run on confirmation. The classifier has no analysis destination (`src/agent/tasks/intent_classifier.py:10`). The search page has no analysis path |
+| FR-002 | The cascade stops at the first step that finds something | Not built beyond the existing grader-then-Tavily step |
+| FR-003 | The Search API step uses its own result count as the signal | Not built: nothing calls the Search API as a cascade step. The MCP's `reactome_search` tool is used only inside `live`-routed answers (`src/reactome_mcp/tools.py:54`) |
+| FR-004 | A step that finds nothing falls through, never fabricates | No cascade to fall through. The prompts tell the model to say what was not found (`src/retrievers/reactome/prompt.py:17`; `src/reactome_mcp/answer.py:75-87`) |
+| FR-005 | Answer source distinguishable: bundle, live Reactome, open web | Partly: Tavily results appear separately (FR-006); live answers carry no citations (d3740aa) but are not labelled |
+| FR-006 | Tavily results remain links beside the answer | Holds in the chat (`src/agent/profiles/base.py:83-112`; `SearchResults` element, `src/util/chainlit_helpers.py:191`). The answer endpoint runs no web search (`src/api/answer.py:164`) |
+| FR-007 | With the new steps disabled, behaviour and call count as before | Holds for `live`: without an MCP server it is not offered and the classifier gets the two-source prompt (`src/agent/tasks/intent_classifier.py:110-141, 189-206`; `tests/agent/test_intent_classifier_sources.py:21-33, 80-84`). The chat's analysis detection has no switch, and adds no LLM call |
+| FR-008 | An analysis request is answered by the Reactome service that performs it, naming it; a GSEA request is never told "Reactome does not do that" | Holds in the chat: gene lists go to over-representation, named in the reply (`src/analysis/gene_list.py:520`); expression matrices go to ReactomeGSA (`src/gsa/`); a GSEA request in words is told how to run ReactomeGSA in the chat (`src/gsa/chat.py:242-253`). A gene list is never sent to ReactomeGSA (93827ea, 2026-10-02) |
+| FR-009 | A configured-but-unavailable source distinguishable from one with no answer | Not built: a missing user guide bundle is an INFO log line (`src/agent/profiles/react_to_me.py:120-125`); an unavailable MCP falls back to retrieval with a WARNING log only (`react_to_me.py:219-243`) |
+| FR-010 | The classifier can decline ("none of these") | Not built: `source` must be `reactome`, `userguide` or `live` (`src/agent/tasks/intent_classifier.py:10, 151-154`) |
+| FR-011 | The analysis signal survives the rephrase, or is taken before it | Holds in the chat: detection runs on the raw message before the graph (`bin/chat-chainlit.py:732`) |
+| FR-012 | Questions about the database itself (species, release, whether it contains something) answered from live services | Built (4c4e8a7, PR #216): the `live` destination (`src/agent/tasks/intent_classifier.py:29-36`; `src/agent/profiles/react_to_me.py:208-261`). Offered only when `REACTOME_MCP_URL` or `REACTOME_MCP_SERVER` is set; falls back to retrieval if the server is unavailable (FR-009) |
+| SC-001 | A gene-list question yields a real analysis or an explicit refusal | In the chat; failure message at `src/analysis/gene_list.py:585-589` |
+| SC-002 | Content the bundle lacks but Reactome has is answered | No cascade; `live` answers "is X in Reactome" questions where configured |
+| SC-003 | Nothing anywhere gives an honest "not covered" | Through prompt wording only (`src/retrievers/reactome/prompt.py:17`) |
+| SC-004 | A question answered from the embeddings costs the same | No cascade step was added to that path |
+| SC-005 | A user can tell which source answered | As FR-005 |
 
-- **SC-001**: A gene-list question yields a real analysis or an explicit refusal.
-- **SC-002**: A question about content the bundle lacks but Reactome has is answered.
-- **SC-003**: A question with nothing anywhere gets an honest "not covered".
-- **SC-004**: A question answered from the embeddings costs the same as today.
-- **SC-005**: A user can tell which source answered.
+## Decisions put to the team (2026-09-14)
 
-## Decisions for the team
-
-### D1 — What counts as "the embeddings found no match"?
+### D1 — What counts as "the embeddings found no match"? (never decided)
 
 | option | what it means |
 |---|---|
@@ -387,22 +398,24 @@ marked as external.
 | B. A distance threshold | Free and instant, but the number is arbitrary, drifts with the embedding model and the release, and nothing tells you when it has stopped meaning anything. |
 | C. Threshold first, grader second | Cheap rejection of the obviously-irrelevant, grader for the rest. Two signals to reason about and two ways to be wrong. |
 
-**Recommendation: A.** It is already there, already trusted for the Tavily decision,
-and reusing it makes the cascade one consistent idea rather than two. If its latency
-proves to be the problem, B becomes a tuning exercise on top — but that should be
-driven by a measurement, not a guess.
+The proposal recommended A: the grader already existed and was trusted for the Tavily
+decision, and reusing it would make the cascade one consistent idea rather than two,
+with B as a later tuning exercise if latency proved to be the problem. No decision is
+recorded, and the step D1 was for was not built. The completeness grader still gates
+only the Tavily step (`src/tools/external_search/workflow.py:16-19, 73-79`).
 
-## Assumptions
+## Assumptions at the time (2026-09-14)
 
-- Most questions stop at the embeddings, so the deep path is rare. Worth measuring
-  once the cascade exists; if most questions fall through, the bundle is the problem.
+- Most questions stop at the embeddings, so the deep path is rare. Never measured;
+  if most questions fell through, the bundle would be the problem.
 - The Search API stays fast and unauthenticated.
 - Analysis arrives over hosted MCP ([spec 006](../006-mcp-hosting/spec.md)), not a
-  spawned subprocess.
+  spawned subprocess. In the event it was built against the Analysis Service and
+  ReactomeGSA directly (`src/analysis/`, `src/gsa/`).
 
-## Out of Scope
+## Out of scope for the proposal
 
-- Rebuilding the bundle. That is the Release 98 work and reduces how often the
-  cascade goes deep, but it is not this.
+- Rebuilding the bundle. That was the planned Release 98 work (spec 005, D1), which
+  would reduce how often the cascade goes deep, but it was not this.
 - Which MCP tools beyond analysis to expose.
 - Presenting analysis results in the UI.

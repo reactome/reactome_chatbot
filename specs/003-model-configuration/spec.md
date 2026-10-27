@@ -4,9 +4,13 @@
 
 **Created**: 2026-09-09
 
-**Status**: **Implemented** 2026-09-10 (#200 plan, #201 implementation). D1 taken as
-recommended — validation against the table, no API call at startup. #112 and #151
-closed with credit. Outcome recorded at the end of this file.
+**Status**: Historical record of the model-configuration work, 2026-09-09 to
+2026-09-10. User Stories 1 and 2 were implemented 2026-09-10 (#200 plan, #201
+implementation). User Story 3, a model per surface, was not built. D1 was implemented
+as the spec recommended (table only, no API call). The requirements below were set for
+that work, not for later changes. Current behaviour is in `resolve_temperature` and
+`resolve_llm_model` (`src/agent/graph.py:141-197`) and `src/util/config_yml/`. The
+outcome is recorded at the end of this file.
 
 **Input**: Make it possible to switch between models — `gpt-4o-mini` and `gpt-5.6-luna` in particular — when per-model settings such as temperature differ. Does this need something to configure it with?
 
@@ -37,21 +41,25 @@ it. An operator editing YAML has no better information and less context.
 So: **configure the choice, derive the consequences, and validate the pair before
 the server accepts traffic.**
 
-## What already works
+## What worked before this change (2026-09-09)
 
-`LLM_MODEL` switches the answering model today, and `resolve_temperature` and the
-`json_schema` grader method (#186, #189) make `gpt-5.6-luna` work through it. The
-gap is not "can we switch" — it is:
+`LLM_MODEL` switched the answering model, and `resolve_temperature` and the
+`json_schema` grader method (#186, #189) made `gpt-5.6-luna` work through it. The gap
+was not "can we switch" but:
 
-1. the model is **one global value**, so every surface must use the same one
-2. it lives in an environment variable rather than beside the other settings that
-   shape a deployment
-3. nothing checks the model is usable **until a user asks a question**
+1. the model was **one global value**, so every surface had to use the same one —
+   still true (see Outcome)
+2. it lived in an environment variable rather than beside the other settings that
+   shape a deployment — closed by the `llm:` section of `config.yml`
+3. nothing checked the model was usable **until a user asked a question** — closed
+   for a configured temperature the table knows the model refuses; still open, by
+   D1, for an unknown or mistyped model name
 
-## Two contributed pull requests to harvest
+## Two contributed pull requests (reviewed 2026-09-09)
 
-Both from GSoC applicants who will not update them. Two independent people hitting
-the same gap is strong evidence it is real.
+Both came from GSoC applicants who were not expected to update them, and both were
+closed when this work landed (11c3116). Two independent people hitting the same gap
+was strong evidence it was real.
 
 | | #112 — @AaryanCode69 | #151 — @bhavyakeerthi3 |
 |---|---|---|
@@ -85,135 +93,80 @@ exists as an override for the one case that needs it, and it is documented as
 "leave unset". This specification harvests the LLM half of both PRs and rejects the
 embedding half, with credit to both contributors.
 
-## User Scenarios & Testing *(mandatory)*
+## What the work set out to do (2026-09-09)
 
-### User Story 1 — A deployment names its model beside its other settings (Priority: P1)
+- **User Story 1 (P1)** — a deployment names its answering model in `config.yml`,
+  beside profiles, quotas and features. With no model named, nothing changes, and the
+  precedence against `LLM_MODEL` is defined rather than accidental.
+- **User Story 2 (P1)** — an unusable model stops the server, not the conversation.
+  A configured temperature that contradicts a known model requirement refuses to
+  start, naming the model, the value and the fix (independent test: `gpt-5.6-luna`
+  with `temperature: 0`). A model the table has not met still starts, and no API call
+  is made at startup (D1).
+- **User Story 3 (P2)** — chat, chat-alongside-search-results and analysis
+  summarisation each name their own model, falling back to the deployment default.
+  The reason given: `gpt-4o-mini` answered in 22.5s and `gpt-5.6-luna` in 41.2s
+  (spec 002, 2026-09-09). Not built; see Outcome.
 
-An operator sets the answering model in `config.yml`, next to profiles, quotas and
-features, rather than in a separate environment variable.
+US2 also said that for an unknown model "the first failure names `LLM_TEMPERATURE`".
+That was not built. The first failure is the provider's own error on the first
+request; only the startup refusal for a known model names `LLM_TEMPERATURE`
+(`src/agent/graph.py:160-166`).
 
-**Why this priority**: It is the smallest thing that closes the gap, and both
-contributed PRs already do most of it.
+### Edge cases considered at the time, and how they stand
 
-**Independent Test**: Set the model in `config.yml`, start the server, ask a
-question, and confirm from the response which model answered.
+- **`config.yml` names a model the API does not have.** Still a 404 on the first
+  question, not at startup: D1 chose not to spend an API call to check.
+- **`LLM_MODEL` and `config.yml` disagree.** The environment wins. The spec asked for
+  the losing value to be reported; it is not. `resolve_llm_model` returns `LLM_MODEL`
+  without logging the `config.yml` value it overrides (`src/agent/graph.py:197`), and
+  only the effective model is logged (`:315-317`).
+- **A legal temperature the repository does not want** (`0.7` on `gpt-4o-mini`
+  makes the graders non-deterministic). Allowed; the effective temperature is in the
+  same startup log line.
+- **Provider `ollama` with a local model.** The table matches exact model names only
+  (`src/agent/graph.py:114-138`), so a local model gets 0.0 unless its name is in the
+  set or a temperature is configured.
 
-**Acceptance Scenarios**:
+## Requirements of this work, and where they stand (checked 2026-10-21)
 
-1. **Given** a `config.yml` naming a model, **When** the server starts, **Then**
-   that model answers.
-2. **Given** no model in `config.yml`, **When** the server starts, **Then** the
-   current default answers and nothing breaks — every existing deployment keeps
-   working untouched.
-3. **Given** a model in `config.yml` and `LLM_MODEL` set, **Then** the precedence
-   between them is defined and documented, not accidental.
+Code and tests cite these IDs.
 
----
+| ID | Required by this work | Today |
+|---|---|---|
+| FR-001 | Answering model settable in `config.yml` | Holds: optional `llm:` section, `LLMConfig` (`src/util/config_yml/models.py:18-45`, `src/util/config_yml/__init__.py:37`) |
+| FR-002 | No model configured behaves as before | Holds: `llm` defaults to `None` and the built-in default is `gpt-4o-mini` (`src/agent/graph.py:172`; `tests/agent/test_model_configuration.py:27-38`) |
+| FR-003 | Precedence between `config.yml` and `LLM_MODEL` defined, documented, tested | Holds: environment, then `config.yml`, then the default; `LLM_BASE_URL` works the same way (`graph.py:175-197`; `test_model_configuration.py:46-58`) |
+| FR-004 | Embedding model not settable in `config.yml` | Holds: there is no such field, and `LLMConfig` and `Config` reject unknown keys (`models.py:27`, `__init__.py:30`), which `Config.from_yaml` turns into a refusal to start. The model comes from `resolve_embedding_model()`; `EMBEDDING_MODEL` remains an environment override |
+| FR-005 | Per-model call requirements derived in code | Holds: temperature from `FIXED_TEMPERATURE_MODELS` (`graph.py:114-128`); the graders fix `json_schema` |
+| FR-006 | A configured temperature that contradicts a known requirement stops startup, naming model, value and fix | Holds for `llm.temperature` (`graph.py:160-166`; `tests/agent/test_model_temperature.py:162-174`). `LLM_TEMPERATURE` is deliberately not checked: it is the escape hatch and wins over the table (`graph.py:153-158`; `test_model_temperature.py:119-124`) |
+| FR-007 | A model unknown to the table does not block startup | Holds (`graph.py:150-151`; `test_model_temperature.py:186-190`) |
+| FR-008 | Effective model logged at startup | Holds, with the temperature (`graph.py:315-317`) |
+| FR-009 | Each surface can name its own model | Not built. Every surface uses the one deployment model (see Outcome) |
+| FR-010 | Configuration that cannot be honoured stops the process | Holds for an invalid `config.yml`, including unknown keys (`__init__.py:113-128`), a refused configured temperature, and an unparseable `LLM_TEMPERATURE` (`graph.py:155-158`) |
+| SC-001 | Switching model needs one file edit and a restart | Holds (`config.yml`, or `LLM_MODEL`) |
+| SC-002 | Existing `config.yml` files keep working | Checked when shipped: neither the deployment `config.yml` nor `config_default.yml` carried an unknown key (`__init__.py:24-29`); `tests/util/test_config.py:154-156` covers the shipped default |
+| SC-003 | A contradictory model/temperature pair is refused at startup | Holds for `config.yml`; not for `LLM_TEMPERATURE` (see FR-006) |
+| SC-004 | No configuration file can name an embedding model | Holds (`tests/agent/test_model_configuration.py:93-109`) |
+| SC-005 | Two surfaces run different models in one process | Not built (FR-009) |
+| SC-006 | #112 and #151 credited and closed | Done 2026-09-10 (11c3116) |
 
-### User Story 2 — An unusable model stops the server, not the conversation (Priority: P1)
-
-An operator names a model that cannot work as configured. The server refuses to
-start and says why.
-
-**Why this priority**: Equal to Story 1 and the reason this is a specification. The
-failure today is a 400 on a user's first question — visible to a user, attributed
-to the chatbot, and traceable only by reading logs. Both contributed PRs make this
-*more* likely by adding two more ways to get the pair wrong.
-
-**Independent Test**: Configure `gpt-5.6-luna` with `temperature: 0`. The server
-must refuse to start and name the conflict.
-
-**Acceptance Scenarios**:
-
-1. **Given** a model whose temperature requirement is known, **When** configuration
-   contradicts it, **Then** startup fails naming the model, the value and the fix.
-2. **Given** a model the table has not met, **When** the server starts, **Then** it
-   starts — an unknown model is not an error — and the first failure names
-   `LLM_TEMPERATURE`.
-3. **Given** a valid configuration, **When** the server starts, **Then** no
-   additional API call is made on the happy path unless D1 says otherwise.
-
----
-
-### User Story 3 — Surfaces choose their own model (Priority: P2)
-
-Chat, chat-alongside-search-results and analysis summarisation each name a model
-suited to their tolerance for latency. Measured today: `gpt-4o-mini` answers in
-22.5s and `gpt-5.6-luna` in 41.2s, so a search-results panel and a background
-summarisation should not be forced to agree.
-
-**Why this priority**: Only chat exists today, so this is not yet blocking. It is
-P2 rather than P3 because the context budget made exactly this mistake — a global
-constant that had to be unpicked in spec 001 Stage 3 — and the cost of designing
-for it now is one nesting level.
-
-**Acceptance Scenarios**:
-
-1. **Given** two surfaces configured with different models, **When** both answer,
-   **Then** each uses its own, in one process.
-2. **Given** a surface with no model of its own, **Then** it uses the deployment
-   default rather than failing.
-
-### Edge Cases
-
-- **`config.yml` names a model the API does not have.** A 404 on the first
-  question. Same class as the temperature mismatch and wanted at startup for the
-  same reason — but only D1 decides whether that costs a network call.
-- **`LLM_MODEL` and `config.yml` disagree.** One must win, and the loser must be
-  reported, not silently discarded. Rate limiting was broken once by a config that
-  quietly failed open; the constitution's Article IV is that scar.
-- **An operator sets a temperature the model accepts but the repository does not
-  want.** `0.7` on `gpt-4o-mini` is legal and makes the graders non-deterministic.
-  That is the operator's call, and it must be visible in the logs at startup.
-- **Provider is `ollama` with a local model.** The temperature table is
-  OpenAI-derived and says nothing about it; local models must not be forced to 1.0.
-
-## Requirements *(mandatory)*
-
-### Functional Requirements
-
-- **FR-001**: The answering model MUST be settable in `config.yml`.
-- **FR-002**: A deployment with no model configured MUST behave exactly as it does
-  today.
-- **FR-003**: Precedence between `config.yml` and `LLM_MODEL` MUST be defined,
-  documented and tested.
-- **FR-004**: The embedding model MUST NOT be settable in `config.yml`. It is
-  derived from the installed bundle by `resolve_embedding_model()`.
-- **FR-005**: Per-model call requirements — temperature, structured-output method —
-  MUST remain derived in code, not configured.
-- **FR-006**: A configured temperature that contradicts a known model requirement
-  MUST stop startup, naming the model, the value and the fix.
-- **FR-007**: A model unknown to the temperature table MUST NOT block startup.
-- **FR-008**: The effective model MUST be logged at startup, so which one answered
-  is answerable from the logs alone.
-- **FR-009**: Each surface MUST be able to name its own model, falling back to the
-  deployment default.
-- **FR-010**: Configuration that cannot be honoured MUST stop the process rather
-  than fall back to a default (Article IV, and `Config.from_yaml`'s existing
-  behaviour).
-
-### Key Entities
+### Key terms
 
 - **Deployment default model**: what answers when a surface names nothing.
-- **Surface**: chat, chat-alongside-search, analysis summarisation. Only the first
-  exists today.
-- **Model requirements**: temperature and structured-output method. Derived, never
-  configured; see `FIXED_TEMPERATURE_MODELS` and `bin/probe_model_temperature`.
+- **Surface**: chat (Chainlit), search-page answers (spec 010) and analysis
+  summarisation (spec 011). Only chat existed when this was written. All three now
+  use the same model: the answer endpoint shares the chat's graph
+  (`src/agent/registry.py:1-16`), and analysis summaries resolve the model the same
+  way (`src/api/analysis_summary.py:333-353`).
+- **Model requirements**: temperature and structured-output method, derived in code;
+  see `FIXED_TEMPERATURE_MODELS` and `bin/probe_model_temperature`. Temperature can
+  be overridden (`llm.temperature`, `LLM_TEMPERATURE`) for a model the table has not met.
 
-## Success Criteria *(mandatory)*
+## Decision D1 (put to the team 2026-09-09)
 
-- **SC-001**: Switching the answering model requires editing one file and
-  restarting — no code change, no rebuild.
-- **SC-002**: Every existing deployment keeps working with its `config.yml`
-  unchanged.
-- **SC-003**: A contradictory model/temperature pair is refused at startup, and no
-  user ever sees the resulting error.
-- **SC-004**: No configuration file can name an embedding model.
-- **SC-005**: Two surfaces run different models in one process.
-- **SC-006**: The credit for #112 and #151 appears in the commit that harvests
-  them, and both PRs are closed courteously.
-
-## Decisions for the team
+Implemented as option A in #201. This repository does not record whether the team
+chose it explicitly; the commit and the Outcome say it was "taken as recommended".
 
 ### D1 — Does startup validate against the API, or only against the table?
 
@@ -228,7 +181,7 @@ plausible-but-wrong pairing, which the table catches for free. A mistyped model
 name is a different and more obvious failure — it fails immediately, for everyone,
 on the first request, and no one is confused about the cause.
 
-## Assumptions
+## Assumptions at the time (2026-09-09)
 
 - `config.yml` is the right home. It already carries profiles, quotas, features and
   messages; it has a schema, and a loader that refuses to start on an invalid file.
@@ -238,11 +191,11 @@ on the first request, and no one is confused about the cause.
 - Provider stays OpenAI-compatible. `base_url` covers self-hosting, as Plant
   Reactome already does.
 
-## Out of Scope
+## Out of scope for this work
 
-- **Which model becomes the default.** That is [spec 002](../002-default-llm-choice/spec.md),
-  and it is gated on an answer-quality measurement that does not run yet. This
-  specification makes the choice expressible; it does not make it.
+- **Which model becomes the default.** Left to [spec 002](../002-default-llm-choice/spec.md),
+  which made it wait on an answer-quality measurement. No decision is recorded there.
+  This work made the choice expressible; it did not make it.
 - Per-request model selection by an end user.
 - The embedding model, permanently. FR-004.
 
@@ -274,12 +227,44 @@ works today is refused.
 The pattern in both: the guard was placed on the thing being built rather than on
 the seam beside it.
 
-### Still open
+### Not built: a model per surface (User Story 3)
 
-**User Story 3, per-surface model selection**, ships nothing. Only chat exists. The
-nesting chosen in Stage 1 is what makes it cheap when a second surface appears —
-which is the mistake spec 001 made with the context budget, made deliberately this
-time rather than discovered.
+When this shipped only chat existed. Search-page answers (spec 010) and analysis
+summaries (spec 011) have been added since, and all three use the one deployment
+model. There is no per-surface setting. Because `Config` rejects unknown keys
+(`src/util/config_yml/__init__.py:30`), adding one needs a code change. Whether it is
+still wanted is not recorded.
 
-Spec 002's decision — *whether* luna becomes the default — remains open. This
-specification made the choice expressible, not made.
+The plan for this work checked (2026-09-10) that a per-surface section could reuse
+`LLMConfig` unchanged, for example:
+
+```yaml
+llm:                 # the deployment default
+  model: gpt-4o-mini
+surfaces:            # proposed, not implemented
+  analysis_summary:
+    model: gpt-5.6-luna
+```
+
+It also noted that `resolve_llm_model` takes the config object rather than reading
+globals, so a caller can pass a different one.
+
+Spec 002 records no decision on whether luna becomes the default; the default is
+still `gpt-4o-mini` (`src/agent/graph.py:172`).
+
+### Why the environment beats the file
+
+`LLM_MODEL` overrides `config.yml`, the reverse of `util/secrets.py`, where a mounted
+Docker secret beats the environment. Both follow "the more specific source wins": a
+secret is mounted by a deployment and should beat a committed file, while `LLM_MODEL`
+is how an operator overrides a committed `config.yml` for one container
+(`src/agent/graph.py:180-186`).
+
+### Alternatives rejected during this work
+
+| Choice | Simpler alternative rejected | Why |
+|---|---|---|
+| A nested `llm:` section | A flat `llm: "openai/gpt-4o-mini"` string, as #151 did | `base_url` has nowhere to live in a flat string, and Plant Reactome needs it. |
+| Validate at startup | Validate on first use | First use is a user's first question. |
+| Table only, no probe | One API call at startup | D1. |
+| Leave the embedding model alone | Make it configurable, as both PRs did | It is derived from the bundle that built the vectors; configuring it gives silent nonsense instead of an error. |
