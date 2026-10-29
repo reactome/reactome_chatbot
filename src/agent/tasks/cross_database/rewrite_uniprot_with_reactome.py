@@ -1,7 +1,8 @@
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
+
+from util.answer_text import AnswerTextParser
 
 uniprot_rewriter_message = """
 You are a query optimization expert with deep knowledge of molecular biology and extensive experience curating the UniProt Knowledgebase. You are also skilled in leveraging Reactome Pathway Knowledgebase data to enhance search precision.
@@ -43,6 +44,6 @@ uniprot_rewriter_prompt = ChatPromptTemplate.from_messages(
 
 
 def create_uniprot_rewriter_w_reactome(llm: BaseChatModel) -> Runnable:
-    return (uniprot_rewriter_prompt | llm | StrOutputParser()).with_config(
+    return (uniprot_rewriter_prompt | llm | AnswerTextParser()).with_config(
         run_name="rewrite_uniprot_query"
     )

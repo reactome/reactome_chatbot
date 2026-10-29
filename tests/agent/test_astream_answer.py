@@ -27,11 +27,11 @@ class _Doc:
 
 
 class _Chunk:
-    def __init__(self, content: str) -> None:
+    def __init__(self, content: Any) -> None:
         self.content = content
 
 
-def _token(text: str, node: str = ANSWER_NODE) -> dict[str, Any]:
+def _token(text: Any, node: str = ANSWER_NODE) -> dict[str, Any]:
     return {
         "event": "on_chat_model_stream",
         "metadata": {"langgraph_node": node},
@@ -133,3 +133,29 @@ def test_an_unknown_profile_fails_rather_than_hanging() -> None:
 
 async def _collect_unknown(graph: AgentGraph) -> list[Any]:
     return [e async for e in graph.astream_answer("q", "nope", thread_id="t")]
+
+
+def test_reasoning_blocks_never_reach_the_answer() -> None:
+    events = _collect_sync(
+        [
+            _retrieved([]),
+            _token({"type": "reasoning", "id": "rs_1", "encrypted_content": "gAAAAAB"}),
+            _token(
+                [
+                    {"type": "output_text", "text": "Arabidopsis "},
+                    {"type": "output_text", "text": "closes stomata."},
+                ]
+            ),
+        ]
+    )
+    text = "".join(e.text for e in events if e.kind == "token")
+    assert text == "Arabidopsis closes stomata."
+
+
+def test_a_reasoning_only_stream_reports_nothing_found() -> None:
+    """`answered` means real text, so reasoning alone is not an answer."""
+    events = _collect_sync(
+        [_retrieved([]), _token({"type": "reasoning", "encrypted_content": "gAAAAAB"})]
+    )
+    assert [e for e in events if e.kind == "token"] == []
+    assert events[-1].state == "nothing_found"

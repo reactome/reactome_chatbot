@@ -23,6 +23,7 @@ from agent.profile_names import ProfileName
 from agent.profiles import create_profile_graphs
 from agent.profiles.base import InputState, OutputState
 from reactome_mcp.session import get_mcp_tools
+from util.answer_text import answer_text
 from util.config_yml.models import LLMConfig
 from util.embedding_environment import EmbeddingEnvironment
 from util.logging import logging
@@ -592,10 +593,10 @@ class AgentGraph:
             if event.get("metadata", {}).get("langgraph_node") != ANSWER_NODE:
                 continue
 
-            text = getattr(event["data"].get("chunk"), "content", "")
+            text = answer_text(event["data"].get("chunk"))
             if text:
                 answered = True
-                yield AnswerEvent(kind="token", text=str(text))
+                yield AnswerEvent(kind="token", text=text)
 
         yield AnswerEvent(
             kind="done", state="answered" if answered else "nothing_found"
