@@ -271,9 +271,20 @@ async def captcha_page() -> Response:
 
 @app.post(f"{CHAINLIT_URI}/verify_captcha")
 async def verify_captcha(request: Request) -> Response:
-    # Bounded: anyone can reach this route, and the defaults put no cap on
-    # file parts, which were spooled to the disk the whole host shares
-    # (review, area 1b). The form has one field.
+    # Bounded: anyone can reach this route. max_files=0 refuses file parts
+    # outright -- they were spooled to the disk the whole host shares (review,
+    # area 1b) -- and max_part_size holds the one field, a Turnstile token a
+    # couple of hundred bytes long, to 8 KiB rather than Starlette's 1 MiB
+    # default.
+    #
+    # max_part_size needs Starlette >= 0.44, which added it to Request.form().
+    # The published image shipped 0.41.3, and starlette arrives transitively via
+    # chainlit with nothing pinning the floor, so this raised
+    # `TypeError: Request.form() got an unexpected keyword argument
+    # 'max_part_size'` -- a 500 on the entry path, for every visitor, and only
+    # on the image. A transitive version is not a floor; the floor lives in
+    # pyproject now. Starlette 1.3.1 is where these limits are actually enforced
+    # in FormParser, which is the floor declared there.
     form_data = await request.form(max_files=0, max_fields=4, max_part_size=8192)
     cf_turnstile_response = form_data.get("cf-turnstile-response")
     if not isinstance(cf_turnstile_response, str):
