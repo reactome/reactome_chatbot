@@ -183,3 +183,4 @@ data/
 # belongs in the repository.
 *.pem
 *.key
+sockets/

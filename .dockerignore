@@ -3,6 +3,8 @@ embeddings/
 embeddings_bak/
 csv_files/
 records/
+.dockerignore
+sockets/
 .venv/
 .env
 .env.*

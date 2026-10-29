@@ -1,9 +1,19 @@
+-- Chainlit 2.11.0 data-layer schema.
+-- Derived from the TypedDicts in the installed package (chainlit.step.StepDict,
+-- chainlit.element.ElementDict, chainlit.types.ThreadDict/FeedbackDict,
+-- chainlit.user.UserDict) -- NOT from docs.chainlit.io, which is missing
+-- autoCollapse, icon, path, autoPlay and playerConfig.
+-- The data layer builds INSERT column lists from every non-None key, so each
+-- table must be a superset of its TypedDict. Run bin/check_schema.py after any
+-- chainlit upgrade.
+
 CREATE DATABASE chatbio_chainlit;
 CREATE DATABASE chatbio_langgraph;
 CREATE DATABASE chatbio_langgraph_no_login;
 
 \c chatbio_chainlit
 
+-- Literal INSERT (sql_alchemy.py:183): fixed columns, no drift risk.
 CREATE TABLE users (
     "id" UUID PRIMARY KEY,
     "identifier" TEXT NOT NULL UNIQUE,
@@ -28,6 +38,8 @@ CREATE TABLE IF NOT EXISTS steps (
     "type" TEXT NOT NULL,
     "threadId" UUID NOT NULL,
     "parentId" UUID,
+    "command" TEXT,
+    "modes" JSONB,
     "streaming" BOOLEAN NOT NULL,
     "waitForAnswer" BOOLEAN,
     "isError" BOOLEAN,
@@ -40,8 +52,11 @@ CREATE TABLE IF NOT EXISTS steps (
     "end" TEXT,
     "generation" JSONB,
     "showInput" TEXT,
+    "defaultOpen" BOOLEAN,
+    "autoCollapse" BOOLEAN,
     "language" TEXT,
-    "indent" INT
+    "icon" TEXT,
+    FOREIGN KEY ("threadId") REFERENCES threads("id") ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS elements (
@@ -57,13 +72,21 @@ CREATE TABLE IF NOT EXISTS elements (
     "page" INT,
     "language" TEXT,
     "forId" UUID,
-    "mime" TEXT
+    "mime" TEXT,
+    "props" JSONB,
+    "path" TEXT,
+    "autoPlay" BOOLEAN,
+    "playerConfig" JSONB,
+    FOREIGN KEY ("threadId") REFERENCES threads("id") ON DELETE CASCADE
 );
 
+-- "threadId" is nullable on purpose: FeedbackDict has no threadId key, so a
+-- NOT NULL constraint here would reject feedback built from that dict.
 CREATE TABLE IF NOT EXISTS feedbacks (
     "id" UUID PRIMARY KEY,
     "forId" UUID NOT NULL,
-    "threadId" UUID NOT NULL,
+    "threadId" UUID,
     "value" INT NOT NULL,
-    "comment" TEXT
+    "comment" TEXT,
+    FOREIGN KEY ("threadId") REFERENCES threads("id") ON DELETE CASCADE
 );
