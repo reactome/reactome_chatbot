@@ -52,6 +52,7 @@ from handoff.window import acknowledgement, claimed_id
 from util import captcha_cookie
 from util.chainlit_helpers import (
     PrefixedS3StorageClient,
+    TextStreamCallbackHandler,
     is_feature_enabled,
     message_rate_limited,
     save_openai_metrics,
@@ -552,7 +553,7 @@ async def answer_with_model(content: str, message_id: str) -> None:
 
     thread_id: str = current_thread_id()
 
-    chainlit_cb = cl.AsyncLangchainCallbackHandler(
+    chainlit_cb = TextStreamCallbackHandler(
         stream_final_answer=True,
         force_stream_final_answer=True,  # we're not using prefix tokens
     )
