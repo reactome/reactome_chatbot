@@ -210,11 +210,24 @@ docstring-code-format = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "bin"]
-addopts = "-q --strict-markers --strict-config"
+addopts = [
+    "-q",
+    "--strict-markers",
+    "--strict-config",
+    # Deselect the live-model tests unless asked for. Without this, bare
+    # `pytest` -- which is what CI's `pytest` step and ./checks.sh both run --
+    # spent ~160s and real money per invocation on a developer's machine,
+    # where OPENAI_API_KEY happens to be set. CI has no key so it skipped
+    # them by luck rather than by design; this makes the default explicit.
+    # Opt back in with `pytest -m requires_live_model` -- a CLI -m overrides
+    # this one because addopts are inserted ahead of the command line.
+    "-m",
+    "not requires_live_model",
+]
 markers = [
     "requires_embeddings: needs an installed embeddings bundle (see ./bin/embeddings_manager)",
     "requires_retrieval_stack: needs the full langchain/chromadb dependency set installed",
-    "requires_live_model: calls a real LLM and needs OPENAI_API_KEY plus embeddings",
+    "requires_live_model: calls a real LLM; needs LLM_MODEL and LLM_API_KEY (the model the app actually answers with) plus OPENAI_API_KEY for embeddings",
 ]
 
 [tool.mypy]
