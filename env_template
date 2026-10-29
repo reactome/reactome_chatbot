@@ -35,6 +35,13 @@ TAVILY_API_KEY=
 # about; see resolve_temperature in src/agent/graph.py.
 #LLM_TEMPERATURE=
 
+# Header the LLM key is sent in. Azure API Management reads its subscription key
+# from `api-key` and answers the OpenAI SDK's default `Authorization: Bearer`
+# with 401 "Access denied due to missing subscription key", so an APIM-fronted
+# endpoint needs this set to `api-key`. Leave unset for api.openai.com and other
+# OpenAI-compatible servers, which want only the bearer token.
+#LLM_API_KEY_HEADER=api-key
+
 # Locale and timezone for the Postgres container's initdb (ICU collation).
 LOCALE=en_US
 TIMEZONE=America/Toronto
