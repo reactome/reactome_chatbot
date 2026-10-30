@@ -9,6 +9,8 @@ from langchain_core.prompts import BasePromptTemplate, ChatPromptTemplate
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.runnables import Runnable
 
+from util.answer_text import AnswerTextParser
+
 
 def create_rag_chain(
     llm: BaseChatModel,
@@ -22,6 +24,10 @@ def create_rag_chain(
         llm=llm,
         prompt=qa_prompt,
         document_prompt=document_prompt,
+        # Without this the chain hands back whatever `content` is, and under the
+        # Responses API that is a list of blocks. `state["answer"]` then carries
+        # reasoning items into the chat UI, the chat history and the checkpoint.
+        output_parser=AnswerTextParser(),
     )
 
     # Create the retrieval chain

@@ -1,7 +1,8 @@
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
+
+from util.answer_text import AnswerTextParser
 
 summarization_message = """
 You are an expert in molecular biology with significant experience as a curator for the UniProt Database and the Reactome Pathway Knowledgebase.
@@ -49,6 +50,6 @@ def create_reactome_uniprot_summarizer(
 ) -> Runnable:
     if streaming:
         llm = llm.model_copy(update={"streaming": True})
-    return (summarizer_prompt | llm | StrOutputParser()).with_config(
+    return (summarizer_prompt | llm | AnswerTextParser()).with_config(
         run_name="summarize_answer"
     )

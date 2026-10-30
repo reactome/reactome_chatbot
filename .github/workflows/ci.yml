@@ -59,6 +59,43 @@ jobs:
             - name: Run tests
               run: poetry run pytest
 
+    schema:
+      # initdb/init.sql is hand-written and Chainlit's data layer sends every
+      # non-None key of the dict it is handed, so a key added upstream becomes
+      # an INSERT into a column that does not exist here. That went unnoticed
+      # for 22 months and surfaced as UndefinedColumn on every user request.
+      # The guard has to run against a database actually built from init.sql,
+      # which is what this job is.
+      runs-on: ubuntu-latest
+      services:
+        postgres:
+          image: postgres:16
+          env:
+            POSTGRES_PASSWORD: ci-only
+          ports:
+            - 5432:5432
+          options: >-
+            --health-cmd "pg_isready -U postgres"
+            --health-interval 5s
+            --health-timeout 5s
+            --health-retries 10
+      steps:
+        - uses: actions/checkout@v4
+
+        - name: Set up Python and Poetry
+          uses: ./.github/actions/install_python_poetry
+
+        - name: Create the databases from initdb/init.sql
+          run: |
+            psql postgresql://postgres:ci-only@localhost:5432/postgres \
+              -v ON_ERROR_STOP=1 -f initdb/init.sql
+
+        - name: Check the schema against the installed Chainlit
+          run: |
+            PYTHONPATH=./src poetry run python bin/check_schema.py \
+              --dsn postgresql://postgres:ci-only@localhost:5432/chatbio_chainlit
+
+
     poetry-check:
         # No event filter. It used to run only on pull_request and
         # workflow_dispatch, so every push to main skipped it -- and GitHub counts
