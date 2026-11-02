@@ -4,7 +4,7 @@
 
 **Created**: 2026-09-09
 
-**Status**: Evidence gathered, decision open. Three questions for the team below.
+**Status**: Historical record of the default-model evaluation, 2026-09-09: the measurements taken then, and three questions (D1-D3) put to the team. No answer to D1-D3 and no choice of default is recorded in this repository; the default is still `gpt-4o-mini` (`src/agent/graph.py:172`). The evaluator work this spec asked for was done the same day (cf9ad6a). The requirements below were set for that work, not for later changes. How the model is chosen today is in [spec 003](../003-model-configuration/spec.md) and `resolve_llm_model` (`src/agent/graph.py:175-197`).
 
 **Input**: `gpt-4o-mini` is today's default. `gpt-5.6-luna` is now usable (#186). Does it become the default, on which surfaces, and what evidence settles it?
 
@@ -23,22 +23,24 @@ answering model looks like a bump and is not one:
 
 None of that is recoverable from the diff. That is what this file is for.
 
-## What has already been settled
+## What was settled before this spec (2026-09-09)
 
-`gpt-5.6-luna` **works end to end**. #186 removed the two things that stopped it:
+`gpt-5.6-luna` worked end to end after #186, which removed the two things that stopped it:
 
-| blocker | resolution |
-|---|---|
-| `temperature=0.0` hardcoded; the gpt-5.5/5.6/6 families accept only their default of 1 | `resolve_temperature()` per model family, `LLM_TEMPERATURE` to override |
-| the three graders used `function_calling`, which gpt-5.6 refuses on `/v1/chat/completions` | `method="json_schema"`, verified on **both** models so the path cannot rot |
+| blocker | resolution in #186 | today |
+|---|---|---|
+| `temperature=0.0` hardcoded; the gpt-5.5/5.6/6 families accept only their default of 1 | `resolve_temperature()` matching those name prefixes, `LLM_TEMPERATURE` to override | The prefix rule was wrong for eleven models and was replaced (#189) by an exact-match set of measured models, with dated snapshot suffixes stripped (`src/agent/graph.py:103-138`) |
+| the three graders used `function_calling`, which gpt-5.6 refuses on `/v1/chat/completions` | `method="json_schema"`, verified on both models | Unchanged (`src/agent/tasks/safety_checker.py:97-99`, `intent_classifier.py:206`, `completeness_grader.py:38-40`) |
 
-Switching is now one environment variable: `LLM_MODEL=gpt-5.6-luna`. **This
-specification is about whether to set it, not how.**
+Switching was one environment variable, `LLM_MODEL=gpt-5.6-luna`; since spec 003 it can
+also be `llm.model` in `config.yml`. This spec was about whether to switch, not how.
 
-## Evidence gathered
+## Evidence gathered (2026-09-09)
 
-Measured through `AgentGraph.ainvoke` on the React-to-Me profile — the entry point
-`bin/chat-chainlit.py` uses — against the Release95 reactome bundle.
+Measured on 2026-09-09 through `AgentGraph.ainvoke` on the React-to-Me profile — the
+entry point `bin/chat-chainlit.py` used — against the Release95 reactome bundle. The
+pipeline has changed since (a fifth collection, preprocessing in two rounds, collection
+routing), so these figures describe that date, not current behaviour.
 
 ### Latency and shape (3 questions, averaged)
 
@@ -81,153 +83,83 @@ the weakest evidence behind it. **A read of three answers is an anecdote.**
 
 - **Price per token.** No endpoint reports it. The premise "just as cheap" is
   unverified here and has to come from the pricing page or from a billing period.
-- **Answer quality at any scale.** See below — the harness that would do it does
-  not currently measure the pipeline that ships.
+- **Answer quality at any scale.** At the time, the harness that would do it did
+  not measure the pipeline that ships (next section).
+- **Time to first token.** Not measured for either model here. Spec 010 later
+  measured it for `gpt-4o-mini` only (p50 9.6s, 2026-09-18;
+  `specs/010-search-page-answers/contracts/answer_endpoint.md`, "Budget").
 
-## The blocker behind the blocker
+## The evaluator gap, and how it was closed
 
 `src/evaluation/evaluator.py` runs ragas with `faithfulness`, `answer_relevancy`,
-`context_recall` and `context_utilization` over a golden set — exactly the metrics
-that would settle the answer-quality question, and `faithfulness` is exactly the
-axis on which luna appeared to differ.
+`context_recall` and `context_utilization` over a question set — the metrics that
+would settle the answer-quality question, and `faithfulness` is the axis on which
+luna appeared to differ.
 
-It cannot be used as it stands. It builds its own retriever — `SelfQueryRetriever`
-+ `EnsembleRetriever` + `MergerRetriever` — rather than calling
-`create_bm25_chroma_ensemble_retriever`. Stage 2 removed `SelfQueryRetriever` from
-the shipping pipeline, so the evaluator now measures a configuration that no longer
-exists. Running it today would produce numbers that look like an answer and are not.
+When this spec was written it could not be used: it built its own retriever
+(`SelfQueryRetriever` + `EnsembleRetriever` + `MergerRetriever`) rather than the
+shipping one, and the retriever rewrite (spec 001) had removed `SelfQueryRetriever`
+from the product, so it measured a configuration that no longer existed. The same
+day it was changed to call `create_reactome_rag` (cf9ad6a), with a repeatable
+`--model`, `--repeat`, and a pinned judge; see `src/evaluation/README.md`.
 
-This is the same drift `bin/retrieval_baseline` had and had fixed: a measurement
-tool that has quietly stopped measuring the thing.
+The four retrieval changes from the week of 2026-09-04 (#169, #170, over-fetch, and
+spec 001's D1) went in unevaluated for answer quality. This repository records no
+evaluator run since, for them or for the model comparison.
 
-It also blocks work already owed: the four retrieval changes from the week of
-2026-09-04 (#169, #170, over-fetch, D1) went in **unevaluated for answer quality**.
-Pointing the evaluator at the real pipeline pays for both.
+## What this work set out to do (2026-09-09)
 
-## User Scenarios & Testing *(mandatory)*
+In priority order: make the evaluator measure the pipeline a user talks to (P1, User
+Story 1), then choose the default model from a table of measured differences rather
+than from three answers (P2, User Story 2). A third story, letting each surface choose
+its own model, moved to [spec 003](../003-model-configuration/spec.md) the same day and
+is unbuilt there.
 
-### User Story 1 — The evaluator measures what ships (Priority: P1)
+User Story 2 set two acceptance conditions: a faithfulness difference smaller than
+run-to-run noise is reported as "not measurable" rather than as a win, and the chosen
+default is recorded here with its numbers. Neither has been met, because no comparison
+run is recorded.
 
-A developer changes the model, or the retriever, and runs one command that reports
-faithfulness, answer relevancy, context recall and context utilization for the
-pipeline a user actually talks to.
+### Edge cases noted at the time
 
-**Why this priority**: Nothing else here can be decided without it, and it is owed
-regardless of which model wins. It is the only item on this page whose value does
-not depend on the outcome of the decision.
+- **A fixed-temperature model the table has not met.** It returns a 400 on the first
+  user question, not at startup; `LLM_TEMPERATURE` is the escape hatch. The table is
+  now an exact-match set, and dated snapshots (`<model>-YYYY-MM-DD`) are covered by
+  stripping the suffix, not by prefix matching (`src/agent/graph.py:131-138`).
+- **The evaluator's own judge model.** If the judge is the model being evaluated, the
+  comparison is biased. The evaluator pins the judge (`--judge-model`, default
+  `gpt-4o`) and refuses one that is also under test (`src/evaluation/evaluator.py:67`,
+  `:433-437`). Keeping it the same between two compared runs is left to whoever runs
+  it (`src/evaluation/README.md`, "The judge").
+- **Latency on a streamed interface.** 41s to a complete answer is not 41s of silence
+  if tokens stream; what a user feels is time to first token, which was not measured
+  for luna (see "What could not be measured").
 
-**Independent Test**: Run the evaluator against `main` twice with no change in
-between; the metrics agree within noise. Then swap the retriever's document budget
-and watch context utilization move.
+## Requirements of this work, and where they stand (checked 2026-10-21)
 
-**Acceptance Scenarios**:
+| ID | Required by this work | Today |
+|---|---|---|
+| FR-001 | Evaluator builds its chain from the application's factory | Holds with a gap: `build_chain` calls `create_reactome_rag` (`src/evaluation/evaluator.py:260-275`, cf9ad6a), but it does not apply collection routing (added 2026-09-19, spec 009), so it searches every collection. It also skips the safety check and intent classification (`src/evaluation/README.md:96-106`) |
+| FR-002 | Model under test as an argument; per-model metrics, several models in one run | Holds: `--model` is repeatable, and the report puts models side by side (`evaluator.py:382-386`, `:578-610`) |
+| FR-003 | Judge pinned and reported separately | Holds: `--judge-model`, default `gpt-4o`, named in the report; a judge that is also under test is refused (`evaluator.py:67`, `:433-437`, `:582-585`) |
+| FR-004 | Report run-to-run variance | Holds as a spread: `--repeat N` reports max−min per metric (`evaluator.py:399-405`, `:592-605`) |
+| FR-005 | Default selectable per deployment without a code change | Holds: `LLM_MODEL`, or `llm.model` in `config.yml` since spec 003 (`src/agent/graph.py:175-197`) |
+| FR-006 | A model with an unknown temperature requirement fails, naming the variable | Not adopted. Spec 003's FR-007 (2026-09-10) reversed it: a model the table has not met is not validated and does not block startup (`graph.py:150-151`; `tests/agent/test_model_temperature.py:186-190`) |
+| FR-007 | Record the chosen default and its numbers here | Not met: no decision or comparison is recorded |
+| SC-001 | One command reports answer quality for the shipping pipeline, for a named model | `./bin/evaluate --model <name>`, with FR-001's gap |
+| SC-002 | Two runs on unchanged code differ by less than the reported noise | No recorded run |
+| SC-003 | Default-model decision recorded with a per-metric comparison | Not met |
+| SC-004 | Switching the default is one environment variable, no rebuild | Holds (`LLM_MODEL`) |
+| SC-005 | Answer-quality measurement for the four retrieval changes of 2026-09-04 | No recorded measurement |
 
-1. **Given** the evaluator, **When** it constructs the chain, **Then** it calls the
-   same factory `bin/chat-chainlit.py` reaches, so a change to retrieval cannot
-   alter the product without altering the measurement.
-2. **Given** a golden question set, **When** the evaluator runs on two models,
-   **Then** it emits a per-metric comparison rather than two unrelated reports.
-3. **Given** the evaluator, **When** `SelfQueryRetriever` no longer exists in the
-   pipeline, **Then** the evaluator does not construct one.
-
----
-
-### User Story 2 — The default model is chosen on evidence (Priority: P2)
-
-The team picks the default from a table of measured differences, not from a
-recollection of three answers.
-
-**Why this priority**: This is the actual question. It is P2 only because it is
-gated on P1.
-
-**Independent Test**: Both models are run over the golden set; the report shows
-faithfulness, relevancy, recall, utilization, latency and token counts side by
-side.
-
-**Acceptance Scenarios**:
-
-1. **Given** both models evaluated, **When** faithfulness differs by less than the
-   run-to-run noise, **Then** the difference is reported as "not measurable", not
-   as a win.
-2. **Given** a chosen default, **When** it is committed, **Then** the reason and
-   the numbers are recorded here, so the next person does not re-derive them.
-
----
-
-### User Story 3 — Different surfaces may choose differently (Priority: P3)
-
-*Superseded: this is now [spec 003](../003-model-configuration/spec.md), which
-covers how a model is chosen. This specification keeps only the question of which
-model wins.*
-
-Chat, chat-alongside-search-results, and analysis summarisation each pick a model
-suited to their tolerance for latency.
-
-**Why this priority**: Only chat exists today. Recording it now costs a paragraph;
-discovering later that the model is a global constant costs a refactor — which is
-the same mistake the context budget made, fixed in Stage 3.
-
-**Acceptance Scenarios**:
-
-1. **Given** a surface that must answer inside a search-results page, **When** it
-   builds its chain, **Then** it can request a faster model without changing what
-   the chat surface uses.
-
-### Edge Cases
-
-- **A model is added to a fixed-temperature family that the prefix table has not
-  met.** It returns a 400 on the first user question, not at startup. `LLM_TEMPERATURE`
-  is the escape hatch; the table is matched on prefix so dated snapshots are covered.
-- **The evaluator's own judge model.** ragas uses an LLM to score. If the judge is
-  the same model being evaluated, the comparison is biased. The judge must be pinned
-  and stated, and must not change between the two runs being compared.
-- **Latency on a streamed interface.** 41s to a complete answer is not 41s of
-  silence if tokens stream; the perceived cost depends on time-to-first-token, which
-  has not been measured and is the number a user actually experiences.
-
-## Requirements *(mandatory)*
-
-### Functional Requirements
-
-- **FR-001**: The evaluator MUST build its chain from the same factory the
-  application uses, so that retrieval changes cannot alter the product without
-  altering the measurement.
-- **FR-002**: The evaluator MUST accept the model under test as an argument and
-  report metrics per model, so two models can be compared in one run.
-- **FR-003**: The evaluator MUST pin and report the judge model separately from the
-  model under test.
-- **FR-004**: The evaluator MUST report run-to-run variance, so a difference smaller
-  than noise is not read as a result.
-- **FR-005**: The default model MUST remain selectable per deployment without a code
-  change.
-- **FR-006**: A model whose temperature requirement is unknown MUST fail with a
-  message naming the environment variable that fixes it.
-- **FR-007**: The chosen default and the numbers behind it MUST be recorded in this
-  specification when the decision is made.
-
-### Key Entities
+### Key terms
 
 - **Model under test**: the model that answers, and that the graders use.
 - **Judge model**: the model ragas uses to score. Independent of the above, pinned.
-- **Golden set**: `tests/golden/questions.txt`, 28 questions, already committed and
-  already used by `bin/retrieval_baseline`.
+- **Golden set**: `tests/golden/questions.txt`, 20 questions (the file's other lines are comments),
+  used by `bin/retrieval_baseline` and, by default, by the evaluator.
 
-## Success Criteria *(mandatory)*
-
-### Measurable Outcomes
-
-- **SC-001**: One command reports answer quality for the pipeline a user talks to,
-  for a named model, against the golden set.
-- **SC-002**: Two consecutive runs of that command on unchanged code differ by less
-  than the threshold the command itself reports as noise.
-- **SC-003**: The default-model decision is recorded with a per-metric comparison
-  covering both candidates.
-- **SC-004**: Switching the default requires changing one environment variable, and
-  reverting it requires changing it back — no rebuild, no code edit.
-- **SC-005**: The four retrieval changes from 2026-09-04 have an answer-quality
-  measurement attached, closing the gap left open by spec 001.
-
-## Assumptions
+## Assumptions at the time (2026-09-09)
 
 - The golden set is representative enough to compare two models. It was assembled
   for retrieval measurement, not answer grading; if it proves too narrow that is a
@@ -238,10 +170,12 @@ the same mistake the context budget made, fixed in Stage 3.
 - Cost is a real constraint but not the binding one at current volume; latency and
   answer quality are what the team will notice first.
 
-## Decisions for the team
+## Open questions put to the team (2026-09-09)
 
-Not gaps in the specification — the P1 work proceeds however these are answered.
-They are recorded so they are answered once, in the open.
+These were proposals for a decision, not decisions. No answer to any of them is
+recorded in this repository; that does not show whether they were discussed
+elsewhere. Each "Recommendation" is the one made at the time. The evaluator work,
+which none of them blocked, was done on 2026-09-09.
 
 ### D1 — Does the default flip before or after the quality evaluation?
 
@@ -258,7 +192,7 @@ grounding difference matters more than the latency; C is not, on this evidence.
 ### D2 — Is ~2x latency acceptable on the chat surface?
 
 22.5s → 41.2s per question, measured to the complete answer. Chainlit streams, so
-what a user feels is time-to-first-token, which has not been measured. If the answer
+what a user feels is time-to-first-token, which was not measured for luna. If the answer
 is "no", that alone settles the default for chat and D1 becomes moot for that
 surface — though luna may still suit analysis summarisation, where nobody is
 watching a cursor.
@@ -270,9 +204,9 @@ this could not be checked here. If luna is materially more expensive per token, 
 larger answers it produces multiply that, and cost becomes a first-order input
 rather than the third one.
 
-## Out of Scope
+## Out of scope for this work
 
-- The LangChain upgrade. Unblocked by spec 001, unrelated to this.
+- The LangChain upgrade (done separately the same day, 4e607c8).
 - Fine-tuning, or any change to the prompts. Changing prompt and model together
   would make the comparison unattributable — the same reason spec 001 was staged.
 - Streaming behaviour and time-to-first-token, beyond noting above that it is the

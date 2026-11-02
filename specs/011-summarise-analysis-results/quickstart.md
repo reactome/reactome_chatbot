@@ -1,7 +1,10 @@
-# Quickstart: validating analysis summaries
+# Validating analysis summaries against beta (2026-09-18 to 2026-09-21)
 
-How to check this feature actually works, using real analysis results rather than
-fixtures. Nothing here needs production.
+**Status**: Historical record of how the feature was checked against beta's
+Analysis Service, with the results of the one recorded run (2026-09-21, image
+`cc4315c`, release 97). The commands below still show how to get a real token
+from beta. The run results describe that build, not the current one. Nothing
+here needs production.
 
 ## Prerequisites
 
@@ -42,13 +45,16 @@ curl -s -A "$UA" "https://beta.reactome.org/AnalysisService/token/$TOKEN/notFoun
 
 Expect `database/version` to match the release in the summary's `start` event.
 
-## Scenarios that must pass
+## Scenarios used (drafted 2026-09-18)
+
+Outcomes on 2026-09-21 are in the next section. Scenarios 2 and 8 have never been
+run live.
 
 | # | setup | expected |
 |---|---|---|
 | 1 | a token whose top pathways pass FDR | summary names those pathways, cites each by stable id |
 | 2 | a list that hits nothing significant | summary says nothing passes correction; no p-value presented as a finding |
-| 3 | mostly unmatched identifiers | summary reports the **count** and points at identifier type or species. Not the proportion: the aggregate result has no submitted-total in it, so a percentage would be invented (Phase 4) |
+| 3 | mostly unmatched identifiers | summary reports the **count** and points at identifier type or species. Not the proportion: the aggregate result has no submitted-total in it, so a percentage would be invented (research D5) |
 | 4 | `disclosure: aggregate` | the user's identifiers, filename, sample name and column labels appear in no outbound request |
 | 5 | same token requested twice | byte-identical summary, `cached: true` on the second |
 | 6 | an expired token | `state: not_found` |
@@ -56,25 +62,29 @@ Expect `database/version` to match the release in the summary's `start` event.
 | 8 | a ReactomeGSA token | `state: unsupported` |
 | 9 | no caller token / no human assertion | `state: refused`, and **zero model calls** |
 
-Scenario 4 is the one to automate first and the one worth distrusting: it is an
-assertion about what was *not* sent, so it should be checked by recording outbound
-requests, not by reading the summary and seeing nothing alarming.
+Scenario 4 is an assertion about what was *not* sent, so it is checked by
+recording outbound requests, not by reading the summary and seeing nothing
+alarming. The automated tests do this (`tests/analysis/test_disclosure.py`,
+`tests/api/test_analysis_summary.py`).
 
-Scenario 5 is what makes FR-014 real. Test it across a restart too, and expect it
-to fail there until a durable store exists (research D4) — that failure is known,
-not a surprise.
+Scenario 5 holds only within one process: the store is in memory, so a summary
+does not survive a restart or deploy (research D4).
 
-## Checking a summary is honest
+## Honesty checks proposed (2026-09-18)
 
-Mechanical checks first, because they do not need judgement:
+Mechanical checks, which need no judgement:
 
-- every `st_id` cited appears in that result's `pathways[]`
-- no number in the text is absent from the result
-- when `pathwaysFound` is 0, the text says nothing was found
+- every `st_id` cited appears in that result's `pathways[]`. Holds by
+  construction now and is tested (`tests/api/test_analysis_summary.py:225-233`)
+- no number in the text is absent from the result. Not automated
+- when the result has no pathways, the text says nothing was found. The code
+  decides this from the `pathways` list (`verdict: empty`,
+  `src/analysis/summarise.py:61-62`), not from `pathwaysFound`, which the
+  model is not given
 
 Then a curator reads a handful spanning strong, weak and empty results and says
-whether each conveys how much to trust it. That is SC-006 and it cannot be
-automated.
+whether each conveys how much to trust it (SC-006). This repository records no
+such review.
 
 ## Run against beta, 2026-09-21
 
@@ -97,20 +107,19 @@ Also checked, beyond the table: an `EXPRESSION` result referred to `column 1`,
 `column 2`, `column 3` and no other form, and the `identifiers` tier named the
 reader's unmatched identifiers.
 
-**Three scenarios were not run, and the reason is that they cannot be
-constructed here rather than that they were skipped.**
+**Two scenarios were not run, because they could not be constructed here
+rather than because they were skipped.** (A third, 7, was first listed here and
+then turned out to be constructible.)
 
 - **2, nothing significant** — needs an identifier list that hits no pathway
   past correction. Every list tried produced significant hits, and inventing
   one by editing a result would test the code against a fixture rather than
   the service. Covered by unit tests on the verdict instead.
-- ~~**7, `gone`**~~ — **this turned out to be constructible, and now passes.**
-  See below.
 - **8, ReactomeGSA** — needs a GSA analysis, which is a different service.
   Detection is unit-tested against all three GSA type values.
 
-Scenario 5 across a restart is expected to fail until a durable store exists
-(research D4), and was not attempted for that reason.
+Scenario 5 across a restart was not attempted: with an in-memory store it cannot
+pass (research D4).
 
 **The first run of scenario 4 proved nothing**, and the correction is worth
 keeping because the mistake is easy to repeat. The disclosure check ran
@@ -156,10 +165,10 @@ This matters beyond ticking the scenario off. The `gone` path would otherwise
 have been first exercised for real during a release, which is the worst
 moment to discover a handling bug in it.
 
-**Bisect for the boundary at run time; never hardcode a token.** The cutoff
-slides forward daily, so any fixed timestamp eventually falls out of the
-window and starts returning 404 -- and a test that does that does not fail,
-it quietly starts asserting `not_found` while still passing. That is the same
+**A hardcoded token stops testing `gone`.** The cutoff slides forward daily, so
+any fixed timestamp eventually falls out of the window and starts returning
+404 -- and a check written that way does not fail, it quietly starts asserting
+`not_found` while still passing. The boundary has to be found at run time. That is the same
 shape as everything else this feature has had to guard against: a check that
 goes on passing after it has stopped testing the thing.
 

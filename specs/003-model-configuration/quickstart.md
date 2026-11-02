@@ -1,7 +1,9 @@
 # Quickstart: verifying model configuration
 
-How to prove this feature works, end to end, the way a deployment uses it. Every
-step here is a thing that can be observed failing, not a unit test.
+Operator checks for how the answering model is configured, end to end, the way a
+deployment uses it. Written for the 2026-09-10 implementation and re-checked against
+the code on 2026-10-21. Every step is a thing that can be observed failing, not a
+unit test. Requirement IDs refer to [spec.md](./spec.md).
 
 ## Prerequisites
 
@@ -17,8 +19,9 @@ grep -c '^llm:' config.yml || echo "no llm section — good"
 poetry run chainlit run bin/chat-chainlit.py
 ```
 
-**Expect**: the server starts and the startup log names `gpt-4o-mini`. Ask a
-question; it answers.
+**Expect**: the server starts and the startup log reads `Answering with
+openai/gpt-4o-mini at temperature 0.0` (`src/agent/graph.py:315-317`), unless
+`LLM_MODEL` is set in the environment. Ask a question; it answers.
 
 ## 2. A model set in config.yml is the one that answers (FR-001, FR-008)
 
@@ -29,8 +32,8 @@ llm:
   model: gpt-5.6-luna
 ```
 
-**Expect**: the startup log names `gpt-5.6-luna`, and `resolve_temperature` has
-silently sent `1.0` — that model refuses `0.0` and nobody had to know.
+**Expect**: the startup log names `gpt-5.6-luna` at temperature `1.0`: that model
+refuses `0.0`, and `resolve_temperature` derives `1.0` without being told.
 
 ## 3. The environment overrides the file (FR-003)
 
@@ -50,7 +53,9 @@ llm:
 ```
 
 **Expect**: the server **refuses to start**, naming the model, the value, and the
-fix. It must not start and fail later — that is the entire point of Stage 2.
+fix (`src/agent/graph.py:160-166`). Starting and failing later is the bug this guards
+against (spec User Story 2). `LLM_TEMPERATURE=0` is not checked this way: it is the
+escape hatch and is sent as given.
 
 Compare with what happens without this feature: the server starts, and the first
 user to ask a question gets an error that reads as the chatbot being broken.
@@ -72,7 +77,9 @@ empirical and always behind. It will fail on the first request with OpenAI's own
 grep -rn "embedding" .config.schema.yaml config_default.yml
 ```
 
-**Expect**: no `embedding` model field anywhere. The embedding model is read from
+**Expect**: matches only in comments, which explain why there is no such field; no
+`embedding` model field. (`tests/agent/test_model_configuration.py:93-109` makes the
+same check, skipping comment lines.) The embedding model is read from
 the bundle path by `resolve_embedding_model()`, because a query embedded with a
 different model than built the vectors returns nonsense rather than an error.
 
@@ -86,5 +93,7 @@ poetry run pytest tests/agent/test_embedding_model_resolution.py -q
 poetry run ruff check . && poetry run mypy . && poetry run pytest
 ```
 
-`tests/util/test_config.py` must pass **untouched**: adding a section must not
-change what the loader does with an invalid file.
+When this shipped, the existing tests in `tests/util/test_config.py` passed
+unmodified (6f016dc), showing that adding the section did not change what the loader
+does with an invalid file. The same PR then added tests for unknown top-level keys
+(ce7cfef).

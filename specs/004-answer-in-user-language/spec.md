@@ -4,18 +4,26 @@
 
 **Created**: 2026-09-10
 
-**Status**: **Implemented** 2026-09-10 (#204 spec, #205 implementation). D1 taken as
-recommended — instruct the answer prompt, no translation pass. #140 and #125 closed
-with credit. Outcome at the end of this file.
+**Status**: Historical record of the answer-language work, 2026-09-10. Implemented
+2026-09-10 (#204 spec, #205 implementation) for React-to-Me and Plant Reactome, with
+D1 implemented as recommended: the answer prompt is instructed and there is no
+translation pass. The requirements below were set for that work, not for later
+changes. Current behaviour is in `src/agent/tasks/language_instruction.py`, the answer
+prompts that include it (`src/retrievers/{reactome,plantreactome,userguide}/prompt.py`)
+and the call sites in `src/agent/profiles/`. The outcome is at the end of this file.
 
 **Input**: Issue #104, "RAG only responds in English". Two competing pull requests, #125 and #140.
 
-## The gap, precisely
+## The gap before this work (2026-09-10)
 
-Language detection already works. `detect_language` runs on every message, concurrently
-with the safety check, and `detected_language` is on `BaseState` for every profile.
+Language detection already worked. `detect_language` ran on every message,
+concurrently with the safety check, and `detected_language` was on `BaseState` for
+every profile. (React-to-Me has since moved detection to run alongside the rephrase
+instead, 9677ecb, 2026-09-18: `src/agent/profiles/react_to_me.py:155-164`. The shared
+`preprocess` used by Plant Reactome and Cross-Database still pairs it with the safety
+check: `src/agent/profiles/base.py:69-72`.)
 
-It reaches some places and not others:
+It reached some places and not others:
 
 | where | uses the detected language? |
 |---|---|
@@ -24,10 +32,11 @@ It reaches some places and not others:
 | **React-to-Me's answer** | **no** |
 | **Plant Reactome's answer** | **no** |
 
-So a question in French is detected as French, rephrased into English for retrieval,
+So a question in French was detected as French, rephrased into English for retrieval,
 answered in English — and if it had instead been *refused*, the refusal would have
-come back in French. The two profiles that serve real users are the two that answer
-in the wrong language; the one that gets it right is the prototype.
+come back in French. The two profiles that serve real users were the two that answered
+in the wrong language; the one that got it right was the prototype. Since this work
+they answer in the detected language (see the requirements table).
 
 That asymmetry is the whole feature. Nothing needs detecting, routing or storing that
 is not already detected, routed and stored.
@@ -54,7 +63,7 @@ tell what language was used — nothing asks it to reply in that language.
 **Retrieval must stay in English.** The Reactome corpus is English: the CSV rows BM25
 tokenises, and the vectors built from them.
 
-Measured on the `summations` collection rather than assumed, because the obvious
+Measured on the `summations` collection (2026-09-10, Release95) rather than assumed, because the obvious
 version of this claim is wrong. BM25 does **not** collapse on a non-English query —
 it still returns a full ten documents, because named entities survive translation:
 
@@ -95,7 +104,7 @@ will be used to pass into the retriever."* So that 61-word block of English pros
 about response languages becomes part of the BM25 query and the embedded vector, for
 every non-English question.
 
-Measured through the **whole retriever**, appending it to an English question:
+Measured through the **whole retriever** (2026-09-10, Release95, four collections), appending it to an English question:
 
 | query | fused documents surviving the appended instruction |
 |---|---|
@@ -151,126 +160,64 @@ taking a second feature that needs its own judgement.
 Neither is mergeable as it stands. Between them they contain the whole answer:
 **#140's target and its nomenclature rule, #125's mechanism.**
 
-## User Scenarios & Testing *(mandatory)*
+## What the work set out to do (2026-09-10)
 
-### User Story 1 — A question in French is answered in French (Priority: P1)
+- **User Story 1 (P1)** — a question to React-to-Me in French is answered in French;
+  retrieval still uses the English rephrasing; gene names, `R-HSA-*` identifiers and
+  Reactome links are left untouched.
+- **User Story 2 (P1)** — retrieval does not move: the text sent to BM25 and the
+  vector store holds only the rephrased question. The planned test was a
+  `bin/retrieval_baseline` diff. It was replaced by a test that the retrieval query is
+  byte-identical across languages (`tests/agent/test_answer_language.py:69-79`), and
+  no baseline was run.
+- **User Story 3 (P2)** — Plant Reactome does the same.
 
-A researcher asks React-to-Me a question in French. Retrieval happens in English, and
-the answer comes back in French, with gene names and Reactome links untouched.
+### Edge cases noted at the time
 
-**Why this priority**: It is the issue. Everything else here is a refinement of it.
+- **The detector is wrong.** One label from one LLM call on the raw input; a short or
+  mixed-language question can be misread, and the answer comes back in the wrong
+  language, which the user can see and rephrase. Unknown or ambiguous input is
+  labelled English (`src/agent/tasks/detect_language.py:12`).
+- **A language the model answers poorly.** The instruction is best-effort; nothing
+  verifies the answer's language.
+- **Nomenclature that is also an ordinary word** (`SET`, `MAX`, `CAT`). The
+  instruction tells the model not to translate symbols even when they are ordinary
+  words (`src/agent/tasks/language_instruction.py:24-26`).
+- **A question already in English.** A first draft required English questions to take
+  exactly the old path, with no added instruction. That was dropped before
+  implementation: every question, English included, gets the instruction. An English
+  question costs no extra model call and reaches the retriever unchanged (FR-007).
 
-**Independent Test**: Ask the same question in English and in French. The retrieved
-documents should be substantially the same; the answers should differ only in
-language.
+## Requirements of this work, and where they stand (checked 2026-10-21)
 
-**Acceptance Scenarios**:
+Tests cite these IDs.
 
-1. **Given** a question in French, **When** it is answered, **Then** the answer is in
-   French and retrieval used the English rephrasing, so the documents are the set the
-   English rendering retrieves.
-2. **Given** a question in English, **When** it is answered, **Then** nothing about
-   the behaviour differs from today — no extra instruction, no extra call.
-3. **Given** an answer in any language, **When** it names a gene, protein, pathway or
-   `R-HSA-*` identifier, **Then** that term appears in its original English form.
-4. **Given** an answer in any language, **When** it cites Reactome, **Then** the URL
-   is unchanged and still resolves.
+| ID | Required by this work | Today |
+|---|---|---|
+| FR-001 | React-to-Me answers in the question's language | Holds for all three React-to-Me sources. The reactome and userguide answer prompts include `LANGUAGE_INSTRUCTION` (`src/retrievers/reactome/prompt.py:49`; `src/retrievers/userguide/prompt.py:50`, since f0e8581, 2026-10-04). Live answers carry their own "Answer in {language}" (`src/reactome_mcp/answer.py:81`, passed from `src/agent/profiles/react_to_me.py:252`) |
+| FR-002 | Plant Reactome does the same | Holds (`src/retrievers/plantreactome/prompt.py:46`; `src/agent/profiles/plantreactome.py:87`) |
+| FR-003 | Retrieval text holds only the rephrased question | Holds: the language travels in a separate `detected_language` key (`react_to_me.py:307-314`, `plantreactome.py:81-95`); `tests/agent/test_answer_language.py:60-66` |
+| FR-004 | Retrieval stays in English | Holds: the rephrase step translates to English (`src/agent/tasks/rephrase.py:8`, `:16`) |
+| FR-005 | Nomenclature not translated | An instruction to the model (`language_instruction.py:24-26`), not enforced. Checked on one French answer, 2026-09-10 |
+| FR-006 | URLs and citation links not altered | Same: instructed, not enforced |
+| FR-007 | An English question costs no extra model call and reaches the retriever with a byte-identical query | Holds. Byte identity is tested (`test_answer_language.py:69-79`); no extra call because there is no translation step. English questions do get the instruction ("Answer in English", about 60 words, `language_instruction.py:19-26`), stated rather than hidden. Branching on "is this English" was rejected because the common path would then go untested by anyone who only asks in English |
+| FR-008 | Language reaches the answer prompt as its own input | Holds (`test_answer_language.py:82-89`) |
+| SC-001 | French, German, Spanish or Japanese answered in that language | Verified for French only (2026-09-10). German, Spanish and Japanese are not recorded as checked |
+| SC-002 | `bin/retrieval_baseline` shows English retrieval unchanged | Not run; replaced by the byte-identity test (User Story 2) |
+| SC-003 | Non-English retrieval query byte-identical to before | Holds by the same test |
+| SC-004 | Nomenclature in English, Reactome URLs resolve | Checked on one French answer, 2026-09-10 |
+| SC-005 | English costs the same model calls and stays English | Calls: holds (FR-007). The English answer was checked once, 2026-09-10 |
 
----
+### Key terms
 
-### User Story 2 — Retrieval quality does not move (Priority: P1)
+- **Detected language**: one label per message, on `BaseState`.
+- **Rephrased question**: the English rendering, used for retrieval.
+- **Answer prompt**: per source; where the language instruction goes.
 
-A developer changes the language handling and can show that what reaches the model is
-unchanged for English questions.
+## Decision D1 (put to the team 2026-09-10)
 
-**Why this priority**: Equal to Story 1, because the plausible way to implement Story
-1 is the way #140 does it, and that quietly degrades retrieval for exactly the users
-the feature is meant to help. A feature that answers in French by retrieving worse
-has not helped anyone.
-
-**Independent Test**: `bin/retrieval_baseline` before and after. English questions
-must be unchanged beyond the known ANN noise floor.
-
-**Acceptance Scenarios**:
-
-1. **Given** the change, **When** the baseline is compared, **Then** English
-   retrieval differs only within the documented run-to-run variance.
-2. **Given** a non-English question, **When** retrieval runs, **Then** the text sent
-   to BM25 and the vector store contains no instruction prose — only the rephrased
-   question.
-
----
-
-### User Story 3 — Plant Reactome behaves the same way (Priority: P2)
-
-The Plant Reactome deployment answers in the user's language too.
-
-**Why this priority**: The same gap, the same fix, a second profile. P2 only because
-the Reactome deployment is the larger audience.
-
-**Acceptance Scenarios**:
-
-1. **Given** a non-English question to Plant Reactome, **Then** the answer is in that
-   language, with nomenclature preserved.
-
-### Edge Cases
-
-- **The detector is wrong.** It returns a single label from one LLM call on the raw
-  input; a short question, or one mixing languages, can be misread. The cost is an
-  answer in the wrong language, which the user can see and rephrase — acceptable, but
-  it argues against building anything expensive on top of the label.
-- **A language the model answers poorly.** The instruction is best-effort; there is
-  no verification step and this specification does not add one.
-- **Nomenclature that is also an ordinary word.** Gene symbols like `SET`, `MAX` or
-  `CAT` are English words. A translator may render them as words rather than symbols.
-- **A question already in English.** Must take exactly today's path, with no added
-  instruction — otherwise every existing user pays for a feature they do not use.
-
-## Requirements *(mandatory)*
-
-### Functional Requirements
-
-- **FR-001**: React-to-Me MUST answer in the language its question was asked in.
-- **FR-002**: Plant Reactome MUST do the same.
-- **FR-003**: The text used for retrieval MUST contain only the rephrased question —
-  no language instruction, no prompt scaffolding.
-- **FR-004**: Retrieval MUST continue to happen in English.
-- **FR-005**: Scientific nomenclature — gene symbols, protein names, pathway names,
-  `R-HSA-*` identifiers — MUST NOT be translated.
-- **FR-006**: URLs and citation links MUST NOT be translated or altered.
-- **FR-007**: An English question MUST cost no additional model call, and MUST reach
-  the retriever with a byte-identical query.
-
-  It does gain a short instruction in the *answer* prompt, saying to answer in
-  English. That is a real change for every current user and is stated rather than
-  hidden. The alternative — branching on "is this English" — creates two paths where
-  the common one is untested by anyone who only ever asks in English, and the
-  instruction is a sentence against roughly 3,200 tokens of retrieved context.
-- **FR-008**: The language MUST reach the answer prompt as its own input, not
-  concatenated into another field.
-
-### Key Entities
-
-- **Detected language**: one label per message, already on `BaseState`, produced
-  concurrently with the safety check.
-- **Rephrased question**: the English rendering, already produced, already used for
-  retrieval.
-- **Answer prompt**: per profile; the place the language belongs.
-
-## Success Criteria *(mandatory)*
-
-- **SC-001**: A question asked in French, German, Spanish or Japanese is answered in
-  that language by React-to-Me.
-- **SC-002**: `bin/retrieval_baseline` shows English retrieval unchanged beyond the
-  documented noise floor.
-- **SC-003**: For a non-English question, the retrieval query is byte-identical to
-  what the same question produces today.
-- **SC-004**: In a non-English answer, every gene symbol, pathway name and `R-HSA-*`
-  identifier appears in English, and every Reactome URL resolves.
-- **SC-005**: An English question costs the same number of model calls as today, and
-  its answer remains in English and well-formed.
-
-## Decisions for the team
+Implemented as option A in #205. This repository does not record whether the team
+chose it explicitly beyond "taken as recommended".
 
 ### D1 — Instruct the answer prompt, or translate afterwards?
 
@@ -284,7 +231,7 @@ the Reactome deployment is the larger audience.
 extra, and B's advantage on nomenclature is reachable from A with prompt instructions —
 which is what both contributors did, independently.
 
-## Assumptions
+## Assumptions at the time (2026-09-10)
 
 - The existing detector is good enough. It is already trusted for refusals, which are
   the more sensitive case; nothing here makes it more load-bearing.
@@ -292,7 +239,7 @@ which is what both contributors did, independently.
   English one. If that is wrong, the feature is wrong, not the implementation.
 - The corpus stays English. Translating Reactome content is a different project.
 
-## Out of Scope
+## Out of scope for this work
 
 - Translating the corpus, or multilingual embeddings.
 - Verifying that the answer really is in the requested language.
@@ -326,15 +273,15 @@ differ.
 **"#140's appended instruction leaves 0 of 10 documents"** — measured on BM25
 directly, which the pipeline never does: the query expander rewrites the question
 first, so four of five queries reach BM25 clean. Through the whole retriever it is
-**20 of 40**. Half the context, not all of it. Adam pushed back that the number
-looked too low and was right.
+**20 of 40**. Half the context, not all of it. A review questioned the number as
+looking too low, and was right.
 
 The second is the more useful lesson. The first review checked whether each claim was
 *true* without checking whether the *test measured the product* — the same failure
 `evaluator.py` had four days earlier. An adversarial review has to attack the
 measurement as well as the claim.
 
-**And the plan contradicted the spec.** FR-007 promised English questions "no
+**And the plan (removed; in git history at 75ca531) contradicted the spec.** FR-007 promised English questions "no
 additional prompt content" while the plan always passes the language, which adds a
 sentence to every English prompt. FR-007 was the wrong half and was corrected to
 promise what is actually true: no extra model call, byte-identical retrieval query,
@@ -344,12 +291,22 @@ and one added sentence stated rather than hidden.
 
 The French answer carried 2 `R-HSA` citations against the English answer's 9. One
 sample, so not a finding — but if non-English answers systematically cite less, this
-feature would be creating a quality gap while closing a language one. It is the kind
-of thing the ragas run in [spec 002](../002-default-llm-choice/spec.md) should look
-at once that harness is worth running.
+feature would be creating a quality gap while closing a language one. Not followed up
+in this repository. The evaluator (`./bin/evaluate`, measuring the shipping chain since
+2026-09-09; see [spec 002](../002-default-llm-choice/spec.md)) could look at it, but its
+default question set is English only (`tests/golden/questions.txt`).
 
 ### Not resolved
 
 #125 also carried a hallucination grader and web-search wiring for Cross-Database.
 Neither is touched here, and closing that PR is not a decision about them; they
 belong to #123.
+
+### Alternatives rejected during this work
+
+| Decision | Simpler alternative rejected | Why |
+|---|---|---|
+| A prompt variable | Append to `input`, as #140 did | Measured 2026-09-10: about half the fused documents change. The instruction would reach the retriever and the query expander. |
+| Instruct the generator | Translate the finished answer | D1. An extra model call and its latency on every non-English message, plus translation errors over a scientific answer, for a nomenclature protection the prompt already gives. |
+| Always pass the language | Branch on "is it English" | Two paths, one rarely exercised. Passing "English" is the same code doing the same thing. |
+| No baseline run | `bin/retrieval_baseline` before and after | The retrieval query is unchanged by construction; a test asserting that is exact, where a baseline diff would only show noise. |

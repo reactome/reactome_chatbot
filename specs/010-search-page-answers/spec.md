@@ -4,21 +4,29 @@
 
 **Created**: 2026-09-17
 
-**Status**: Draft. This repo's half only. Three decisions (D1-D3), and one
-measured constraint that shapes all of them.
+**Status**: Historical record of the search-page answer endpoint work (this repo's
+half only), 2026-09-17 to 2026-09-20. The endpoint, streaming, caller-token
+verification, the backstop rate limit and release attribution were implemented
+2026-09-17 to 2026-09-18 (212c80e, 39b73be; PRs #236, #237, #240); `answer_id` was
+added 2026-09-25 by spec 013. Not built: the latency target (FR-005a, first token
+not met), choosing which searches get an answer (D2, User Story 3) and caching
+(D3); whether these are still wanted is not recorded. The requirements and
+decisions below were set for that work, not for later changes. Current endpoint
+behaviour is in [contracts/answer_endpoint.md](./contracts/answer_endpoint.md) and
+`src/api/answer.py`.
 
 **Input**: *"a feature we want is for the chatbot responses to be integrated into
 the website search page results in a google like style ... this would have to be a
 coordinated effort with the website repo ... the functionality should only be
 available to proven to be human users."*
 
-## The constraint that shapes everything
+## The latency constraint this work was designed around (2026-09-17 to 2026-09-18)
 
-Measured on 2026-09-17, beta, Release97 bundle, `gpt-4o-mini`, warm process:
-
-Across all fifteen tracked questions, not one question twice:
-
-Re-measured 2026-09-18, two runs of each tracked question:
+The first measurement, 2026-09-17, was on beta, Release97 bundle, `gpt-4o-mini`,
+warm process; its figures were later replaced. The table is the 2026-09-18
+re-measurement, two runs of each tracked question. The latest recorded measurement
+is 2026-09-20: first token p50 5.57s, complete p50 8.90s (T022 in
+[research.md](./research.md)).
 
 | | |
 |---|---|
@@ -31,39 +39,46 @@ Re-measured 2026-09-18, two runs of each tracked question:
 
 *This table has been wrong twice. It first quoted "25.4s and 32.2s", which was two
 runs of one question near the maximum. It then quoted p50 15.2s for the whole answer
-and ~36s to the first token; neither reproduces now, because collection routing
-(spec 009) narrowed retrieval and preprocessing went from four sequential calls to
-two rounds. Re-measure after any retrieval or preprocessing change rather than
+and ~36s to the first token; neither reproduces now. Preprocessing went from four
+sequential calls to two rounds; the rest of the difference is not fully explained
+(see the contract). Collection routing (spec 009) had not landed when this was
+written. Re-measure after any retrieval or preprocessing change rather than
 quoting these.*
 
 A Google AI overview is generally reported to arrive in one to two seconds -- an
 assumption here, not a measurement of ours. At a p50 of just under ten seconds to the
-first token, a panel on the search results page is still empty long after a person
+first token (2026-09-18; 5.57s on 2026-09-20, T022 in research.md), a panel on the
+search results page is still empty long after a person
 has read the ordinary results. The gap has closed by more than half since this spec
 was written and the conclusion still holds, which is the point worth keeping: the
 requirement was never about a specific number.
 
-This is not a polish problem. It decides whether the feature works, so it is stated
-here as a requirement rather than discovered during implementation.
+This was treated as deciding whether the feature works, not as polish, so it was
+stated up front rather than discovered during implementation.
 
-Two consequences run through the rest of this spec.
+Two consequences ran through the rest of this spec.
 
-The answer **must stream**, so something appears in the first second or two.
+The answer was made to **stream** (FR-002), on the expectation that something would
+appear in the first second or two. It did not: the first answer token cannot arrive
+before preprocessing and retrieval finish (next section).
 
-And retrieval is the largest single component for the questions that matter here --
-but **collection routing is not the only lever on it, and may not be the biggest**.
+And retrieval was then the largest single component for the questions that matter
+here -- but **collection routing was not the only lever on it, and might not be the
+biggest**.
 Retrieval cost scales with *queries x collections*. Query expansion turns one
 question into **five** queries at a cost of 2.4s, and every one of them is run
 against every collection. Cutting five collections to two saves about as much as
-cutting five queries to two, and only the first has a spec. Measured 2026-09-17:
+cutting five queries to two, and at the time only the first had a spec (the query
+count became configurable on 2026-09-20, T020). Measured 2026-09-17:
 
 | | |
 |---|---|
 | 5 queries x 5 collections, served async path | 12.5s |
 | 1 query x 5 collections, served async path | ~1.5s |
 
-[Spec 009](../009-collection-routing/spec.md) remains worth doing. The claim that it
-alone is on the critical path does not survive the measurement.
+When this was written (2026-09-17), [spec 009](../009-collection-routing/spec.md)
+had not been built; it landed 2026-09-19. The claim that it alone was on the
+critical path did not survive this measurement.
 
 ## The latency target, and why it is not a requirement yet
 
@@ -82,133 +97,150 @@ Measured 2026-09-17 by streaming `astream_events` and grouping by `run_id`:
 
 **Nothing of the answer exists until preprocessing and a retrieval have finished**,
 but that is now under five seconds rather than the twenty this spec previously
-recorded. The largest remaining block is the answer model's own time to first token
-against a retrieved context, which streaming does not help and nothing here
-addresses.
+recorded. On these 2026-09-17 figures the largest remaining block was the answer
+model's own time to first token against a retrieved context. The 2026-09-20
+measurement (T022 in research.md) puts that at 0.84s and retrieval at 3.15s
+instead; the two have not been reconciled.
 
 A naive measurement reports 3.0s, because the first streamed token of any kind
 belongs to the rephraser. That number is wrong in the most flattering direction, and
 is the one a casual check would have produced.
 
-**So the first increment makes no latency promise.** It is correct, verified and
-streaming, at roughly today's speed. The website repo can build the panel, the token
-handshake and every failure path against it, none of which depend on how fast it is.
+**So the first increment made no latency promise**, and none has been made since. It
+was correct, verified and streaming, at the speed of the day, so the website repo
+could build the panel, the token handshake and every failure path against it, none
+of which depend on how fast it is.
 
-What would have to change for FR-005a, in the order the measurement suggests:
+What would have had to change for FR-005a, in the order the 2026-09-17 measurement
+suggested. The 2026-09-20 measurement (T022 in research.md) reorders it: retrieval
+first at 3.15s, then preprocessing at 1.58s, with the answer model at 0.84s, a
+figure not reconciled with the 6.1s below.
 
 1. **The answer model's time to first token**, 6.1s against a retrieved context and
    the largest block left. Nothing in these specs addresses it; a smaller or faster
    model, or a shorter context, are the obvious handles
 2. **Preprocessing**, now 2.6s in two rounds. Whether a search-page question needs
    all four calls at all is still open -- the rounds only removed the waiting
-3. **Query expansion and retrieval**, 2.3s together, after
-   [spec 009](../009-collection-routing/spec.md) narrowed the collections
+3. **Query expansion and retrieval**, 2.3s together, measured before
+   [spec 009](../009-collection-routing/spec.md)'s collection routing landed, with
+   every collection searched
 
-Stating a budget the code cannot meet would bake it into a contract another repo
-builds against. This is what we are doing instead.
+Stating a budget the code could not meet would have baked it into a contract another
+repo builds against, which is why FR-005 makes no latency promise and FR-005a is a
+target.
 
-## User Scenarios & Testing
+## User scenarios as written 2026-09-17, and where they stand (checked 2026-10-21)
 
-### User Story 1 - A verified person searches and sees an answer forming (Priority: P1)
+### User Story 1 - A visitor searches and sees an answer forming (Priority: P1)
 
-Someone searches reactome.org. Above the ordinary results, an answer begins appearing
-within about two seconds and completes in under ten, with citations into Reactome.
+As written: someone searches reactome.org and, above the ordinary results, an answer
+begins appearing within about two seconds and completes in under ten, with citations
+into Reactome. The timing was the FR-005a target; the first-token half was not met
+(T022 in research.md).
 
-**Why P1**: it is the feature. Everything else is a refinement of it.
-
-**Independent test**: post a question to the answer endpoint with a valid human
-token; assert the first token arrives inside the budget and citations resolve to real
-stable IDs.
-
-**Acceptance**
-1. Tokens stream: more than one token event, so the caller can render progressively
+**Acceptance as written, and status**
+1. Tokens stream: more than one token event. Holds (`src/api/answer.py:166-171`; T006)
 2. The first token belongs to the **answer**, not to the rephraser or the query
-   expander -- they stream too, and rendering them would show a search panel an
-   expanded query as though it were an answer
-3. Every factual claim carries a citation resolvable at `reactome.org/content/detail/<stId>`
-4. A question the knowledgebase cannot answer says so, rather than inventing
+   expander. Holds: answer tokens are those from the `model` node after a retriever
+   completes, or after preprocessing on the live-lookup path
+   (`src/agent/graph.py:500-583`; research R5c)
+3. "Every factual claim carries a citation resolvable at
+   `reactome.org/content/detail/<stId>`." Not as built: citations are separate events
+   listing what retrieval found, not per claim (research R3); a user-guide page is
+   cited by `url` (T028); a live-lookup answer has none; and links in the prose are
+   stripped (contract, "What `token` text contains")
+4. A question the knowledgebase cannot answer says so rather than inventing. Asked of
+   the model by the answer prompt (`src/retrievers/reactome/prompt.py:17`); such an
+   answer ends `answered`, not `nothing_found`
 
-### User Story 2 - Someone who has not been verified gets no answer (Priority: P1)
+### User Story 2 - A caller without a valid token gets no answer (Priority: P1)
 
-An unverified visitor, or a script, gets the ordinary search results and no AI panel.
-No LLM call is made.
+Written as "someone who has not been verified gets no answer", expecting HTTP
+401/403. D1 (2026-09-18) changed the premise: the search path has no human check, so
+what is verified is a token the website mints for each call, not a person.
 
-**Why P1 and not P2**: this is a cost and abuse control, not a feature toggle. Every
-search reaching the model is an unbounded bill, and search pages are crawled.
+**Why P1**, as written: a cost and abuse control, not a feature toggle. Every search
+reaching the model is a bill, and search pages are crawled.
 
-**Independent test**: post without a token, and with a forged one; assert HTTP 401/403
-and that no LLM call was made.
+**As built**: a missing, invalid, expired or wrong-audience token, or a caller over
+the backstop limit, gets HTTP 200 with a single `done` event, `state: refused`, and no
+model call (`src/api/answer.py:79-113`; `tests/api/test_answer_endpoint.py:153-176`).
+Not 401/403: a refusal is a well-formed stream so the website handles one shape
+(`src/api/answer.py:79-85`).
 
-**Acceptance**
-1. No valid human token → refused before any model call
-2. A token is bound to the person, expires, and cannot be replayed from elsewhere
-3. Refusal is cheap and does not consume a rate-limit slot for real users
+**Acceptance as written, and status**
+1. No valid token → refused before any model call. Holds
+2. "A token is bound to the person, expires, and cannot be replayed from elsewhere."
+   Partly: tokens expire (`exp` is required; the website mints at +120s) and must
+   carry this service's audience, so one minted for another consumer is refused. They
+   are not bound to a person, and a token can be presented again until it expires:
+   nothing records use (`src/util/caller_token.py:34-35`)
+3. Refusal is cheap and does not consume a rate-limit slot. Holds: token refusals
+   happen before the limiter, and a rate-limited request is not counted
+   (`src/util/rate_limit.py:66-76`)
 
 ### User Story 3 - Not every search gets an answer (Priority: P2)
 
-A search for a single gene name, or a navigational query, returns ordinary results
-with no AI panel. Only questions that an answer would actually serve get one.
+As written: a search for a single gene name, or a navigational query, returns ordinary
+results with no AI panel; only questions an answer would serve get one, tested
+against queries labelled should-answer / should-not.
 
-**Why P2**: the feature works without it, but the cost does not.
+**Not built.** The endpoint answers every request that passes the token and rate
+checks; nothing classifies a search as not worth answering (D2). Whether this is
+still wanted is not recorded.
 
-**Independent test**: a set of queries labelled should-answer / should-not; assert the
-classifier's decision matches, and that no LLM answer call happens for the latter.
+### Edge cases as written, and status
 
-### Edge Cases
-
-- **Retrieval finds nothing**: say so; never fill the gap with general knowledge
+- **Retrieval finds nothing**: say so; never fill the gap with general knowledge.
+  Asked of the model by the prompt (`src/retrievers/reactome/prompt.py:14-17`)
 - **The model is slow or the upstream is down**: the panel disappears rather than
-  hanging; the search page must not depend on this service being up
-- **The person navigates away mid-stream**: the request is cancelled, not left running
-- **The same question twice**: served from cache, not re-answered (see D3)
-- **A question that is unsafe or off-topic**: the existing safety checker already
-  refuses these, and its refusal must not render as an AI panel
+  hanging. This service ends the stream with `done` `failed` after 120s or on an error
+  (`src/api/answer.py:67`, `:219-233`); what the page shows is the website's
+- **The person navigates away mid-stream**: the request is cancelled. Holds, measured
+  2026-09-18 (T027; `src/api/answer.py:192-218`)
+- **The same question twice**: was to be served from cache (D3). Not built: every
+  request is answered afresh
+- **A question that is unsafe or off-topic**: the safety checker refuses it, and the
+  refusal must not render as a panel. Holds: the refusal comes from a different graph
+  node and is not streamed, so the stream ends `nothing_found` with no tokens
+  (`src/agent/profiles/react_to_me.py:101-110`; `src/agent/graph.py:580-583`)
 
-## Requirements
+## Requirements of this work, and where they stand (checked 2026-10-21)
 
-### Functional Requirements
-
-- **FR-001**: The service MUST expose an HTTP endpoint accepting a question and
-  returning an answer with citations. No such endpoint exists today -- `chat-fastapi.py`
-  serves only the captcha pages and a landing page, and Chainlit owns the conversation
-  over websockets
-- **FR-002**: The response MUST stream, so partial text can render before completion
-- **FR-003**: The endpoint MUST refuse any request without a valid caller
-  token, before any model call
-- **FR-004**: Citations MUST be Reactome stable IDs, so the website can render links
-  in its own style rather than parsing prose
-- **FR-005**: The caller MUST be able to render the answer progressively as it
-  arrives. **No latency guarantee is made by the first increment**, and the reason is
-  measured rather than assumed -- see "The latency target, and why it is not a
-  requirement yet" below
-- **FR-005a** *(target, not met)*: first token within 2s and complete within 10s at
-  p50. Tracked as a goal with a named blocker, not promised to the website repo
-- **FR-006**: The service MUST fail invisibly: any error, timeout or refusal returns
-  a response the website can render as "no panel", never a broken panel
-- **FR-007**: Answers MUST be attributable to a Reactome release, so a cached or
-  stale answer can be identified after a release
-- **FR-008**: The endpoint MUST be rate limited per verified person, independently of
-  the chat UI's existing limits
+| ID | Requirement as written | Status |
+|---|---|---|
+| FR-001 | An HTTP endpoint accepting a question and returning an answer with citations (none existed; Chainlit owned the conversation over websockets) | Holds: `POST <CHAINLIT_URI>/api/answer` (`src/api/answer.py:96`, `bin/chat-fastapi.py:73-78`) |
+| FR-002 | The response streams | Holds: server-sent events (`src/api/answer.py:129-264`) |
+| FR-003 | Refuse any request without a valid caller token, before any model call | Holds (`src/api/answer.py:98-115`) |
+| FR-004 | Citations are Reactome stable IDs, so the website styles links itself | Superseded 2026-09-18 (T028): a citation carries `st_id` or, for a user-guide page, `url` (`src/agent/graph.py:219-261`). Live-lookup answers carry none |
+| FR-005 | The caller can render progressively; no latency guarantee in the first increment (see "The latency target, and why it is not a requirement yet") | Holds; no latency guarantee has been made since |
+| FR-005a | *Target, not a requirement*: first token within 2s and complete within 10s, at p50 | Last measured 2026-09-20 (T022): complete 8.90s p50, met; first token 5.57s p50, not met. Not re-measured since |
+| FR-006 | Fail invisibly: any error, timeout or refusal gives a response the website can render as "no panel" | Holds within the stream: errors, the 120s timeout and refusals end with a non-`answered` `done` (`src/api/answer.py:59-67`, `:79-93`, `:219-233`). Two limits: tokens sent before a failure stay sent, and a malformed request body gets HTTP 422 JSON, not a stream |
+| FR-007 | Answers attributable to a Reactome release, so a cached answer can be identified after one | Holds: `release` on `start`, read at startup (`bin/chat-fastapi.py:55-59`); `null` when unknown. No cache uses it (D3) |
+| FR-008 | Rate limited per verified person, independently of the chat UI | Built as a per-caller backstop: 30 requests per 600s by default, keyed on the token's `sub`, else `jti`, else a hash of the token (`src/util/rate_limit.py:30-49`, `:94-103`). It counts callers, not verified people (D1) |
 
 ### Key Entities
 
-- **Question**: the search string, plus the release it was asked against
-- **Answer**: streamed text, a list of citations (stable ID and display name), and a
-  completion state -- answered, nothing-found, refused, or failed
-- **Human token**: evidence that a person was verified, bound to them, time limited.
-  Turnstile already does this in `chat-fastapi.py`; what is missing is a form the
-  website can obtain and present
+- **Question**: the search string. The release is the one the service started with,
+  not something the caller sends
+- **Answer**: streamed text, a list of citations (a stable ID or a URL, and a display
+  name), and a completion state -- `answered`, `nothing_found`, `refused` or `failed`
+- **Caller token** (called "human token" until 2026-09-18): a short-lived token the
+  website mints for each call. It asserts the call came from the website, not that a
+  person was verified (D1). This service's Turnstile check guards the chat UI, not
+  this endpoint
 
-## Success Criteria
-
-### Measurable Outcomes
+## Success criteria, and where they stand (checked 2026-10-21)
 
 - **SC-001**: the endpoint streams -- more than one token event for a question the
   knowledgebase can answer -- and its first-token and completion times are measured
   and published as a distribution over the tracked question set. A number going down
-  is the goal; a number being met is not, until FR-005a's blocker is removed
+  is the goal; a number being met is not, until FR-005a's blocker is removed.
+  *Done 2026-09-18 (T019) and re-measured 2026-09-20 (T022, research.md)*
 - **SC-002**: Zero model calls for requests without a valid token, measured by
-  counting calls under a load of unauthenticated requests
+  counting calls under a load of unauthenticated requests. *Pinned by tests that
+  assert a patched graph is never called (`tests/api/test_answer_endpoint.py:153-176`,
+  T016); no load measurement is recorded*
 - **SC-003**: The answer sweep stays green, and the two surfaces stay
   *configured* the same -- same profile, same shared graph, no difference that can
   reach the answer. Textual equality is explicitly **not** the criterion, because
@@ -216,11 +248,15 @@ classifier's decision matches, and that no LLM answer call happens for the latte
   same question asked twice through the *same* surface produced answers 0.331
   similar, while endpoint-versus-chat scored 0.356. The surfaces differ from each
   other no more than either differs from itself. The sweep is the right mechanism
-  precisely because it matches patterns rather than literals
+  precisely because it matches patterns rather than literals. *Pinned by
+  `tests/api/test_answer_matches_chat.py` (T014): one profile, one shared graph. The
+  one configured difference, the endpoint skipping the post-answer web search
+  (`src/api/answer.py:158-164`), cannot change the answer text*
 - **SC-004**: No search-page request can make the search page itself slower or fail;
-  verified by taking the service down and confirming the page still renders
+  verified by taking the service down and confirming the page still renders. *The
+  website's side; this repository has no record of that check*
 
-## Known: retrieval is not reproducible
+## Known: retrieval is not reproducible (measured 2026-09-18, not re-measured)
 
 Measured 2026-09-18, the same question asked three times returned **12 citations
 each time but only 4 pathways common to all three**, a union of 19 and a Jaccard
@@ -230,11 +266,13 @@ expands the question differently and retrieves different documents.
 This matters beyond wording. A reader who reloads the panel sees different
 sources, and FR-007's cache invalidation assumes an answer is a stable artifact
 of a release. Deciding what to do about it -- seeding or caching the expansion,
-or dropping it for this path -- is open, and is not a blocker for the handover.
+or dropping it for this path -- was left open (T020a), and no decision is recorded.
+"Continue in chat" keeps the answer as it was shown rather than regenerating it, for
+this reason (spec 013, `src/api/answer_store.py:3-6`).
 
 ## Decisions
 
-### D1 -- what does the caller present? **Decided 2026-09-18**
+### D1 -- what does the caller present? (recorded as decided with the website side, 2026-09-18; implemented in 39b73be)
 
 This was "what proves a person is human?", and the question had a false premise.
 The website session checked before answering: there is **no human gate on the
@@ -245,58 +283,61 @@ spent on submit. Every search is anonymous and ungated by design.
 So the token cannot honestly assert humanity, and asking it to would have meant
 inventing a claim. **It asserts caller identity instead**: minted server-side by
 the website, per request, EdDSA, with `iss`, `aud: reactome-chatbot`, `iat`,
-`exp` at +120s, and `sub` -- an opaque per-visit id of 128 random bits, not
-derived from anything about the reader, held in an HttpOnly cookie. No address,
-no IP hash; neither side holds personal data.
+`exp` at +120s, and `sub` -- described then as an opaque per-visit id of 128 random
+bits, not derived from anything about the reader, held in an HttpOnly cookie. No
+address, no IP hash; neither side was to hold personal data. *(Corrected 2026-09-19
+in `src/util/caller_token.py:15-22`: for a reader who has passed the website's
+Turnstile challenge, `sub` is that identity cookie's subject and lasts as long as the
+cookie; the per-visit id is the fallback for readers who have not.)*
 
 This service verifies signature, expiry and **audience**, and keys its backstop
-limit on `sub`. The request field is `caller_token`, and the misleading
-`caller_token` name is gone from the code as well as this document.
+limit on `sub`. The request field was renamed from `human_token` to `caller_token`
+in the code and in this folder (PR #240, finished in 6d517a0).
 
-Abuse control moved with the premise. The panel is opt-in behind a click (D5), so
-a crawled search never reaches a model, and the website's proxy rate limits by
-address. That is a real deterrent rather than a claim we would be inventing.
+Abuse control moved with the premise, to the website. As the website side described
+it on 2026-09-18, the panel is opt-in behind a click, so a crawled search never
+reaches a model, and its proxy rate limits by address. Neither is visible from this
+repository.
 
-Turnstile stays where it is, guarding the chat UI. It was never part of this
-path, and the two must not be "unified".
+The decision kept Turnstile where it was, guarding the chat UI only. It was never
+part of this path, and the decision was not to merge the two checks.
 
-### D2 -- which searches get an answer?
+### D2 -- which searches get an answer? (open; not built)
 
-Not all of them, per User Story 3. The intent classifier already decides what kind
-of question it is, and [spec 007](../007-answer-cascade/spec.md) is about that
-routing. Reusing it costs nothing extra; inventing a second classifier costs a call.
+Not all of them, per User Story 3. The recommendation recorded on 2026-09-17 was to
+extend the existing intent classifier rather than add a second one, which would cost
+a call, and the question was left open pending
+[spec 007](../007-answer-cascade/spec.md) (which does not itself mention the search
+page). No decision is recorded. The endpoint answers every request that passes the
+token and rate checks.
 
-**Recommendation**: extend the existing classifier rather than add one. **Open**
-pending 007.
+### D3 -- caching (open; not built)
 
-### D3 -- caching
+Search traffic was expected to repeat in a way chat traffic does not, so a cache
+keyed by question and release would cut both latency and cost; FR-007 exists to make
+invalidation possible. It was left open for want of a repeat-rate measurement on real
+search traffic, which the website has and this repository does not. No decision is
+recorded and no cache exists. Retrieval not being reproducible (above) bears on what
+such a cache could store.
 
-Search traffic repeats in a way chat traffic does not. A cache keyed by question and
-release would cut both latency and cost, and FR-007 exists to make invalidation
-possible.
-
-**Open.** It needs a measurement of repeat rate on real search traffic, which this
-repo does not have -- the website does.
-
-## Scope
+## Scope of this work (as set 2026-09-17)
 
 **In (this repo)**: the answer endpoint, streaming, citation shape, token
-verification, rate limiting, release attribution, and the latency work needed to
-meet FR-005.
+verification, rate limiting, release attribution, and latency work towards FR-005a.
 
 **Out (the website repo)**: the panel, its visual design, where it sits on the page,
-how citations render, and the UX of the chat's deeper integration. This spec commits
-to a contract, not a look.
+how citations render, and the UX of the chat's deeper integration. This spec
+committed to a contract, not a look.
 
-**Out (both, for now)**: the broader "chat integrated into the site's flow and feel"
-work. That is a design effort that deserves its own spec once this contract exists,
-and it is mostly not this repo's code.
+**Out (both, at the time)**: the broader "chat integrated into the site's flow and
+feel" work, left for its own spec once this contract existed.
 
-## Assumptions
+## Assumptions made 2026-09-17, and how they held
 
-- The website can verify a human before calling this service; this repo verifies the
-  evidence rather than performing the check
-- Beta is the integration target first. The MCP already points at
-  `beta.reactome.org` as of 2026-09-17
-- The same graph serves the endpoint and the chat UI; two answer paths that could
-  disagree would be a defect, not a feature
+- The website can verify a human before calling this service. Did not hold: the
+  search path has no human check, and the token asserts caller identity instead (D1)
+- Beta is the integration target first; the MCP pointed at `beta.reactome.org` as of
+  2026-09-17. Beta serves the endpoint at `/chat/guest/api/answer`
+  (`deploy/beta/env.beta.template:21`, `deploy/beta/README.md` section 4)
+- The same graph serves the endpoint and the chat UI. Holds: one shared instance
+  (`src/agent/registry.py`); SC-003 says what "the same" can and cannot mean

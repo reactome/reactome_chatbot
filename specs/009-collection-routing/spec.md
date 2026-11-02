@@ -4,16 +4,16 @@
 
 **Created**: 2026-09-17
 
-**Status**: Planned. D1, D2 and the acceptance bar are all decided and recorded
-below; plan.md, data-model.md and tasks.md exist and depend on them.
+**Status**: Historical record of the collection-routing work, 2026-09-17 to
+2026-09-19. Implemented 2026-09-19 (0fe7d88). The decisions and acceptance bar
+below were set for that work, not for later changes. Current behaviour is in
+[data-model.md](./data-model.md).
 
 **Input**: *"the more tables we add the more tokens we use up and the longer the
 responses take to return, it would be nice to search the disease variant table if
 that is what they are asking about."*
 
-## Clarifications
-
-### Session 2026-09-17
+## Acceptance bar for this work (agreed 2026-09-17)
 
 - Q: When routing skips a collection that would have contributed a document, how much recall loss should reject the change? → A: Gate on answers, measure documents. No numeric document-loss threshold is set until there is one real measurement to set it from.
 
@@ -28,13 +28,13 @@ failure this project keeps finding.
 
 The weakness in that, stated rather than hidden: thirteen questions is a thin net, and
 routing could break something nobody tracks. So growing the tracked set is part of
-this work rather than a follow-up -- see Success Criteria.
+this work rather than a follow-up -- see "How the work was checked" below.
 
-## The cost is real, and it was measured
+## The cost before routing (measured 2026-09-17)
 
-Every collection in the bundle is searched for every question. `retrieve_documents`
-loops over all of them and each contributes up to `max_documents_per_collection`
-(10), regardless of whether it had anything to say.
+Before routing, every collection in the bundle was searched for every question,
+and each contributed up to `max_documents_per_collection` (10), regardless of
+whether it had anything to say.
 
 Adding `disease_variants` as a fifth collection, asked a question with nothing to do
 with variants -- *"What does CDK5 phosphorylate in Alzheimer disease?"*:
@@ -45,10 +45,11 @@ with variants -- *"What does CDK5 phosphorylate in Alzheimer disease?"*:
 | 5 collections | 50 | 9,437 | **14.9s** |
 
 **+2,376 tokens (+34%) and +3.4s (+30%)**, all of it noise for that question. The
-cost is per collection and per question, so three more tables is roughly +7K tokens
-and +10s on every question anyone asks.
+cost is per collection and per question, so, as an extrapolation rather than a
+measurement, three more tables would be roughly +7K tokens and +10s on every
+question anyone asks.
 
-## The allocation is also inverted
+## The allocation is also inverted (measured 2026-09-17)
 
 Worse than linear cost: `disease_variants` contributes **more** to questions it is
 irrelevant to than to the one it exists for.
@@ -64,7 +65,7 @@ variant documents are short (556 characters median) where pathway prose is long.
 the fixed allocation spends the most context on the collection with the least to
 contribute, and the least on the one that answers the question.
 
-## The proposal: decide collections in the call that already happens
+## The approach: collections chosen in the existing classifier call
 
 The intent classifier already runs **one LLM call per question** and returns a
 source (`reactome`, `userguide`, `live`). Having it also name collections adds **no
@@ -72,11 +73,13 @@ latency and no call**.
 
 The descriptions it would need already exist. `reactome_descriptions_info` in
 `src/retrievers/reactome/metadata_info.py` holds a written description of every
-collection and is currently read only by `bin/retrieval_baseline`. It was written
-for exactly this kind of routing and is otherwise unused in the serving path.
+collection. At the time it was read only by `bin/retrieval_baseline`. It is now
+also the source of the classifier's collection list
+(`src/agent/tasks/intent_classifier.py:55-67`) and of `bin/routing-probe`'s
+coverage check.
 
-`HybridRetriever.retrieve_documents` then loops over the selected collections
-instead of all of them -- a filter on `self.collection_retrievers.items()`.
+Both retrieval paths now search only the collections `resolve_collections` returns
+(`src/retrievers/csv_chroma.py:580`, `:641`).
 
 ## Decisions
 
@@ -87,7 +90,9 @@ on 2026-09-17, rather than left to be inferred from downstream documents.*
 
 ### D1 -- what happens when the classifier is unsure
 
-**Decided: select all collections.** A wrong selection costs recall silently,
+**Decision for this work: select all collections.** Implemented: an empty or
+unrecognised selection searches every collection (`resolve_collections`,
+`src/retrievers/csv_chroma.py:320`). A wrong selection costs recall silently,
 which is the failure this project keeps finding; a wrong *default* costs only what
 we already pay today. So the change can only make things faster, never worse than
 the current behaviour, unless the classifier actively picks a wrong subset.
@@ -106,28 +111,26 @@ Option (a): leave the cap alone. Simple, and routing alone removes most of the w
 Option (b): give the 50-document budget out by score rather than by collection, so a
 collection with nothing relevant contributes nothing even when it is searched.
 
-**Decided: (a) first, measured, then (b) separately.** They are independent,
-and doing both at once makes it impossible to say which one moved the numbers.
+**Decision for this work: (a).** They are independent, and doing both at once
+makes it impossible to say which one moved the numbers. Option (b) was deferred
+as a separate change. It has not been implemented, and this repository does not
+record whether it is still wanted. The cross-collection fusion added in 38f8885
+reorders documents but does not reallocate the budget by score; each searched
+collection still contributes up to ten.
 
-## How we will know it worked
+## How the work was checked
 
-`bin/retrieval_baseline` exists precisely for this: it captures what each retriever
-returns for a fixed question set and diffs two captures. Measured across two
-identical runs BM25 is byte-identical on 80/80 question-collections, so a diff after
-this change is a real difference in behaviour rather than noise.
-
-- `capture` before and after; the diff names every question whose documents changed
-- the answer sweep must stay at 13/13 -- including the two variant questions, which
-  fail if routing sends them past `disease_variants`, and the species and release
-  questions, which fail if it stops routing to `live`
-- the token and latency numbers above, re-measured
-- the tracked question set grown before the change lands, not after. Thirteen
-  questions cannot cover five collections; each collection needs at least one
-  question that fails if routing stops searching it. `disease_variants` has two
-  already, and the other four have none.
-
-That last one matters: the point of this change is a number going down, and it
-should be reported as one.
+- Across two identical runs, BM25 was byte-identical on 80/80 question-collections,
+  so a `bin/retrieval_baseline` diff reflects a real change rather than noise.
+- The "before" capture is [before.json](./before.json) (2026-09-18). No "after"
+  capture was made.
+- Answer sweep: 13/13 with the classifier choosing, matching the control
+  (research.md, 2026-09-19).
+- Re-measurement: retrieval time was measured (research.md). The recorded
+  context-size result conflicts with the code and is unverified; see research.md.
+- Tracked questions were added for `ewas` and `summations`. `reactions` and
+  `complexes` cannot be guarded by a question, so a retrieval-level test and the
+  routing probe cover them instead.
 
 ## Finding: the collections overlap more than this spec assumed
 
@@ -170,16 +173,17 @@ whose content is duplicated elsewhere cannot be guarded by asking a question. Fo
 `reactions` the guard would have to assert on retrieval -- which documents were
 searched -- rather than on the answer.
 
-Recorded rather than worked around: `tasks.md` T004-T008 are written as though four
-such questions exist. Two do. T007 (`reactions`) needs rewriting as a retrieval-level
-assertion, and T005 (`complexes`) needs a better candidate before it can be claimed.
+Outcome: T007 (`reactions`) became a retrieval-level assertion. T005 (`complexes`)
+was abandoned as a question and covered the same way (T005a), plus the routing
+probe (T005b). See [tasks.md](./tasks.md) and research.md.
 
-## Scope
+## Scope of this work
 
 In: collection selection for the `reactome` source, defaulting to all; the
 measurement above.
 
-Out: the relevance-weighted allocation of D2, which is its own change; `userguide`,
+Out: the relevance-weighted allocation of D2 (deferred; see D2); `userguide`,
 which has one collection; anything about the four Neo4j-backed collections being
 Release95 while `disease_variants` came from the Release 97 download directory --
-that is recorded in the bundle's `provenance.json` and is spec 008's problem.
+that is recorded in the bundle's `provenance.json` and was left to the
+disease-variant work (spec 008).

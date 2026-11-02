@@ -3,13 +3,13 @@
 The classifier is the only interface this feature changes. One LLM call per question,
 already made.
 
-## Before
+## Before routing (until 2026-09-19)
 
 ```json
 {"source": "reactome"}
 ```
 
-## After
+## With routing
 
 ```json
 {"source": "reactome", "collections": ["disease_variants"]}
@@ -30,11 +30,13 @@ produce today's behaviour rather than a narrower search.
 
 ## Prompt input
 
-The per-collection descriptions already written in
-`src/retrievers/reactome/metadata_info.py` (`reactome_descriptions_info`), which
-exist for routing and are currently read only by `bin/retrieval_baseline`. They
-become a serving input, so they must stay accurate as collections are added --
-already true of `disease_variants`, described when it was added.
+The per-collection descriptions in `src/retrievers/reactome/metadata_info.py`
+(`reactome_descriptions_info`). They are a serving input: the classifier prompt
+lists the selectable collections from them
+(`src/agent/tasks/intent_classifier.py:55-67`), and `bin/routing-probe` checks
+coverage against them. `bin/retrieval_baseline` also reads them. A collection with
+no description is never offered to the classifier, and an inaccurate description
+degrades routing.
 
 ## Compatibility
 

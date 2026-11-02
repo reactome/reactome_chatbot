@@ -1,90 +1,37 @@
-# Tasks: Chatbot Answers in the Website Search Results
+# Search-Page Answers: Task-ID Index
 
-**Feature**: 010-search-page-answers | **Plan**: [plan.md](./plan.md) | **Spec**: [spec.md](./spec.md)
+Historical. The step-by-step task list for this work (T001-T028) is in git history
+up to 3a4bc94. Kept here are the IDs that code comments and this folder refer to.
+The ID T023 was used twice; code that cites T023 means the live-path failure signal.
 
-Test tasks included: this adds a public surface with an authentication boundary, and
-Principle III wants current behaviour pinned before a route is added beside the
-captcha middleware.
+| ID | Task | Outcome |
+|---|---|---|
+| T002 | Record the baseline before building | 2026-09-17: whole answer p50 15.2s, p90 22.4s; in research.md, R6 |
+| T003 | Pin the captcha middleware before adding a route beside it | `tests/util/test_captcha_scope.py`; the rule is in `src/util/captcha_scope.py` |
+| T004 | One graph shared by Chainlit and the endpoint | `src/agent/registry.py`, built in the FastAPI lifespan |
+| T005, T006 | A streaming surface, tested for streaming rather than for a 200 | `AgentGraph.astream_answer` (`src/agent/graph.py:461`) |
+| T007-T009, T015, T016 | Caller-token verification, refusal before any model call, no start without a key | `src/util/caller_token.py`, `src/api/answer.py`; tests in `tests/util/test_caller_token.py`, `tests/api/test_answer_endpoint.py`. T007 said "signature and expiry only"; audience and other checks were added later (T025; research R4) |
+| T010-T013, T011a, T013a | The SSE endpoint, citations from retrieval metadata, mounting, an HTTP test, link stripping, a first end-to-end run | `src/api/answer.py`. First run 2026-09-17: release 97, answered in 19.5-44.2s, 12 citations, no anchors |
+| T014 | SC-003: the two surfaces stay configured the same | `tests/api/test_answer_matches_chat.py` (PR #237). Answer equality was dropped as the criterion: same surface twice 0.331 similarity, endpoint vs chat 0.356 (2026-09-18) |
+| T014a, T014b | A checkpointer thread per request; `release` on `start` and `seconds` on `done` | PR #236 |
+| T017 | Backstop rate limit | `src/util/rate_limit.py` (PR #237) |
+| T017a | Stop running a web search nobody receives | `enable_postprocess=False` (`src/api/answer.py:158-164`, PR #237) |
+| T018 | `state: failed` on any internal error (FR-006) | Built. The task said "with no partial answer", but tokens already sent stay sent and the stream then ends `done` `failed` (contract, Known gaps) |
+| T018a | Bound an answer at 120s | `ANSWER_TIMEOUT_SECONDS` (`src/api/answer.py:59-67`, PR #236) |
+| T019, T019a | Measure the latency distribution; run preprocessing in two rounds | 2026-09-18, PR #238; figures in spec.md |
+| T020 | Measure query expansion and make the count configurable | research.md, "Query expansion, measured 2026-09-20"; `QUERY_EXPANSION_ALTERNATES`, default unchanged |
+| T020c | Does a search-page question need all four preprocessing calls? | research.md, 2026-09-20 |
+| T022 | Is 2s/10s reachable? | research.md, 2026-09-20: complete met, first token not |
+| T023 | Carry a live-tool failure out of the graph as a fact, not prose | `LiveReport` → `live_tool_failed`, which `src/evaluation/answer_sweep.py` retries on (81d24c3, 2026-09-20). The no-tools fallback deliberately does not set it (`src/agent/profiles/react_to_me.py:219-236`) |
+| T023 (second use) | Hand the endpoint over to the website | Done 2026-09-18; recorded as: they built against it and a token they minted verified |
+| T024 | Record the measured times in spec.md | Done 2026-09-18 |
+| T025, T026 | Enforce `aud`; rename `human_token` to `caller_token` (D1) | PR #240 (39b73be), finished in 6d517a0 |
+| T027 | Does a client hang-up cancel the work? | Yes, measured 2026-09-18 (PR #240) |
+| T028 | Cite user-guide pages by `url` | Recorded as approved 2026-09-18; built in 0780086 |
 
-**MVP is Phase 3.** An endpoint that answers correctly and slowly unblocks the
-website repo entirely. Speed is Phase 5 and does not gate the handover.
+Not done when the list was retired, and no record of whether they are still wanted:
 
-## Phase 1: Setup
-
-- [x] T001 Create branch `010-search-page-answers`; confirm `.specify/feature.json` points at specs/010-search-page-answers
-- [x] T002 [P] Record today's baseline in specs/010-search-page-answers/quickstart.md: p50 15.2s, p90 22.4s over the 15 sweep questions, so Phase 5 has a before
-
-## Phase 2: Foundational (blocks the endpoint)
-
-- [x] T003 Pin the captcha middleware's current behaviour — done in tests/util/test_captcha_scope.py (6 tests) rather than the tests/api/test_middleware_scope.py named here, because the decision moved into src/util/captcha_scope.py where it can be tested without an app
-- [x] T004 Give `AgentGraph` one home the FastAPI app can reach, in bin/chat-fastapi.py via lifespan, so the endpoint and Chainlit share one instance (SC-003) rather than paying 51.5s of startup twice
-- [x] T005 Add a streaming surface to src/agent/graph.py using the compiled graph's `astream_events`, yielding answer tokens and retrieved documents
-- [x] T006 Test that T005 yields more than one token for a real question — not that it returns 200. A surface that completes without streaming is the failure this must catch
-
-## Phase 3: User Story 1 — a verified person sees an answer forming (P1)
-
-**Independent test**: post a question with a valid token; assert the first event
-arrives, tokens stream, citations resolve to real stable IDs, and `done` carries a
-state.
-
-- [x] T007 [P] [US1] Add src/util/caller_token.py: verify signature and expiry only, stateless, no consumption tracking
-- [x] T008 [P] [US1] Test caller_token in tests/util/test_caller_token.py: valid, expired, wrong key, tampered payload, absent — every failure refuses
-- [x] T009 [US1] Refuse at startup in src/util/caller_token.py when the verifying key is missing or unreadable, rather than accepting everything (Principle IV)
-- [x] T010 [US1] Add the SSE endpoint in src/api/answer.py implementing contracts/answer_endpoint.md: start, token, citation, done
-- [x] T011 [US1] Emit citations from retrieved documents' `st_id` metadata, deduplicated — never by parsing anchors out of the model's prose
-- [x] T012 [US1] Mount the router in bin/chat-fastapi.py and let the captcha middleware pass /chat/api/ through, since the endpoint verifies its own caller
-- [x] T013 [US1] Test over HTTP with a real client in tests/api/test_answer_endpoint.py, not by calling the handler — mounting order and middleware only interact in the served path (Principle I)
-- [x] T014 [US1] SC-003, restated against the measurement: pin that the two surfaces are *configured* the same in tests/api/test_answer_matches_chat.py. Answer equality is not assertable -- the same surface asked twice scores 0.331 similarity, endpoint-vs-chat 0.356 -- so the spec's criterion was corrected rather than the test weakened (PR #237)
-- [x] T014a [US1] Give each request its own checkpointer thread in src/api/answer.py; `id(body)` put 192 of 200 requests on a shared thread, and `chat_history` is checkpointed state the rephraser reads (PR #236)
-- [x] T014b [US1] Send `release` on start and `seconds` on done per contracts/answer_endpoint.md; both were promised to the website and neither was implemented (PR #236)
-
-## Phase 4: User Story 2 — no answer without a verified person (P1)
-
-- [x] T015 [US2] Refuse missing, expired, malformed and wrongly-signed tokens before any model call, in src/api/answer.py
-- [x] T016 [US2] Test that no model call happens for a refused request in tests/api/test_answer_endpoint.py, by asserting on a patched graph rather than on timing (SC-002)
-- [x] T017 [P] [US2] Rate limit per token as a backstop in src/util/rate_limit.py; the budget is the website's, enforced before the call reaches here (FR-008). 30 per 10 minutes, keyed on `sub`/`jti` when D1 provides one and a token hash until then (PR #237)
-- [x] T017a [US2] Stop paying for a discarded web search: the endpoint took `enable_postprocess` at its default, so every answer ran a Tavily search that `astream_answer` has no event to return (PR #237)
-- [x] T025 [US2] Enforce `aud` on the caller token (asked for by the website, D1); the code refused every token carrying one, since PyJWT rejects `aud` when no audience is expected (PR #240)
-- [x] T026 Rename human_token -> caller_token everywhere; D1 established the token asserts caller identity, not humanity (PR #240)
-- [x] T027 Answer the website's cancellation question: a client hang-up raises CancelledError inside the answer generator and produces nothing further, so they need not cancel upstream (PR #240)
-- [x] T028 Cite userguide answers by `url` (Adam decided yes, 2026-09-18). Optional `url` sibling to `st_id`, exactly one present; no fabricated stable ids; http(s) only, after a local filesystem path leaked through the first version.
-- [ ] T020a Decide what to do about non-reproducible retrieval: three runs of one question shared only 4 of 19 citations (Jaccard 0.26) because query expansion is itself a model call. Affects what FR-007 can cache
-- [x] T018 [US2] Return `state: failed` with no partial answer on any internal error, so the page renders no panel (FR-006)
-- [x] T011a [US1] Strip inline HTML anchors from the token stream in src/util/anchor_strip.py; the contract promises prose without them and the chat prompt emits them, split across ~20 fragments (PR #236)
-- [x] T013a [US1] Run the endpoint end to end against a real graph: release 97, answered in 19.5-44.2s, 12 citations, anchors 0 (PR #236)
-- [x] T018a [US2] Bound the answer at 120s in src/api/answer.py; FR-006 names timeout and only the LLM client's 360s-per-call limit existed, so a stuck upstream could hold a connection for over half an hour (PR #236)
-
-## Phase 5: Latency (does NOT gate the handover)
-
-- [x] T019 Measure first-token and completion separately across the tracked questions; publish the distribution, not one question. Measured 2026-09-18, two runs each: first token p50 9.6s / p90 12.2s (n=26), completion p50 10.4s / p90 18.1s (n=30). The earlier "36.1s to first token" came from one question and does not reproduce (PR #238)
-- [x] T019a Run preprocessing in two rounds instead of four sequential calls in src/agent/profiles/react_to_me.py; the base class already overlapped, and this override discarded it (PR #238)
-- [x] T020 Measure query expansion, and make the count configurable. **The task's premise was wrong**: the cost is the expansion *call*, not the number of variants it returns. Measured over six tracked questions -- 4 alternates 1.27s expand + 1.22s retrieve; 2 alternates 1.26s + 0.65s; 0 alternates 0.00s + 0.31s. Trimming the count saves only fan-out; the cost disappears only at zero, where `answer-sweep` was 13/13 in 79s against ~150s. `QUERY_EXPANSION_ALTERNATES` sets it and **the default is unchanged**: thirteen questions show those answers do not need expansion, not that recall is unaffected in general
-- [x] T020c Established 2026-09-20. **The rephraser is not a no-op without history** -- it changed 14 of 15 tracked questions, normalising queries rather than resolving follow-ups, so removing it is a retrieval-quality change. Bypassed, the sweep is 13/13 and first token p50 goes 2.94s to 2.83s (interleaved, n=25): about 0.11s. Removing a 0.88s call saved 0.07s because round one is `max(rephrase, language)` and language detection is 0.81s -- it was hiding behind the rephraser. The ~0.8s needs the **rounds restructured** so safety and intent stop waiting, which is a code change this did not make. 2s is not reachable by removing these two calls
-- [ ] T021 Land spec 009 collection routing and re-measure. **Still open — I marked this done on 2026-09-18 and was wrong.** What landed is *source* routing (`resolve_active_sources` picks reactome / userguide / live). Collection routing is selecting among the five collections *within* the reactome bundle, and it is not implemented: `QueryIntent` has no `collections` field, `resolve_collections` does not exist, and `retrieve_documents` still loops over every collection
-- [x] T022 Re-assessed 2026-09-20 on the served path, arms interleaved, n=25 each, with the query count asserted rather than assumed. **10s complete is met** (8.90s p50, 7.16s with expansion off); **2s to first token is not** (5.57s p50, 2.73s with expansion off), so FR-005a stays a target with a named blocker. The blocker changed: retrieval is the largest block at 3.15s and the answer model is 0.84s against a previously recorded 6.1s, recorded as unreconciled. The tail is the finding -- default first token ranges 2.26s to 11.44s, and expansion barely moves the best case while halving the worst, so a future target belongs at a high percentile
-- [x] T023 Propagate a real failure signal out of the live path. `answer_from_live_services` takes an optional `LiveReport` and records a tool exception **before** stringifying it into the model's context -- the last point at which it is still a fact rather than a paraphrase. The graph carries it out as `live_tool_failed`, and `answer_sweep` retries on that instead of matching prose. `TRANSIENT` and `_looks_transient` are gone, with a test asserting they do not come back: if prose matching returns it will return as a list of markers. The report is optional, so none of the twelve existing call sites changed. **The no-tools fallback deliberately does not set it**: `get_mcp_tools` remembers a failed start, so a retry could never succeed and marking it transient would buy an attempt guaranteed to fail. Pinned by a test, because the absence of the flag there reads like an oversight
-
-## Phase 6: Handover
-
-- [x] T023 Tell the website session the endpoint exists, with a curl that streams, and what it does not yet do — done 2026-09-18, including the nginx user-agent 403 and the measured latency; they have built against it and a token they minted verified
-- [x] T024 [P] Update specs/010-search-page-answers/spec.md status and record the measured first-token and completion times — first token p50 9.6s / p90 12.2s, completion p50 10.4s / p90 18.1s
-
-## Dependencies
-
-```
-Phase 1 -> Phase 2 -> Phase 3 -> Phase 4 -> Phase 6
-                                   Phase 5 runs alongside 4 and 6
-```
-
-T004 blocks T005; T005 blocks T010; T007 blocks T012; T010 blocks T013, T014, T015.
-
-## Parallel opportunities
-
-- T007 and T008 alongside T004-T006: token verification touches nothing the graph does
-- T017 and T024: different files
-
-## Implementation strategy
-
-Ship Phases 1-4 as one PR: a correct, slow, verified, streaming endpoint. That is the
-handover. Phase 5 follows on its own, with its own measurements, and the website repo
-is not waiting on it.
+- T020a, deciding what to do about non-reproducible retrieval: three runs of one
+  question shared only 4 of 19 citations (Jaccard 0.26), because query expansion is
+  itself a model call. It affects what FR-007 could cache. No decision is recorded
+- [ ] T021 Land spec 009 collection routing and re-measure. **Routing landed 2026-09-19 (0fe7d88), after this task was written; no re-measurement is recorded.** When written on 2026-09-18, what had landed was *source* routing (`resolve_active_sources` picks reactome / userguide / live), not collection routing.

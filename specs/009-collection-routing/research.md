@@ -1,4 +1,8 @@
-# Phase 0 Research: Collection Routing
+# Research: Collection Routing (2026-09-17 to 2026-09-19)
+
+Findings from the collection-routing work. "Decision" in a section means a decision
+for that work. Later sections correct earlier ones where they conflict, and
+corrections added on 2026-10-21 are marked.
 
 ## R1. How does a per-question selection reach a retriever built once?
 
@@ -23,12 +27,10 @@ per-message work.
 | C. contextvar | Set around the call | Invisible coupling, and wrong under concurrency if it ever leaks across tasks |
 | D. Encode in the query string | Prefix the question | Reaches BM25 and the query expander as text. The codebase already carries a comment warning against exactly this for `detected_language` |
 
-**Decision: A.** It reuses a path this repo already relies on and adds no new
-LangChain surface.
-
-**Rationale.** `src/agent/profiles/base.py` reads `config["configurable"]` in
-`postprocess`, so configurable state is established practice here, and the failure
-mode is a missing key -- which defaults to "all collections" and is therefore safe.
+**Initial choice: A**, because it reused a path this repo already relied on.
+**Superseded 2026-09-18:** that route does not reach the retriever, and a
+ContextVar (option C) is used instead; see "The config route the data model
+describes does not exist" below.
 
 ## R2. Can the classifier name collections reliably?
 
@@ -39,9 +41,10 @@ correctly for the thirteen sweep questions, and sharpening one rule on 2026-09-1
 fixed the variant questions without breaking the live ones. A per-collection
 description already exists for each collection in `reactome_descriptions_info`.
 
-**Decision**: ask for collections in the same structured output, and treat an empty
-or unparseable list as "all". Measure with `bin/retrieval_baseline` before deciding
-whether it is good enough.
+**Decision for this work**: ask for collections in the same structured output, and
+treat an empty or unparseable list as "all". It was measured with the answer sweep
+and a routing probe rather than `bin/retrieval_baseline` (see the sections dated
+2026-09-19).
 
 ## R3. What happens when the classifier names a collection that does not exist?
 
@@ -77,14 +80,15 @@ And the inversion: `disease_variants` contributed **15%** of context to that que
 and **5%** to the ABCA1 question it exists for, because every collection gets ten
 documents regardless of quality.
 
-**Decision**: `bin/retrieval_baseline capture` over the fixed question set on the
-Release97 bundle is task 1, before anything else.
+**Decision for this work**: capture the baseline before any change. Done:
+[before.json](./before.json), 2026-09-18. No after-capture was made.
 
 ## R5. Which path must be measured?
 
 The served path is `aretrieve_documents`; `bin/retrieval_baseline` drives
 `retrieve_documents`. They are separate implementations and were verified equivalent
-on 2026-09-17 (PR #227), so measuring the sync path is currently valid.
+on 2026-09-17 (PR #227), so measuring the sync path was valid at the time. The
+equivalence test still runs.
 
 **Decision**: the equivalence test is a prerequisite of this work, not a nice-to-have.
 Both paths must filter by the same selection, and the existing test must be extended
@@ -92,7 +96,9 @@ to assert that -- otherwise the measurement stops describing what users get.
 
 ## The config route the data model describes does not exist
 
-**Measured 2026-09-18** against langchain-core 0.2.14, the version pinned here.
+**Measured 2026-09-18.** *(Corrected 2026-10-21: the original text said
+langchain-core 0.2.14, "the version pinned here", but the lockfile then pinned
+1.6.2, as it does now. Which version this ran against is not recorded.)*
 
 data-model.md routes the selection as
 `RunnableConfig["configurable"]["collections"]` into
@@ -112,7 +118,7 @@ asyncio each task gets a copy of the context, so one request's narrowing cannot
 narrow another's — pinned by a test that runs a narrow and a wide request
 concurrently and asserts neither sees the other.
 
-The data model's diagram is left as the intent; this is how it is carried.
+data-model.md now shows the ContextVar route.
 
 ## What narrowing actually costs, measured 2026-09-19
 
@@ -179,7 +185,8 @@ it for at least one question.
 
 **One excluded collection is untested by construction.** Narrowing excluded
 `complexes`, `ewas` and `disease_variants`. No tracked question guards
-`complexes` (T005 is still open), so its exclusion could not have produced a
+`complexes` (T005 was still open here; it was abandoned later the same day, see
+below), so its exclusion could not have produced a
 failure. The absence of a fourth failure is not evidence.
 
 **It still justifies the fail-wide rule.** Where a narrow selection does lose the
@@ -218,9 +225,9 @@ Only six of the thirteen questions retrieve at all: the refusals never do, and
 the userguide questions use a different bundle. So the routing evidence is six
 questions, which is a small base and should be said rather than glossed.
 
-### It does not reduce the prompt
+### Context size: the recorded result conflicts with the code
 
-This is the correction. Narrowing was expected to cut context; it does not.
+As recorded 2026-09-19:
 
 | question | docs, all | docs, narrowed | chars, all | chars, narrowed |
 |---|---|---|---|---|
@@ -228,11 +235,16 @@ This is the correction. Narrowing was expected to cut context; it does not.
 | ABCA1 variants | 10 | 10 | 6,163 | 5,846 |
 | Selective autophagy | 10 | 10 | 22,114 | 21,797 |
 
-**Ten documents either way, context within 2%.** The chain caps the fused list
-at ten regardless of how many collections fed it, so narrowing changes *which*
-documents arrive, not how many. Any claim that this feature reduces prompt cost
-is wrong, and T003's framing -- "context tokens for a question needing one
-collection fall" -- was the wrong thing to measure.
+**Correction, 2026-10-21.** The explanation recorded here ("ten documents either
+way ... the chain caps the fused list at ten") does not match the code. Neither
+the retriever nor the chain caps the fused list at ten. Each searched collection
+contributes up to `max_documents_per_collection` (10), the lists are fused and cut
+to 10 × the number of collections searched (`src/retrievers/csv_chroma.py:612-633`),
+and `create_rag_chain` passes all of them to the prompt
+(`src/retrievers/rag_chain.py`). That code was already in place when this was
+measured (38f8885, the day before), so what the "docs" column counted cannot be
+established. By the code, narrowing should reduce how many documents reach the
+prompt. This has not been re-measured.
 
 ### What it does reduce is retrieval work
 
@@ -249,9 +261,8 @@ collection means two.
 ### So the honest case for this feature
 
 It did not fix a failing question -- the control already passed 13/13. It buys
-a fifth off retrieval time and it puts the right documents in a fixed-size
-context, which should matter most where the fixed ten are currently crowded out
-by the wrong collection. That last part is plausible and **not** measured here.
+a fifth off retrieval time and changes which documents reach the model. Whether
+that improves answers is plausible and **not** measured here.
 
 Against that, a wrong narrow removes an answer rather than degrading it, which
 is why the prompt leans hard on leaving the selection empty and why every
@@ -259,7 +270,8 @@ failure path in `resolve_collections` widens. The sweep shows correct routing
 on six questions; it does not show that the classifier is right in general.
 
 `complexes` still has no guard question (T005), so a classifier that never
-routes to it would score full marks.
+routes to it would score full marks (at this point; addressed later that day by
+the routing probe, below).
 
 ### Adversarial check: nine questions the sweep never asks
 
@@ -327,8 +339,8 @@ names a different subset each run. The same configuration, three runs:
 An earlier four-run pass appeared to show `complexes` making the Nup107 answer
 *worse* -- 1,1,1,1 against 3,3,3,3 without it. It did not survive being run
 again. That claim was under-powered and is withdrawn; the variance is larger
-than any difference between the arms, which is exactly the trap
-[[probabilistic-bugs-need-sized-tests]] describes.
+than any difference between the arms, which is exactly the trap of reading a
+difference into a sample too small for its variance.
 
 Every guard that works is a **single stable token**: `P04637`, `Tangier`,
 `lysosom`. So the question was inverted to ask for one -- name the components,
@@ -353,9 +365,9 @@ is the thing whose answers are too variable to assert on.
 
 `complexes` joins `reactions`: a collection whose content is duplicated
 elsewhere cannot be guarded by asking a question, however the question is
-worded. T005 should become what T007 already is -- a retrieval-level assertion
-that the collection was searched -- rather than a hunt for a better candidate,
-which is now two failed hunts and a structural explanation of why.
+worded. So T005 became what T007 already was, a retrieval-level assertion that
+the collection was searched (T005a), rather than a further hunt for a candidate,
+after two failed hunts and a structural explanation of why.
 
 ### And the retrieval-level assertion does not close the original hole
 
@@ -368,7 +380,8 @@ test can catch that, because it is one model call's judgement.
 
 Covering it properly needs the routing distribution watched over real traffic,
 or a periodic probe that asks known-composition questions and checks the
-collection was selected. Neither exists. So the residual risk after T005a is:
+collection was selected. Neither existed at this point; the routing probe below
+is the second. So the residual risk after T005a is:
 routing can under-serve `complexes` indefinitely, every tracked question still
 passes, and the only symptom is answers that are quietly worse.
 
@@ -398,9 +411,9 @@ deploying is not currently realised.
 
 What that is not: a guarantee. It is a snapshot of one model's judgement on
 one day. The risk was always drift, and the probe is only a guard if it keeps
-being run -- which is why T005c exists and is open.
+being run -- which is why T005c wired it into deploys (next paragraph).
 
-The probe runs on every deploy from 2026-09-19, wired into
+As wired on 2026-09-19: the probe runs on every deploy, wired into
 `~/update-beta-chat.sh` beside the sweep. That is what turns it from a
 snapshot into a guard: the risk was always drift, and a check run once is a
 measurement rather than a control.
