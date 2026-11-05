@@ -3,10 +3,10 @@
 The landing page and the pages a failed human check ends on had Reactome's name,
 Reactome's logo and Reactome's support address written into them. The Plant
 Reactome deployment is the same image with its own `config.yml` bind-mounted over
-the default (see `compose.yaml`), so it was introducing Plant Reactome's readers
-to a human knowledgebase -- the same defect `chainlit.plantreactome.md` exists to
-fix on the welcome screen, and `tests/test_welcome_pages.py` records how that one
-used to be backwards.
+the default (see `deploy/plantreactome/compose.plantreactome.yaml`), so it was introducing Plant Reactome's
+readers to a human knowledgebase -- the same defect `chainlit.plantreactome.md`
+exists to fix on the welcome screen, and `tests/test_welcome_pages.py` records
+how that one used to be backwards.
 
 The switch is `profiles:` in config.yml. It already decides which graph answers
 and which chat profiles are offered, so reusing it means there is one place where
@@ -35,6 +35,9 @@ class Branding:
     #: Used in the page title. Reactome's chatbot has its own name; the Plant
     #: Reactome one is named for the knowledgebase, which is also the name of
     #: its chat profile and of the `{chat_profile}` in its welcome message.
+    #: Also Chainlit's `[UI] name` (bin/chat-chainlit.py), which is the browser
+    #: tab title and the name the message avatar file is looked up by -- see
+    #: public/avatars/ for the file that name has to match.
     chatbot_name: str
     #: The knowledgebase's own site, which the logo links to.
     home_url: str
@@ -48,6 +51,11 @@ class Branding:
     #: address, since Plant Reactome is a Gramene database. Worth confirming
     #: with them before this page goes public.
     support_email: str
+    #: The image Chainlit puts behind the login form. None leaves Chainlit's
+    #: own logo there -- neither knowledgebase's, which is the honest fallback
+    #: and the same thing Reactome gets. Either an absolute URL or a path under
+    #: /public, the file delivered by a mount in deploy/plantreactome/compose.plantreactome.yaml.
+    login_page_image: str | None = None
 
 
 REACTOME = Branding(
@@ -72,7 +80,8 @@ PLANT_REACTOME = Branding(
         "https://plantreactome.gramene.org/index.php"
         "?Itemid=446&id=1&lang=en&option=com_contact&view=contact"
     ),
-    support_email="gramene@gramene.org",
+    support_email="reactome@gramene.org",
+    login_page_image=None,
 )
 
 # Keyed by the lower-cased name, as `agent.profiles.CHAT_PROFILES` is. Keying by

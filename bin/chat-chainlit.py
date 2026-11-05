@@ -50,6 +50,7 @@ from handoff import seed
 from handoff.store import AnalysisHandoff, handoffs
 from handoff.window import acknowledgement, claimed_id
 from util import captcha_cookie
+from util.branding import branding_for
 from util.chainlit_helpers import (
     PrefixedS3StorageClient,
     TextStreamCallbackHandler,
@@ -137,6 +138,22 @@ _sanitize_llm_settings()
 config: Config | None = Config.from_yaml()
 
 profiles: list[ProfileName] = config.profiles if config else [ProfileName.React_to_Me]
+BRANDING = branding_for(profiles)
+
+# Chainlit's own chrome -- the login page, the tab title, the header -- reads
+# `config.ui` at request time, so setting it here, at import, reaches every page
+# it serves. `util.branding` is the one place a deployment says who it is, and
+# `profiles:` in config.yml already selects it for the landing page and the
+# captcha error pages (bin/chat-fastapi.py). A reader who was just handed a
+# Plant Reactome landing page cannot then be walked into a Reactome login page.
+#
+# Not the logo: that is served from public/ by chainlit's /logo route, and a
+# Plant Reactome deployment supplies its own file there (deploy/plantreactome/compose.plantreactome.yaml)
+# rather than making the login page depend on plantreactome.gramene.org being
+# up. `logo_file_url` is the override if that ever has to change at runtime.
+chainlit_config.ui.name = BRANDING.chatbot_name
+chainlit_config.ui.login_page_image = BRANDING.login_page_image
+
 # Not built here any more. Building at module scope meant importing this file
 # -- which mount_chainlit does -- constructed the graph and every BM25 index,
 # 85 seconds before the app could serve or a test could load it. The FastAPI
