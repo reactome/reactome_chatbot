@@ -183,4 +183,12 @@ data/
 # belongs in the repository.
 *.pem
 *.key
+
+# The plantreactomedev deployment's file-based Docker secrets, which
+# deploy/plantreactome/compose.plantreactome.yaml mounts in place of compose.yaml's Swarm-only external
+# ones. Only the empty placeholder belongs in git -- it is what the six secrets
+# the environment already supplies point at, and `docker compose up` fails if it
+# is missing. Anything else dropped in here is secret material by definition.
+deploy/plantreactome/secrets/*
+!deploy/plantreactome/secrets/empty
 sockets/

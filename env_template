@@ -41,6 +41,13 @@ TAVILY_API_KEY=
 # endpoint needs this set to `api-key`. Leave unset for api.openai.com and other
 # OpenAI-compatible servers, which want only the bearer token.
 #LLM_API_KEY_HEADER=api-key
+#
+# Which knowledgebase's files land in /app/public. deploy/plantreactome/compose.plantreactome.yaml mounts
+# ${BRAND_DIR:-./public}/<name> over the image's copies; unset means Reactome's,
+# so a checkout that does not set this is unchanged. Unsetting it is also the
+# single easiest way to deploy a Plant Reactome host that quietly wears
+# Reactome's logo, so set it in the env file, not on the command line.
+BRAND_DIR=
 
 # Locale and timezone for the Postgres container's initdb (ICU collation).
 LOCALE=en_US

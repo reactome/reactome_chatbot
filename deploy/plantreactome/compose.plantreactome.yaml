@@ -1,0 +1,145 @@
+# deploy/plantreactome/compose.plantreactome.yaml
+#
+# Everything that makes this checkout plantreactomedev. compose.yaml is
+# upstream's and stays upstream's; nothing here edits it, and `docker compose
+# -f compose.yaml -f deploy/plantreactome/compose.plantreactome.yaml --env-file .env up -d` is the
+# whole deployment.
+
+services:
+  chainlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    depends_on:
+      # docker-compose.yml had this; compose.yaml does not, and without it `up`
+      # starts chainlit against a Postgres that is still initialising.
+      postgres:
+        condition: service_healthy
+    environment:
+      # compose.yaml's chainlit block never learned about ORCID -- it passes
+      # Auth0 and Google only. bin/chat-chainlit.py appends the provider on
+      # nothing but this variable being present in the container, so without
+      # these two lines the ORCID button disappears from the login page with no
+      # error and no log line.
+      - OAUTH_ORCID_CLIENT_ID=${OAUTH_ORCID_CLIENT_ID}
+      - OAUTH_ORCID_CLIENT_SECRET=${OAUTH_ORCID_CLIENT_SECRET}
+      # compose.yaml's environment: block predates this deployment's model
+      # layout: it forwards OPENAI_API_KEY only. --env-file feeds ${...}
+      # interpolation and never becomes the container's environment, so every
+      # variable below was silently absent in the container -- which sent the
+      # chat model to api.openai.com (the SDK default) carrying the copilot-dev
+      # key. Two pairs, and both halves of each have to arrive together:
+      #   chat model   LLM_BASE_URL + LLM_API_KEY (+ the header Azure reads)
+      #   embeddings   OPENAI_BASE_URL + OPENAI_API_KEY, model from the bundle
+      - LLM_BASE_URL=${LLM_BASE_URL}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_API_KEY_HEADER=${LLM_API_KEY_HEADER}
+      - LLM_MODEL=${LLM_MODEL}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+    volumes:
+      - ./src:/app/src
+      - ./bin:/app/bin
+      - ./chainlit.plantreactome.md:/app/chainlit.md:ro
+      # Chainlit resolves every brand asset by fixed filename in one flat
+      # public/ directory -- /logo globs public/logo_{light,dark}.*, /favicon
+      # globs public/favicon.*, get_html_template reads public/theme.json -- so
+      # there is no brand directory to point it at, only names to replace.
+      # BRAND_DIR is unset for Reactome, which mounts the repo's own copy over
+      # the identical one in the image: a no-op.
+      - ${BRAND_DIR:-./public}/logo_light.png:/app/public/logo_light.png:ro
+      - ${BRAND_DIR:-./public}/logo_dark.png:/app/public/logo_dark.png:ro
+      - ${BRAND_DIR:-./public}/favicon.svg:/app/public/favicon.svg:ro
+      - ${BRAND_DIR:-./public}/theme.json:/app/public/theme.json:ro
+      # Replaces the image's whole avatars directory, so this must hold every
+      # avatar this deployment serves -- not just the new one.
+      - ${BRAND_DIR:-./public}/avatars:/app/public/avatars:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports: !override
+      - "8002:8000"
+
+  chainlit-guest:
+    # Was chainlit-no-login in docker-compose.yml. Parked, not configured: this
+    # host serves no /chat/guest surface -- the site's Apache config routes all
+    # of /chat/ to the authenticated container -- so there is nothing for it to
+    # front. --profile guest brings it back.
+    profiles: ["guest"]
+
+  vault:
+    profiles: ["vault"]
+
+  postgres:
+    # compose.yaml's initdb creates databases called `chainlit` and
+    # `langgraph` and no tables. POSTGRES_CHAINLIT_DB and POSTGRES_LANGGRAPH_DB
+    # are chatbio_chainlit and chatbio_langgraph, and chainlit's SQLAlchemy data
+    # layer does not create its own schema -- initdb/init.sql exists precisely
+    # because it must be maintained against the installed TypedDicts. So the
+    # repo's own initdb wins here; same container path, last file wins.
+    volumes:
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+
+  pgadmin:
+    # Opt-in only, so `up -d` stops starting it. When you want it:
+    #   docker compose ... --profile admin up -d pgadmin
+    # Note: postgres runs with --auth-host reject, so pgadmin's TCP connection
+    # is refused; it needs a socket mount to be useful at all.
+    profiles: ["admin"]
+
+
+secrets: !override
+  # compose.yaml declares all seven `external: true`. That is Swarm-only: on a
+  # single engine `docker secret create` answers "This node is not a swarm
+  # manager", so `up` cannot resolve them here and nothing starts. File secrets
+  # are the same interface -- mounted at /run/secrets/<name>, read-only --
+  # without needing a manager node. `docker swarm init` was rejected for that:
+  # it converts the host to get one feature.
+  #
+  # `!override` is load-bearing, not decoration. A top-level `secrets:` is a
+  # mapping, and mappings MERGE on override: re-declaring OPENAI_API_KEY with a
+  # plain `file:` would leave `external: true` in place beside it, and a secret
+  # with both is invalid. Only `!override` replaces the entries outright.
+  #
+  # Only the first is read as a file. The other six already reach the container
+  # through compose.yaml's own `environment:` block, and get_secret() in
+  # src/util/secrets.py returns the mounted file's contents *or* falls back to
+  # os.getenv(name) -- so an empty file is exactly equivalent to not mounting
+  # one. It is mounted anyway to keep the shape upstream expects, and because
+  # mounted_secrets() stats file size rather than reading contents: a 0-byte
+  # placeholder is reported as absent, which is the truth, where a file holding
+  # a single newline would be logged as a supplied secret.
+  #
+  # `mode:` is deliberately absent. Docker Compose ignores mode/uid/gid for
+  # file-sourced secrets -- they are bind mounts, so the host file's own
+  # ownership and permissions are exactly what the container sees. Writing
+  # `mode: 644` here would be a comment that looks like a setting. The real key
+  # is therefore chmod'ed 0644 on the host (bin/make-caller-token-keypair.py
+  # does it), because the image runs as appuser, not root.
+  CALLER_TOKEN_PUBLIC_KEY:
+    # ./bin/make-caller-token-keypair.py deploy/plantreactome/secrets, then
+    # delete the private half -- on the verifying side it is pure liability.
+    # compose.yaml hardcodes CALLER_TOKEN_PUBLIC_KEY_PATH to
+    # /run/secrets/CALLER_TOKEN_PUBLIC_KEY, so the *secret name* fixes the path
+    # the app reads; the file's own name is irrelevant. (The beta README's
+    # `docker run` line mounts it as caller_token_public.pem, because there the
+    # path really does come from --env-file. Under compose it does not.)
+    file: ./deploy/plantreactome/secrets/caller_token_public.pem
+  CHAINLIT_AUTH_SECRET:
+    file: ./deploy/plantreactome/secrets/empty
+  CLOUDFLARE_SECRET_KEY:
+    file: ./deploy/plantreactome/secrets/empty
+  OAUTH_AUTH0_CLIENT_SECRET:
+    file: ./deploy/plantreactome/secrets/empty
+  OAUTH_GOOGLE_CLIENT_SECRET:
+    file: ./deploy/plantreactome/secrets/empty
+  OPENAI_API_KEY:
+    # Left empty, the value comes from the environment as it always has. Fill
+    # this one in instead and the container stops caring what the shell running
+    # `docker compose` has exported -- and this host's shell does export
+    # OPENAI_API_KEY, set to the Azure LLM_API_KEY, which beats --env-file
+    # during interpolation. A mounted file beats the environment: bin/chat-
+    # chainlit.py calls load_secrets_to_environ(SECRET_NAMES) at import, before
+    # anything reads os.environ. That is the durable fix; `unset` in a shell is
+    # a fix until the next terminal tab.
+    file: ./deploy/plantreactome/secrets/empty
+  TAVILY_API_KEY:
+    file: ./deploy/plantreactome/secrets/empty
