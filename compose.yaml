@@ -40,6 +40,10 @@ services:
       - OPENAI_API_KEY
       - TAVILY_API_KEY
     volumes:
+      # `profiles:` in this file is also what decides which brand the landing
+      # page and the captcha error pages wear (src/util/branding.py). Reactome's
+      # is the default in code, so a deployment that supplies no config.yml at
+      # all -- or one naming React-to-Me -- serves exactly what it serves today.
       - ./config.yml:/app/config.yml:ro
       # Welcome screen. The image ships the Reactome one at /app/chainlit.md;
       # the Plant Reactome deployment mounts its variant over it, the same way

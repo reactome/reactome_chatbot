@@ -50,8 +50,10 @@ from handoff import seed
 from handoff.store import AnalysisHandoff, handoffs
 from handoff.window import acknowledgement, claimed_id
 from util import captcha_cookie
+from util.branding import branding_for
 from util.chainlit_helpers import (
     PrefixedS3StorageClient,
+    TextStreamCallbackHandler,
     is_feature_enabled,
     message_rate_limited,
     save_openai_metrics,
@@ -89,9 +91,69 @@ if _mounted:
         f"{len(_mounted)} of {len(SECRET_NAMES)} secrets supplied as Docker secrets"
     )
 
+
+def _sanitize_llm_settings() -> None:
+    """Stop non-JSON values reaching the persisted generation settings.
+
+    `_build_llm_settings` is the one place in chainlit's GenerationHelper that
+    does not run its output through `ensure_values_serializable` -- `_start_trace`
+    does, for run.inputs. So anything unserializable goes straight into
+    SQLAlchemyDataLayer.create_step's json.dumps and the INSERT dies, which
+    deletes the llm step from thread history entirely.
+
+    Ours is `response_format`: with_structured_output(method="json_schema") binds
+    the pydantic CLASS and serializes it only at request time. That method is
+    deliberate -- the gpt-5.6 family refuses function tools on
+    /v1/chat/completions -- so the class stays in the kwargs and is made safe
+    here instead.
+
+    Patched at the tracer rather than in a data-layer subclass because the same
+    dict is also handed to context.emitter.update_step, so the socket sees it.
+    """
+    from chainlit.langchain.callbacks import GenerationHelper
+
+    original = GenerationHelper._build_llm_settings
+
+    def patched(
+        self: Any,
+        serialized: dict[str, Any],
+        invocation_params: dict[str, Any] | None = None,
+    ) -> tuple[Any, ...]:
+        result: tuple[Any, ...] = original(self, serialized, invocation_params)
+        if len(result) != 4:
+            return result
+        provider, model, tools, settings = result
+        return (
+            provider,
+            model,
+            tools,
+            self.ensure_values_serializable(settings) if settings else settings,
+        )
+
+    GenerationHelper._build_llm_settings = patched  # type: ignore[method-assign]
+
+
+_sanitize_llm_settings()
+
 config: Config | None = Config.from_yaml()
 
 profiles: list[ProfileName] = config.profiles if config else [ProfileName.React_to_Me]
+BRANDING = branding_for(profiles)
+
+# Chainlit's own chrome -- the login page, the tab title, the header -- reads
+# `config.ui` at request time, so setting it here, at import, reaches every page
+# it serves. `util.branding` is the one place a deployment says who it is, and
+# `profiles:` in config.yml already selects it for the landing page and the
+# captcha error pages (bin/chat-fastapi.py). A reader who was just handed a
+# Plant Reactome landing page cannot then be walked into a Reactome login page.
+#
+# Not the logo: that is served from public/ by chainlit's /logo route, and a
+# Plant Reactome deployment supplies its own file there (deploy/plantreactome/compose.plantreactome.yaml)
+# rather than making the login page depend on plantreactome.gramene.org being
+# up. `logo_file_url` is the override if that ever has to change at runtime.
+chainlit_config.ui.name = BRANDING.chatbot_name
+chainlit_config.ui.login_page_image = BRANDING.login_page_image
+
 # Not built here any more. Building at module scope meant importing this file
 # -- which mount_chainlit does -- constructed the graph and every BM25 index,
 # 85 seconds before the app could serve or a test could load it. The FastAPI
@@ -552,7 +614,7 @@ async def answer_with_model(content: str, message_id: str) -> None:
 
     thread_id: str = current_thread_id()
 
-    chainlit_cb = cl.AsyncLangchainCallbackHandler(
+    chainlit_cb = TextStreamCallbackHandler(
         stream_final_answer=True,
         force_stream_final_answer=True,  # we're not using prefix tokens
     )

@@ -1,7 +1,8 @@
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
+
+from util.answer_text import AnswerTextParser
 
 safety_check_message = """
 You are an expert scientific assistant operating under the React-to-Me platform. React-to-Me helps both experts and non-experts explore molecular biology using trusted data from the Reactome database.
@@ -40,6 +41,6 @@ def create_unsafe_answer_generator(
 ) -> Runnable:
     if streaming:
         llm = llm.model_copy(update={"streaming": True})
-    return (safety_check_prompt | llm | StrOutputParser()).with_config(
+    return (safety_check_prompt | llm | AnswerTextParser()).with_config(
         run_name="unsafe_answer_generator"
     )

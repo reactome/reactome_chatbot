@@ -34,6 +34,7 @@ step "ruff check"  "$PY" -m ruff check .
 step "ruff format" "$PY" -m ruff format --check .
 step "mypy"        "$PY" -m mypy
 step "pytest"      "$PY" -m pytest
+step "schema" env PYTHONPATH=./src "$PY" bin/check_schema.py --sql initdb/init.sql
 rm -f /tmp/checks-$$.log
 
 failed=0

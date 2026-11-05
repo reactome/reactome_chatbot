@@ -35,6 +35,20 @@ TAVILY_API_KEY=
 # about; see resolve_temperature in src/agent/graph.py.
 #LLM_TEMPERATURE=
 
+# Header the LLM key is sent in. Azure API Management reads its subscription key
+# from `api-key` and answers the OpenAI SDK's default `Authorization: Bearer`
+# with 401 "Access denied due to missing subscription key", so an APIM-fronted
+# endpoint needs this set to `api-key`. Leave unset for api.openai.com and other
+# OpenAI-compatible servers, which want only the bearer token.
+#LLM_API_KEY_HEADER=api-key
+#
+# Which knowledgebase's files land in /app/public. deploy/plantreactome/compose.plantreactome.yaml mounts
+# ${BRAND_DIR:-./public}/<name> over the image's copies; unset means Reactome's,
+# so a checkout that does not set this is unchanged. Unsetting it is also the
+# single easiest way to deploy a Plant Reactome host that quietly wears
+# Reactome's logo, so set it in the env file, not on the command line.
+BRAND_DIR=
+
 # Locale and timezone for the Postgres container's initdb (ICU collation).
 LOCALE=en_US
 TIMEZONE=America/Toronto

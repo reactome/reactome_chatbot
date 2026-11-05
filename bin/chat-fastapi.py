@@ -2,7 +2,6 @@ import os
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from string import Template
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -29,9 +28,12 @@ from api.analysis_summary import router as analysis_summary_router
 from api.answer import router as answer_router
 from api.handoff import router as handoff_router
 from util import captcha_cookie
+from util.branding import Branding, branding_for
 from util.caller_token import load_verifying_key
 from util.captcha_scope import is_captcha_exempt
+from util.config_yml import Config
 from util.embedding_environment import EmbeddingEnvironment
+from util.landing_page import render_error_page, render_landing_page
 from util.logging import logging
 
 
@@ -115,21 +117,31 @@ if CHAT_REQUIRES_HUMAN and not CLOUDFLARE_SITE_KEY:
         "so the human check could not be shown."
     )
 
-ERROR_PAGE_TEMPLATE = Template(
-    f"""
-<html>
-    <body>
-        <h1>$error_title</h1>
-        <p>If you believe this to be in error, please contact the maintainers to report an issue: help@reactome.org</p>
-        <form action="{CHAINLIT_URI}" method="get">
-            <button type="submit">Try again</button>
-        </form>
-    </body>
-</html>
-"""
-)
+# Which knowledgebase this deployment is. `profiles:` in config.yml already
+# decides which graph answers questions and which chat profiles are offered, and
+# config.yml is the one file a Plant Reactome deployment replaces (see
+# compose.yaml), so the pages around the chat follow it rather than a second
+# switch that could disagree with the first. No config.yml means
+# config_default.yml, which names React-to-Me, so Reactome does nothing to keep
+# what it has.
+#
+# Read once, at startup, like the release in `lifespan`. A page that changed brand
+# because config.yml was edited under a running process -- while the graph kept
+# answering from the old one -- would be worse than a stale one.
+config: Config | None = Config.from_yaml()
+BRANDING: Branding = branding_for(config.profiles if config else [])
 
 HEADER_DONT_CACHE = {"Cache-Control": "no-store"}
+
+
+def _error_page(error_title: str) -> Response:
+    """What a failed human check ends on, in this deployment's brand."""
+    return Response(
+        content=render_error_page(BRANDING, error_title, CHAINLIT_URI or "/"),
+        status_code=400,
+        headers=HEADER_DONT_CACHE,
+        media_type="text/html",
+    )
 
 
 def _gated(path: str) -> bool:
@@ -271,21 +283,24 @@ async def captcha_page() -> Response:
 
 @app.post(f"{CHAINLIT_URI}/verify_captcha")
 async def verify_captcha(request: Request) -> Response:
-    # Bounded: anyone can reach this route, and the defaults put no cap on
-    # file parts, which were spooled to the disk the whole host shares
-    # (review, area 1b). The form has one field.
+    # Bounded: anyone can reach this route. max_files=0 refuses file parts
+    # outright -- they were spooled to the disk the whole host shares (review,
+    # area 1b) -- and max_part_size holds the one field, a Turnstile token a
+    # couple of hundred bytes long, to 8 KiB rather than Starlette's 1 MiB
+    # default.
+    #
+    # max_part_size needs Starlette >= 0.44, which added it to Request.form().
+    # The published image shipped 0.41.3, and starlette arrives transitively via
+    # chainlit with nothing pinning the floor, so this raised
+    # `TypeError: Request.form() got an unexpected keyword argument
+    # 'max_part_size'` -- a 500 on the entry path, for every visitor, and only
+    # on the image. A transitive version is not a floor; the floor lives in
+    # pyproject now. Starlette 1.3.1 is where these limits are actually enforced
+    # in FormParser, which is the floor declared there.
     form_data = await request.form(max_files=0, max_fields=4, max_part_size=8192)
     cf_turnstile_response = form_data.get("cf-turnstile-response")
     if not isinstance(cf_turnstile_response, str):
-        error_html = ERROR_PAGE_TEMPLATE.substitute(
-            error_title="CAPTCHA response is invalid",
-        )
-        return Response(
-            content=error_html,
-            status_code=400,
-            headers=HEADER_DONT_CACHE,
-            media_type="text/html",
-        )
+        return _error_page("CAPTCHA response is invalid")
 
     client_ip: str
     if request.client:
@@ -293,15 +308,7 @@ async def verify_captcha(request: Request) -> Response:
     elif "X-Forwarded-For" in request.headers:
         client_ip = request.headers["X-Forwarded-For"].split(",")[0]
     else:
-        error_html = ERROR_PAGE_TEMPLATE.substitute(
-            error_title="Could not determine client host",
-        )
-        return Response(
-            content=error_html,
-            status_code=400,
-            headers=HEADER_DONT_CACHE,
-            media_type="text/html",
-        )
+        return _error_page("Could not determine client host")
 
     # Verify the CAPTCHA with Cloudflare
     url = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
@@ -329,15 +336,7 @@ async def verify_captcha(request: Request) -> Response:
 
     # If CAPTCHA validation fails, return an error
     if not result.get("success"):
-        error_html = ERROR_PAGE_TEMPLATE.substitute(
-            error_title="CAPTCHA verification failed",
-        )
-        return Response(
-            content=error_html,
-            status_code=400,
-            headers=HEADER_DONT_CACHE,
-            media_type="text/html",
-        )
+        return _error_page("CAPTCHA verification failed")
 
     redirect_response = RedirectResponse(
         url=f"{CHAINLIT_URI}/", status_code=302, headers=HEADER_DONT_CACHE
@@ -351,116 +350,19 @@ async def verify_captcha(request: Request) -> Response:
 
 @app.get("/chat/")
 async def landing_page() -> HTMLResponse:
-    html_content = Template(
-        """
-    <html>
-    <head>
-        <link rel="icon" type="image/x-icon" href="https://reactome.org/templates/favourite/favicon.ico">
-        <style>
-            body {
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                height: 100vh;
-                margin: 0;
-                background-color: #f4f7fc;
-                font-family: 'Arial', sans-serif;
-                padding: 20px;
-            }
-            .container {
-                text-align: center;
-                border-radius: 12px;
-                padding: 2rem;
-                background: white;
-                max-width: 700px;
-                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
-            }
-            .logo {
-                margin-bottom: 1rem;
-            }
-            .logo img {
-                max-width: 180px;
-                height: auto;
-            }
-            h1 {
-                font-size: 1.8rem;
-                margin-bottom: 1rem;
-                color: #333;
-            }
-            .centered-text {
-                font-size: 1rem;
-                color: #444;
-                line-height: 1.6;
-                margin-bottom: 1.5rem;
-                text-align: center;
-            }
-            .button-container {
-                display: flex;
-                justify-content: center;
-                gap: 10px;
-                margin-bottom: 1.5rem;
-            }
-            .button {
-                display: inline-block;
-                padding: 0.75rem 1.5rem;
-                font-size: 1rem;
-                font-weight: bold;
-                color: white;
-                background-color: #007bff;
-                border: none;
-                border-radius: 8px;
-                cursor: pointer;
-                text-decoration: none;
-                transition: all 0.3s ease;
-                box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-            }
-            .button:hover {
-                background-color: #0056b3;
-                transform: translateY(-2px);
-                box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
-            }
-            .feedback-button {
-                background-color: #28a745;
-            }
-            .feedback-button:hover {
-                background-color: #218838;
-            }
-            .left-justified {
-                font-size: 1rem;
-                color: #555;
-                text-align: left;
-                margin-bottom: 1rem;
-            }
-            .left-justified strong {
-                font-weight: bold;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="logo">
-                <a href="https://reactome.org" target="_blank">
-                    <img src="https://reactome.org/templates/favourite/images/logo/logo.png" alt="Reactome Logo">
-                </a>
-            </div>
-            <h1>Meet the React-to-Me AI Chatbot!</h1>
-            <p class="centered-text">Your new guide to Reactome. Whether you're looking for specific genes and pathways or just browsing, our AI Chatbot is here to assist you!</p>
+    """The page that introduces the chat, in this deployment's brand.
 
-            <div class="button-container">
-                <a class="button" href="$CHAINLIT_URL/chat/guest/" target="_blank">Guest Access</a>
-                <a class="button" href="$CHAINLIT_URL/chat/personal/" target="_blank">Log In</a>
-                <a class="button feedback-button" href="mailto:help@reactome.org" target="_blank">Feedback</a>
-            </div>
-
-            <p class="left-justified">Choose <strong>Guest Access</strong> to try the chatbot out. <strong>Log In</strong> will give an increased query allowance and securely stores your chat history so you can save and continue conversations.</p>
-            <p class="left-justified">We encourage you to use the <strong>Feedback</strong> button to tell us about your experience with the chatbot and help us improve it.</p>
-        </div>
-    </body>
-    </html>
+    Rendered in `util/landing_page.py`, where a test can render it without
+    importing this module -- which mounts Chainlit and refuses to start without
+    Turnstile keys. Only the branding varies; the layout is shared, so a Plant
+    Reactome reader gets the same page with their knowledgebase's name, logo and
+    contact on it.
     """
-    ).substitute(CHAINLIT_URL=CHAINLIT_URL)
-
-    return HTMLResponse(content=html_content)
+    # Empty rather than the literal "None" this interpolated when CHAINLIT_URL is
+    # unset, which made every button read "None/chat/guest/". With nothing in
+    # front of them they resolve against this origin, which is what an unset
+    # CHAINLIT_URL should always have meant.
+    return HTMLResponse(content=render_landing_page(BRANDING, CHAINLIT_URL or ""))
 
 
 # Ensure all other endpoints remain mounted

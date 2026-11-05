@@ -33,6 +33,14 @@ cryptography = ">=42,<51"
 langchain-classic = "^1.0.8"
 # Same: data_generation imports RecursiveCharacterTextSplitter from it.
 langchain-text-splitters = "^1.1.2"
+# Declared, not inherited, for the reason the two above are. bin/chat-fastapi.py
+# passes max_part_size to Request.form(), a parameter Starlette added in 0.44.0
+# and only actually enforced in FormParser from 1.3.1. Starlette reached this
+# project through chainlit with no floor stated anywhere, and the published
+# image carried 0.41.3 -- below the floor -- so every visitor to the chat got a
+# 500 TypeError on the captcha POST, on the image only, with nothing in the
+# dependency set to explain it. A transitive version is not a floor.
+starlette = ">=1.3.1"
 # 2.x, required by langchain-openai 1.x (openai>=2.45). Used directly only by
 # bin/probe_model_temperature, for models.list().
 openai = "^2.45.0"
@@ -202,11 +210,24 @@ docstring-code-format = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "bin"]
-addopts = "-q --strict-markers --strict-config"
+addopts = [
+    "-q",
+    "--strict-markers",
+    "--strict-config",
+    # Deselect the live-model tests unless asked for. Without this, bare
+    # `pytest` -- which is what CI's `pytest` step and ./checks.sh both run --
+    # spent ~160s and real money per invocation on a developer's machine,
+    # where OPENAI_API_KEY happens to be set. CI has no key so it skipped
+    # them by luck rather than by design; this makes the default explicit.
+    # Opt back in with `pytest -m requires_live_model` -- a CLI -m overrides
+    # this one because addopts are inserted ahead of the command line.
+    "-m",
+    "not requires_live_model",
+]
 markers = [
     "requires_embeddings: needs an installed embeddings bundle (see ./bin/embeddings_manager)",
     "requires_retrieval_stack: needs the full langchain/chromadb dependency set installed",
-    "requires_live_model: calls a real LLM and needs OPENAI_API_KEY plus embeddings",
+    "requires_live_model: calls a real LLM; needs LLM_MODEL and LLM_API_KEY (the model the app actually answers with) plus OPENAI_API_KEY for embeddings",
 ]
 
 [tool.mypy]

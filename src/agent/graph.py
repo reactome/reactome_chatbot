@@ -23,6 +23,7 @@ from agent.profile_names import ProfileName
 from agent.profiles import create_profile_graphs
 from agent.profiles.base import InputState, OutputState
 from reactome_mcp.session import get_mcp_tools
+from util.answer_text import answer_text
 from util.config_yml.models import LLMConfig
 from util.embedding_environment import EmbeddingEnvironment
 from util.logging import logging
@@ -315,16 +316,26 @@ class AgentGraph:
         logging.info(
             f"Answering with {llm_provider}/{llm_model} at temperature {temperature}"
         )
+        llm_api_key = os.getenv("LLM_API_KEY")
+        embedding_api_key = os.getenv("OPENAI_API_KEY")
+        # The header the key travels in. Azure API Management only reads
+        # `api-key` and 401s the SDK's `Authorization: Bearer`; see get_llm.
+        llm_api_key_header = os.getenv("LLM_API_KEY_HEADER")
         llm: BaseChatModel = get_llm(
             llm_provider,
             llm_model,
             base_url=llm_base_url,
             request_timeout=360.0,
             temperature=temperature,
+            api_key=llm_api_key,
+            api_key_header=llm_api_key_header,
         )
         embedding_base_url = os.getenv("OPENAI_BASE_URL", None)
         embedding: Embeddings = get_embedding(
-            "openai", embedding_model, base_url=embedding_base_url
+            "openai",
+            embedding_model,
+            base_url=embedding_base_url,
+            api_key=embedding_api_key,
         )
 
         self.uncompiled_graph: dict[str, StateGraph] = create_profile_graphs(
@@ -582,10 +593,10 @@ class AgentGraph:
             if event.get("metadata", {}).get("langgraph_node") != ANSWER_NODE:
                 continue
 
-            text = getattr(event["data"].get("chunk"), "content", "")
+            text = answer_text(event["data"].get("chunk"))
             if text:
                 answered = True
-                yield AnswerEvent(kind="token", text=str(text))
+                yield AnswerEvent(kind="token", text=text)
 
         yield AnswerEvent(
             kind="done", state="answered" if answered else "nothing_found"

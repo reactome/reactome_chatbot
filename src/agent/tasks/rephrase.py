@@ -1,7 +1,8 @@
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import Runnable
+
+from util.answer_text import AnswerTextParser
 
 contextualize_q_system_prompt = """
 You are an expert in question formulation with deep expertise in molecular biology and experience as a Reactome curator. Your task is to analyze the conversation history and the user's latest query to fully understand their intent and what they seek to learn.
@@ -28,6 +29,6 @@ contextualize_q_prompt = ChatPromptTemplate.from_messages(
 
 
 def create_rephrase_chain(llm: BaseChatModel) -> Runnable:
-    return (contextualize_q_prompt | llm | StrOutputParser()).with_config(
+    return (contextualize_q_prompt | llm | AnswerTextParser()).with_config(
         run_name="rephrase_question"
     )

@@ -70,6 +70,12 @@ def test_loading_writes_only_file_backed_values(
 ) -> None:
     import os
 
+    # The name must start absent or the last assertion below proves nothing.
+    # Passing in CI -- where the environment is clean -- and failing on a host
+    # where `.env` had been sourced is the tell: this test was reading the
+    # developer's shell rather than the condition it claims to pin.
+    monkeypatch.delenv("CLOUDFLARE_SECRET_KEY", raising=False)
+
     (mounted / "TAVILY_API_KEY").write_text("tvly-secret")
     (mounted / "CLOUDFLARE_SECRET_KEY").write_text("  ")  # placeholder
     monkeypatch.setenv("OPENAI_API_KEY", "sk-from-env")

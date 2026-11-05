@@ -64,8 +64,17 @@ def test_the_only_configured_difference_is_one_that_cannot_change_the_answer() -
 
 @pytest.mark.requires_live_model
 @pytest.mark.requires_embeddings
-@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="needs a live model")
-def test_both_surfaces_answer_substantively_live() -> None:
+@pytest.mark.skipif(
+    not (os.getenv("LLM_MODEL") and os.getenv("LLM_API_KEY")),
+    reason="needs the model the app answers with. Gating on OPENAI_API_KEY "
+    "instead let this run while LLM_MODEL/LLM_BASE_URL/LLM_API_KEY were "
+    "unset, so it measured the gpt-4o-mini default against api.openai.com "
+    "rather than the deployed model. Confirm the startup line reads "
+    "`Answering with <provider>/<LLM_MODEL>` before trusting a result.",
+)
+def test_both_surfaces_answer_substantively_live(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Opt-in: both paths, one graph, one question.
 
     This does **not** assert the two answers match, and the task that asked for
@@ -84,6 +93,16 @@ def test_both_surfaces_answer_substantively_live() -> None:
     """
     from agent.registry import build_graph
     from util.anchor_strip import AnchorStripper
+
+    # Postgres is reachable only over a unix socket that exists inside the
+    # container: util/secrets.POSTGRES_SOCKET is the literal "/sockets/postgres/"
+    # and the server runs with `--auth-host reject`, so there is no network path
+    # to fall back to. On a host that socket is absent, and this test died in
+    # PoolTimeout -- 30s of retries, 180s wall clock -- before it asked a single
+    # question. Checkpointing is not what this test is about; whether the two
+    # surfaces answer substantively from one graph is. With this unset,
+    # create_checkpointer() returns a MemorySaver and the pool is never opened.
+    monkeypatch.delenv("POSTGRES_LANGGRAPH_DB", raising=False)
 
     question = "What does CDK5 do in neurons?"
 

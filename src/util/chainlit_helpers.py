@@ -10,6 +10,7 @@ from chainlit.data.storage_clients.s3 import S3StorageClient
 from langchain_community.callbacks import OpenAICallbackHandler
 
 from tools.external_search.state import WebSearchResult
+from util.answer_text import answer_text
 from util.config_yml import Config
 from util.config_yml.messages import TriggerEvent
 from util.config_yml.usage_limits import MessageRate
@@ -199,3 +200,39 @@ async def update_user() -> None:
     user: cl.User | None = cl.user_session.get("user")
     if user:
         await get_data_layer().create_user(user)
+
+
+class TextStreamCallbackHandler(cl.AsyncLangchainCallbackHandler):
+    """Chainlit's langchain tracer, minus the non-text stream blocks.
+
+    `on_llm_new_token` stringifies anything that is not a str --
+    `"".join(map(str, token))` for a list -- and with
+    force_stream_final_answer=True the result goes straight into the reader's
+    message. The Responses API streams reasoning items, so the reader saw
+    `{'type': 'reasoning', 'encrypted_content': 'gAAAAAB...'}` as the answer.
+
+    This is the surface the browser shows: `final_stream` is the answer, not
+    `state["answer"]`, so no output parser can reach it.
+    """
+
+    async def on_llm_new_token(
+        self,
+        token: Any,
+        *,
+        chunk: Any = None,
+        run_id: Any = None,
+        parent_run_id: Any = None,
+        **kwargs: Any,
+    ) -> Any:
+        if not isinstance(token, str):
+            text = answer_text(token)
+            if not text:
+                return None
+            token = text
+        return await super().on_llm_new_token(
+            token,
+            chunk=chunk,
+            run_id=run_id,
+            parent_run_id=parent_run_id,
+            **kwargs,
+        )
