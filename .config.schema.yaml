@@ -27,16 +27,33 @@ properties:
         enum: ["openai", "ollama"]
       model:
         type: string
-        description: "e.g. gpt-4o-mini, gpt-5.6-luna. LLM_MODEL overrides this."
+        description: "e.g. gpt-6-luna (the default), gpt-6-sol. LLM_MODEL overrides this."
       base_url:
         type: string
         description: "OpenAI-compatible endpoint, for self-hosted models."
       temperature:
         type: number
         description: >-
-          Almost always leave unset: the value a model requires is derived. Set
-          it only for a model the derived table has not met. A value the model
-          refuses stops the server at startup.
+          Ollama only. With provider openai it stops the server at startup:
+          current OpenAI models accept only their own default temperature, so
+          none is sent. Set reasoning_effort instead.
+      reasoning_effort:
+        type: string
+        enum: ["none", "minimal", "low", "medium", "high", "xhigh"]
+        description: >-
+          OpenAI only; unset means low. Sent on every call except the answer:
+          rephrase, safety, language, intent, query expansion, grading. Which
+          levels a model accepts varies, so startup sends one request with this
+          level and stops, quoting the levels the API lists, if the model
+          rejects it.
+      answer_reasoning_effort:
+        type: string
+        enum: ["none", "minimal", "low", "medium", "high", "xhigh"]
+        description: >-
+          OpenAI only; unset means medium. Sent on the calls whose text reaches
+          the user as the answer: the answer, live-data lookups, the reply to a
+          refused question, and analysis summaries. Checked against the API at
+          startup the same way.
     additionalProperties: false
   messages:
     type: object

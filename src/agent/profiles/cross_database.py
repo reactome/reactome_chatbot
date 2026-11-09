@@ -53,6 +53,7 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
     def __init__(
         self,
         llm: BaseChatModel,
+        answer_llm: BaseChatModel,
         embedding: Embeddings,
     ) -> None:
         super().__init__(llm, embedding)
@@ -69,7 +70,7 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
         self.write_reactome_query = create_reactome_rewriter_w_uniprot(llm)
         self.write_uniprot_query = create_uniprot_rewriter_w_reactome(llm)
         self.summarize_final_answer = create_reactome_uniprot_summarizer(
-            llm, streaming=True
+            answer_llm, streaming=True
         )
 
         # Create graph
@@ -267,6 +268,7 @@ class CrossDatabaseGraphBuilder(BaseGraphBuilder):
 
 def create_cross_database_graph(
     llm: BaseChatModel,
+    answer_llm: BaseChatModel,
     embedding: Embeddings,
 ) -> StateGraph:
-    return CrossDatabaseGraphBuilder(llm, embedding).uncompiled_graph
+    return CrossDatabaseGraphBuilder(llm, answer_llm, embedding).uncompiled_graph

@@ -1,10 +1,10 @@
 import asyncio
 import os
-import re
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
+import openai
 from langchain_core.callbacks.base import Callbacks
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
@@ -18,7 +18,7 @@ from langgraph.graph.state import CompiledStateGraph, StateGraph
 from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
-from agent.models import get_embedding, get_llm
+from agent.models import ModelParameters, get_embedding, get_llm
 from agent.profile_names import ProfileName
 from agent.profiles import create_profile_graphs
 from agent.profiles.base import InputState, OutputState
@@ -89,87 +89,7 @@ def resolve_embedding_model() -> str:
     return configured or bundle_model
 
 
-# Models that accept only one temperature: their own default of 1. Any other
-# value, 0.0 included, is a 400 on the first request rather than an error at
-# construction:
-#
-#   Unsupported value: 'temperature' does not support 0.0 with this model.
-#   Only the default (1) value is supported.
-#
-# Sending nothing is not an option -- ChatOpenAI supplies its own default of 0.7
-# when the argument is omitted, and these models reject that too -- so the value
-# has to be 1.0 explicitly.
-#
-# This is an exact-match set and not a name pattern, because the behaviour
-# interleaves: gpt-5 refuses 0.0, gpt-5.1/5.2/5.4 accept it, and gpt-5.5/5.6
-# refuse it again. A "gpt-5" prefix would have caught gpt-5.1 as well, and an
-# earlier version of this file did exactly that -- and was wrong for eleven
-# models, including the gpt-5 and o-series entries below.
-#
-# The list is empirical: no endpoint reports which values a model accepts, so it
-# was measured. `./bin/probe_model_temperature` is the tool that measured it and
-# prints this set; run it rather than reasoning about a name.
-#
-# Measured 2026-09-09. LLM_TEMPERATURE overrides, for a model added since.
-FIXED_TEMPERATURE_MODELS = frozenset(
-    {
-        "chat-latest",
-        "gpt-5",
-        "gpt-5-mini",
-        "gpt-5-nano",
-        "gpt-5.5",
-        "gpt-5.6-luna",
-        "gpt-5.6-sol",
-        "gpt-5.6-terra",
-        "gpt-6-astra",
-        "o3",
-        "o4-mini",
-    }
-)
-FIXED_TEMPERATURE = 1.0
-
-# OpenAI pins dated snapshots of a model as `<model>-YYYY-MM-DD`. They behave as
-# the model they pin, so the suffix is stripped rather than listing every one.
-_SNAPSHOT_SUFFIX = re.compile(r"-\d{4}-\d{2}-\d{2}$")
-
-
-def refuses_zero(model: str) -> bool:
-    """Whether `model` accepts only its own default temperature."""
-    return _SNAPSHOT_SUFFIX.sub("", model) in FIXED_TEMPERATURE_MODELS
-
-
-def resolve_temperature(model: str, *, configured: float | None = None) -> float:
-    """The temperature to send for `model`.
-
-    Returning 1.0 for the models above trades determinism for being able to use
-    them at all. That trade is made here, once, rather than at each call site.
-
-    A `configured` value that the model is known to refuse stops the process.
-    Without that check the mistake surfaces as a 400 on a user's first question
-    -- visible to a user, attributed to the chatbot, and diagnosable only from
-    logs. A model the table has not met is not validated at all: the table is
-    empirical and always behind, so an unknown model must not block startup.
-    """
-    override = os.getenv("LLM_TEMPERATURE")
-    if override is not None and override.strip() != "":
-        try:
-            return float(override)
-        except ValueError:
-            raise SystemExit(f"LLM_TEMPERATURE={override!r} is not a number.") from None
-
-    if configured is not None:
-        if refuses_zero(model) and configured != FIXED_TEMPERATURE:
-            raise SystemExit(
-                f"config.yml sets llm.temperature={configured} for {model!r}, "
-                f"which accepts only {FIXED_TEMPERATURE}. Remove the temperature "
-                "and it will be derived, or set LLM_TEMPERATURE to override."
-            )
-        return configured
-
-    return FIXED_TEMPERATURE if refuses_zero(model) else 0.0
-
-
-DEFAULT_LLM_MODEL = "gpt-4o-mini"
+DEFAULT_LLM_MODEL = "gpt-6-luna"
 
 
 def resolve_llm_model(llm_config: "LLMConfig | None") -> tuple[str, str, str | None]:
@@ -195,6 +115,219 @@ def resolve_llm_model(llm_config: "LLMConfig | None") -> tuple[str, str, str | N
         base_url = base_url or llm_config.base_url
 
     return provider, os.getenv("LLM_MODEL", model), base_url
+
+
+#: Sent to OpenAI on every call except the answer when config.yml sets no
+#: `llm.reasoning_effort`. Those calls -- rephrase, safety, language, intent,
+#: query expansion, grading -- return short or structured results and all run
+#: before the first answer token, so reasoning there is latency a user waits
+#: through. Accepted by every current reasoning model except chat-latest when
+#: measured on 2026-11-03 (specs/015-openai-reasoning-effort research R1).
+DEFAULT_REASONING_EFFORT = "low"
+
+#: Sent to OpenAI on answer calls -- those whose text reaches the user as the
+#: answer -- when config.yml sets no `llm.answer_reasoning_effort`.
+DEFAULT_ANSWER_REASONING_EFFORT = "medium"
+
+
+class ModelConfigError(Exception):
+    """A model setting that cannot be honoured, or that the API rejected.
+
+    Raised rather than `SystemExit`, so the caller decides what a refusal means.
+    The server (`AgentGraph`) and the command-line tools turn it into an exit at
+    startup. A per-request caller such as the analysis summary lets its
+    `except Exception` record a failed request, and the worker stays up.
+    """
+
+
+def _effort_setting(answer: bool) -> tuple[str, str]:
+    """The config.yml key and default for one kind of call, for messages."""
+    if answer:
+        return "llm.answer_reasoning_effort", DEFAULT_ANSWER_REASONING_EFFORT
+    return "llm.reasoning_effort", DEFAULT_REASONING_EFFORT
+
+
+def resolve_model_parameters(
+    provider: str, llm_config: "LLMConfig | None", *, answer: bool = False
+) -> ModelParameters:
+    """What every call of one kind sends: one rule per provider.
+
+    OpenAI: no temperature, because current models accept only their own
+    default, and a reasoning effort -- `llm.answer_reasoning_effort` for answer
+    calls (`answer=True`), `llm.reasoning_effort` for everything else. Ollama: a
+    temperature, as before, and no reasoning effort. The model name is not an
+    input. Which levels a particular OpenAI model accepts varies, and that is
+    checked against the API by `check_model` rather than kept in a table here;
+    the table this replaced went stale (specs/015-openai-reasoning-effort
+    research R3).
+
+    A setting that cannot be honoured raises `ModelConfigError`, whichever kind
+    of call is being resolved: both kinds refuse the same configurations. Checks
+    run in a fixed order, so an operator with two problems sees the first one
+    first.
+    """
+    configured_temperature = llm_config.temperature if llm_config else None
+    configured_efforts = {
+        "llm.reasoning_effort": llm_config.reasoning_effort if llm_config else None,
+        "llm.answer_reasoning_effort": (
+            llm_config.answer_reasoning_effort if llm_config else None
+        ),
+    }
+    key, default = _effort_setting(answer)
+    override = os.getenv("LLM_TEMPERATURE")
+    if override is not None and override.strip() == "":
+        override = None
+
+    if provider == "openai":
+        if configured_temperature is not None:
+            raise ModelConfigError(
+                f"config.yml sets llm.temperature={configured_temperature} with "
+                "provider openai. OpenAI models use only their own default "
+                "temperature, so none is sent. Remove it; set "
+                "llm.reasoning_effort to change how much the model reasons."
+            )
+        if override is not None:
+            raise ModelConfigError(
+                f"LLM_TEMPERATURE={override!r} is set with provider openai. OpenAI "
+                "models use only their own default temperature, so none is sent. "
+                "Remove it; set llm.reasoning_effort in config.yml to change how "
+                "much the model reasons."
+            )
+        return ModelParameters(
+            temperature=None,
+            reasoning_effort=configured_efforts[key] or default,
+        )
+
+    for name, configured_effort in configured_efforts.items():
+        if configured_effort is not None:
+            raise ModelConfigError(
+                f"config.yml sets {name}={configured_effort!r} with provider "
+                f"{provider}. Reasoning effort applies only to OpenAI models. "
+                "Remove it."
+            )
+    if override is not None:
+        try:
+            return ModelParameters(temperature=float(override), reasoning_effort=None)
+        except ValueError:
+            raise ModelConfigError(
+                f"LLM_TEMPERATURE={override!r} is not a number."
+            ) from None
+    return ModelParameters(
+        temperature=(
+            configured_temperature if configured_temperature is not None else 0.0
+        ),
+        reasoning_effort=None,
+    )
+
+
+def check_model(
+    llm: BaseChatModel,
+    *,
+    provider: str,
+    model: str,
+    parameters: ModelParameters,
+    answer: bool = False,
+) -> None:
+    """Send one request with exactly the parameters every call of one kind
+    will send; `answer` says which kind, for the fix line.
+
+    Whether a model accepts a reasoning effort at all, and which levels, varies
+    by model and is known only to the API. Asking it once at startup turns a 400
+    on a user's first question into a refusal to start (constitution IV).
+
+    No output cap: a reasoning model can spend a small cap on reasoning and fail
+    for a reason unrelated to the parameters (research R1).
+
+    Only an answer refuses. A rejection (any other status the API returns:
+    400, 401, 403, 404...) raises `ModelConfigError` and quotes the API's error.
+    No answer -- the API unreachable, rate limited, or failing with a 5xx, after
+    the client's own retries -- says nothing about the settings, so it is
+    logged and startup goes on. Refusing then would keep the server down through
+    a provider outage, and a restart loop would not bring it back any sooner.
+    """
+    try:
+        llm.invoke("Reply with the single word OK.")
+    except _NO_ANSWER as exc:
+        logging.warning(
+            f"Could not check {provider}/{model} at startup "
+            f"({type(exc).__name__}: {exc}); starting anyway. This says nothing "
+            f"about {parameters.describe()}: if those are rejected, the first "
+            "question will fail with the API's reason. If it persists, check "
+            "LLM_BASE_URL and the provider's status."
+        )
+    except openai.APIError as exc:
+        raise ModelConfigError(
+            f"{provider}/{model} rejected a startup request sent with "
+            f"{parameters.describe()}:\n  {exc}\n{_fix_for(exc, answer=answer)}"
+        ) from None
+
+
+#: Failures that are not an answer from the API about the request. The client
+#: has already retried each of them (openai's default is two retries).
+_NO_ANSWER = (
+    openai.APIConnectionError,  # includes APITimeoutError
+    openai.RateLimitError,
+    openai.InternalServerError,
+)
+
+
+def _fix_for(exc: openai.APIError, *, answer: bool) -> str:
+    """The fix line for a rejected startup request.
+
+    Uses the error's structured `param` and `code` when the API sends them.
+    The message text is checked as well, because the "Unrecognized request
+    argument" rejection from older models is only recorded by its text
+    (research R1). Either way the API's own error is quoted above this line.
+    """
+    message = exc.message
+    if isinstance(exc, openai.BadRequestError) and (
+        exc.param == "reasoning_effort" or "reasoning_effort" in message
+    ):
+        if exc.code == "unsupported_parameter" or "Unrecognized" in message:
+            return (
+                "This model takes no reasoning effort; it is one of the older "
+                "models being retired. Choose a current model (the built-in "
+                f"default is {DEFAULT_LLM_MODEL})."
+            )
+        key, default = _effort_setting(answer)
+        return (
+            f"Set {key} to a level this model accepts (listed above), or "
+            f"remove it to use {default}."
+        )
+    return "Check OPENAI_API_KEY, LLM_BASE_URL and the model name."
+
+
+def build_llm(
+    provider: str,
+    model: str,
+    *,
+    parameters: ModelParameters,
+    base_url: str | None = None,
+    request_timeout: float | None = None,
+    check: bool,
+    answer: bool = False,
+) -> BaseChatModel:
+    """The one way to build a chat model: build, and optionally check.
+
+    `parameters` comes from `resolve_model_parameters`, which the caller runs
+    once and can then log or compare. It is required, so a caller cannot skip
+    the decision. `answer` says which kind of call the model is for and must
+    match what `parameters` was resolved with. It is used only for the fix line
+    when the check is refused. `check` sends the startup request for OpenAI
+    (`check_model`); Ollama is never checked.
+    """
+    llm = get_llm(
+        provider,
+        model,
+        parameters=parameters,
+        base_url=base_url,
+        request_timeout=request_timeout,
+    )
+    if check and provider == "openai":
+        check_model(
+            llm, provider=provider, model=model, parameters=parameters, answer=answer
+        )
+    return llm
 
 
 MAX_CITATIONS = 12
@@ -298,6 +431,22 @@ class AnswerEvent:
     state: Literal["answered", "nothing_found", "refused", "failed"] | None = None
 
 
+@dataclass(frozen=True)
+class ModelChoice:
+    """One chat model as startup resolved it, and checked it when that is due.
+
+    Kept on `AgentGraph` so that a per-request caller (the analysis summary)
+    builds from the same settings the chat runs on. It reads no config.yml
+    during a request, so an invalid or edited file cannot fail that request or
+    make the summary drift from the chat.
+    """
+
+    provider: str
+    model: str
+    base_url: str | None
+    parameters: ModelParameters
+
+
 class AgentGraph:
     def __init__(
         self,
@@ -307,20 +456,48 @@ class AgentGraph:
         # Get base models
         embedding_model = resolve_embedding_model()
         llm_provider, llm_model, llm_base_url = resolve_llm_model(llm_config)
-        temperature = resolve_temperature(
-            llm_model, configured=llm_config.temperature if llm_config else None
-        )
+        # Two models, one name: `answer_llm` for the calls whose text reaches the
+        # user as the answer, `llm` for everything else. They differ only in
+        # reasoning effort. Both are checked against the API before the ~85s of
+        # BM25 below, so a model or level the API rejects stops startup in
+        # seconds -- the second only when its parameters differ from the first.
+        # This is startup, so a refusal ends the process.
+        try:
+            parameters = resolve_model_parameters(llm_provider, llm_config)
+            answer_parameters = resolve_model_parameters(
+                llm_provider, llm_config, answer=True
+            )
+            llm: BaseChatModel = build_llm(
+                llm_provider,
+                llm_model,
+                parameters=parameters,
+                base_url=llm_base_url,
+                request_timeout=360.0,
+                check=True,
+            )
+            answer_llm: BaseChatModel = build_llm(
+                llm_provider,
+                llm_model,
+                parameters=answer_parameters,
+                base_url=llm_base_url,
+                request_timeout=360.0,
+                check=answer_parameters != parameters,
+                answer=True,
+            )
+        except ModelConfigError as exc:
+            raise SystemExit(str(exc)) from None
         # The name only. A model id is not a secret, but this is the line a key
-        # would end up on if anyone ever widened it.
+        # would end up on if anyone ever widened it. A check that got no answer
+        # has already logged a warning above this line.
         logging.info(
-            f"Answering with {llm_provider}/{llm_model} at temperature {temperature}"
+            f"Answering with {llm_provider}/{llm_model}: "
+            f"{parameters.describe()}; answer: {answer_parameters.describe()}"
         )
-        llm: BaseChatModel = get_llm(
-            llm_provider,
-            llm_model,
+        self.answer_model = ModelChoice(
+            provider=llm_provider,
+            model=llm_model,
             base_url=llm_base_url,
-            request_timeout=360.0,
-            temperature=temperature,
+            parameters=answer_parameters,
         )
         embedding_base_url = os.getenv("OPENAI_BASE_URL", None)
         embedding: Embeddings = get_embedding(
@@ -328,7 +505,7 @@ class AgentGraph:
         )
 
         self.uncompiled_graph: dict[str, StateGraph] = create_profile_graphs(
-            profiles, llm, embedding
+            profiles, llm, answer_llm, embedding
         )
 
         # The following are set asynchronously by calling initialize()
@@ -465,8 +642,13 @@ class AgentGraph:
         *,
         thread_id: str,
         enable_postprocess: bool = True,
+        callbacks: Callbacks = None,
     ) -> AsyncIterator["AnswerEvent"]:
         """Stream one answer: its tokens, then the sources retrieval found.
+
+        `callbacks` are passed into the run, as `ainvoke` does, so a measurement
+        can see every model call on the served path. The answer endpoint passes
+        none.
 
         Why this is not simply "stream every model token": six model calls run
         around one answer -- rephrase, safety, language, intent, query expansion,
@@ -492,6 +674,7 @@ class AgentGraph:
         async for event in self.graph[profile].astream_events(
             InputState(user_input=user_input),
             config=RunnableConfig(
+                callbacks=callbacks,
                 configurable={
                     "thread_id": thread_id,
                     "enable_postprocess": enable_postprocess,

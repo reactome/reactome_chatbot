@@ -34,14 +34,19 @@ import asyncio
 import sys
 from dataclasses import dataclass, field
 
-from agent.graph import resolve_llm_model
-from agent.models import get_llm
+from agent.graph import (
+    ModelConfigError,
+    build_llm,
+    resolve_llm_model,
+    resolve_model_parameters,
+)
 from agent.tasks.intent_classifier import (
     SourceName,
     create_intent_classifier,
 )
 from reactome_mcp.session import is_configured
 from retrievers.reactome.metadata_info import reactome_descriptions_info
+from util.config_yml import Config
 
 
 @dataclass(frozen=True)
@@ -136,9 +141,21 @@ def available_sources() -> frozenset[SourceName]:
 
 
 async def run(probes: tuple[Probe, ...] = PROBES) -> list[Result]:
-    provider, model, base_url = resolve_llm_model(None)
+    # The deployment's model and parameters, as the chat resolves them. This used
+    # to pass None, so it probed the built-in default at temperature 0.0 whatever
+    # config.yml said.
+    config = Config.from_yaml()
+    llm_config = config.llm if config else None
+    provider, model, base_url = resolve_llm_model(llm_config)
     classifier = create_intent_classifier(
-        get_llm(provider, model, base_url=base_url, request_timeout=120.0),
+        build_llm(
+            provider,
+            model,
+            parameters=resolve_model_parameters(provider, llm_config),
+            base_url=base_url,
+            request_timeout=120.0,
+            check=True,
+        ),
         available_sources(),
     )
     results = []
@@ -203,4 +220,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.parse_args()
     print(f"Asking the classifier {len(PROBES)} questions\n", file=sys.stderr)
-    raise SystemExit(report(asyncio.run(run())))
+    try:
+        results = asyncio.run(run())
+    except ModelConfigError as exc:
+        raise SystemExit(str(exc)) from None
+    raise SystemExit(report(results))

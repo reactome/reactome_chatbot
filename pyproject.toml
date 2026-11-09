@@ -34,7 +34,8 @@ langchain-classic = "^1.0.8"
 # Same: data_generation imports RecursiveCharacterTextSplitter from it.
 langchain-text-splitters = "^1.1.2"
 # 2.x, required by langchain-openai 1.x (openai>=2.45). Used directly only by
-# bin/probe_model_temperature, for models.list().
+# tests/agent/test_model_parameters.py, to build the API errors the startup check
+# reads.
 openai = "^2.45.0"
 # Held below 1.0, and langchain-chroma below 1.0 with it. chromadb 1.x opens a
 # 0.5/0.6 bundle by migrating its sqlite sysdb in place (9 -> 10), which needs

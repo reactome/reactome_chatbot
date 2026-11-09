@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Literal
 
 from langchain_core.embeddings import Embeddings
@@ -9,6 +10,27 @@ from langchain_openai.embeddings import OpenAIEmbeddings
 
 #: Seconds for one embedding request.
 EMBEDDING_TIMEOUT_SECONDS = 30.0
+
+
+@dataclass(frozen=True)
+class ModelParameters:
+    """What every call to one chat model sends, decided once.
+
+    `None` means the key is left out of the request, so the model uses its own
+    default. Decided by `agent.graph.resolve_model_parameters`, from the provider
+    and config.yml -- never from the model name.
+    """
+
+    temperature: float | None
+    reasoning_effort: str | None
+
+    def describe(self) -> str:
+        """For the startup log and refusal messages."""
+        temperature = "none" if self.temperature is None else str(self.temperature)
+        return (
+            f"temperature {temperature}, "
+            f"reasoning effort {self.reasoning_effort or 'none'}"
+        )
 
 
 def get_embedding(
@@ -56,35 +78,35 @@ def get_llm(
     ),
     model: str | None = None,
     *,
+    parameters: ModelParameters,
     base_url: str | None = None,
     request_timeout: float | None = None,
-    temperature: float = 0.0,
 ) -> BaseChatModel:
-    """Build a chat model. See `agent.graph.resolve_temperature` for the value.
+    """Build a chat model that sends exactly `parameters`.
 
-    0.0 is what this repository wants everywhere -- the graders, the intent
-    classifier and the query expander should all give the same answer twice.
-    Some models refuse it, which is why this is a parameter rather than the
-    constant it used to be.
+    Nothing is validated here; that is `agent.graph.resolve_model_parameters`,
+    and callers go through `agent.graph.build_llm` rather than calling this.
+    `parameters` has no default so that a caller that skips the resolver does
+    not type-check.
 
-    There is no way to send *no* temperature on langchain-openai 0.2.14:
-    omitting the argument makes ChatOpenAI send its own pydantic default of 0.7,
-    which the models that refuse 0.0 refuse just as firmly. So the caller must
-    pass a value the model accepts; it cannot opt out.
+    A `None` is left out of the request: on langchain-openai 1.x, ChatOpenAI's
+    temperature defaults to None and is then omitted, so the model uses its own
+    default. (On 0.2.x it was 0.7, and there was no way to send no temperature.)
     """
     if model is None:
         provider, model = provider.split("/", 1)
     if provider == "openai":
         return ChatOpenAI(
             model=model,
-            temperature=temperature,
+            temperature=parameters.temperature,
+            reasoning_effort=parameters.reasoning_effort,
             base_url=base_url,
             request_timeout=request_timeout,  # type: ignore[call-arg]  # pydantic-generated __init__
         )
     if provider == "ollama":
         return ChatOllama(
             model=model,
-            temperature=temperature,
+            temperature=parameters.temperature,
             base_url=base_url,
             request_timeout=request_timeout,  # type: ignore[call-arg]  # pydantic-generated __init__
         )

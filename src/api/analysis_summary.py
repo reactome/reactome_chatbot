@@ -24,8 +24,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from agent.graph import resolve_llm_model, resolve_temperature
-from agent.models import get_llm
+from agent.graph import build_llm
+from agent.registry import get_graph
 from analysis.client import current_release, fetch_not_found, fetch_result
 from analysis.disclosure import Tier, for_tier
 from analysis.store import Stored, SummaryStore
@@ -36,7 +36,6 @@ from util.caller_token import (
     human_presence_reason,
     verify,
 )
-from util.config_yml import Config
 from util.logging import logging
 from util.rate_limit import identity_of, limiter_from_env
 
@@ -331,25 +330,31 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
 
 
 def _summary_llm() -> Any:
-    """The chat's model, chosen the way the chat chooses it.
+    """The chat's model, chosen and parameterised the way the chat does it.
+
+    The summary is the answer on this surface, so it runs at the answer's
+    reasoning effort (`llm.answer_reasoning_effort`), as the chat's answer does.
 
     The first version passed no config and no temperature: a model or
     provider set in config.yml applied to the chat but not to summaries, and
     a fixed-temperature model (o3, o4-mini) rejected the default 0.0 -- every
     summary failing while the chat worked (review, area 1a).
+
+    Built from the answer model the process's AgentGraph resolved and checked
+    at startup (`AgentGraph.answer_model`), so it is not checked again. The
+    second version re-read config.yml on every request: an invalid file then
+    raised `SystemExit` past the stream's `except Exception` and ended the
+    worker, and an edited one made summaries drift from the chat.
     """
-    config = Config.from_yaml()
-    llm_config = config.llm if config else None
-    provider, model, base_url = resolve_llm_model(llm_config)
-    temperature = resolve_temperature(
-        model, configured=llm_config.temperature if llm_config else None
-    )
-    return get_llm(
-        provider,
-        model,
-        base_url=base_url,
+    choice = get_graph().answer_model
+    return build_llm(
+        choice.provider,
+        choice.model,
+        parameters=choice.parameters,
+        base_url=choice.base_url,
         request_timeout=90.0,
-        temperature=temperature,
+        check=False,
+        answer=True,
     )
 
 

@@ -16,6 +16,7 @@ silently and the symptom would be an answer panel showing "Which proteins...".
 import asyncio
 from typing import Any, cast
 
+from langchain_core.callbacks.base import BaseCallbackHandler
 from langgraph.graph.state import CompiledStateGraph
 
 from agent.graph import ANSWER_NODE, MAX_CITATIONS, AgentGraph
@@ -133,3 +134,34 @@ def test_an_unknown_profile_fails_rather_than_hanging() -> None:
 
 async def _collect_unknown(graph: AgentGraph) -> list[Any]:
     return [e async for e in graph.astream_answer("q", "nope", thread_id="t")]
+
+
+def test_callbacks_are_passed_into_the_run() -> None:
+    """The measurement (bin/measure-answering-model) sees each model call through
+    a callback on the served path, as `ainvoke` already allows."""
+    seen: dict[str, Any] = {}
+
+    class _Recording(_FakeCompiled):
+        async def astream_events(self, *_a: Any, **kwargs: Any) -> Any:
+            seen.update(kwargs)
+            async for event in super().astream_events():
+                yield event
+
+    graph = AgentGraph.__new__(AgentGraph)
+    graph.graph = cast(
+        "dict[str, CompiledStateGraph[Any, None, Any, Any]]",
+        {"react-to-me": _Recording([_retrieved([]), _token("Yes.")])},
+    )
+    handler = BaseCallbackHandler()
+
+    async def _run() -> list[Any]:
+        return [
+            event
+            async for event in graph.astream_answer(
+                "q", "react-to-me", thread_id="t", callbacks=[handler]
+            )
+        ]
+
+    events = asyncio.run(_run())
+    assert seen["config"]["callbacks"] == [handler]
+    assert events[-1].state == "answered"

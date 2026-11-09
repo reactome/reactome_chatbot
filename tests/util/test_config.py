@@ -154,3 +154,31 @@ def test_an_unknown_top_level_key_is_fatal(tmp_path: Path) -> None:
 def test_the_shipped_configs_carry_no_unknown_keys() -> None:
     """Turning on extra="forbid" must not refuse a config that works today."""
     assert Config.from_yaml(CONFIG_DEFAULT_YML) is not None
+
+
+def test_both_reasoning_efforts_are_loaded(tmp_path: Path) -> None:
+    path = tmp_path / "config.yml"
+    path.write_text(
+        VALID + "llm:\n  reasoning_effort: high\n  answer_reasoning_effort: xhigh\n"
+    )
+    config = Config.from_yaml(path)
+    assert config is not None
+    assert config.llm is not None
+    assert config.llm.reasoning_effort == "high"
+    assert config.llm.answer_reasoning_effort == "xhigh"
+
+
+@pytest.mark.parametrize("key", ["reasoning_effort", "answer_reasoning_effort"])
+def test_a_level_that_is_not_a_reasoning_effort_is_fatal(
+    tmp_path: Path, key: str
+) -> None:
+    """FR-005d. `max` is no level any OpenAI model accepts, so it is refused when
+    the file is read, and the message lists the recognised levels.
+
+    Whether the chosen model accepts a recognised level is a different question,
+    answered by the API at startup (agent.graph.check_model)."""
+    path = tmp_path / "config.yml"
+    path.write_text(VALID + f"llm:\n  {key}: max\n")
+    with pytest.raises(SystemExit, match="Invalid config") as refused:
+        Config.from_yaml(path)
+    assert "xhigh" in str(refused.value)
