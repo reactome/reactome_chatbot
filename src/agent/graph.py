@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
+import openai
 from langchain_core.callbacks.base import Callbacks
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
@@ -129,6 +130,16 @@ DEFAULT_REASONING_EFFORT = "low"
 DEFAULT_ANSWER_REASONING_EFFORT = "medium"
 
 
+class ModelConfigError(Exception):
+    """A model setting that cannot be honoured, or that the API rejected.
+
+    Raised rather than `SystemExit`, so the caller decides what a refusal means.
+    The server (`AgentGraph`) and the command-line tools turn it into an exit at
+    startup. A per-request caller such as the analysis summary lets its
+    `except Exception` record a failed request, and the worker stays up.
+    """
+
+
 def _effort_setting(answer: bool) -> tuple[str, str]:
     """The config.yml key and default for one kind of call, for messages."""
     if answer:
@@ -150,9 +161,10 @@ def resolve_model_parameters(
     the table this replaced went stale (specs/015-openai-reasoning-effort
     research R3).
 
-    A setting that cannot be honoured stops the process, whichever kind of call
-    is being resolved: both kinds refuse the same configurations. Checks run in
-    a fixed order, so an operator with two problems sees the first one first.
+    A setting that cannot be honoured raises `ModelConfigError`, whichever kind
+    of call is being resolved: both kinds refuse the same configurations. Checks
+    run in a fixed order, so an operator with two problems sees the first one
+    first.
     """
     configured_temperature = llm_config.temperature if llm_config else None
     configured_efforts = {
@@ -168,14 +180,14 @@ def resolve_model_parameters(
 
     if provider == "openai":
         if configured_temperature is not None:
-            raise SystemExit(
+            raise ModelConfigError(
                 f"config.yml sets llm.temperature={configured_temperature} with "
                 "provider openai. OpenAI models use only their own default "
                 "temperature, so none is sent. Remove it; set "
                 "llm.reasoning_effort to change how much the model reasons."
             )
         if override is not None:
-            raise SystemExit(
+            raise ModelConfigError(
                 f"LLM_TEMPERATURE={override!r} is set with provider openai. OpenAI "
                 "models use only their own default temperature, so none is sent. "
                 "Remove it; set llm.reasoning_effort in config.yml to change how "
@@ -188,7 +200,7 @@ def resolve_model_parameters(
 
     for name, configured_effort in configured_efforts.items():
         if configured_effort is not None:
-            raise SystemExit(
+            raise ModelConfigError(
                 f"config.yml sets {name}={configured_effort!r} with provider "
                 f"{provider}. Reasoning effort applies only to OpenAI models. "
                 "Remove it."
@@ -197,7 +209,9 @@ def resolve_model_parameters(
         try:
             return ModelParameters(temperature=float(override), reasoning_effort=None)
         except ValueError:
-            raise SystemExit(f"LLM_TEMPERATURE={override!r} is not a number.") from None
+            raise ModelConfigError(
+                f"LLM_TEMPERATURE={override!r} is not a number."
+            ) from None
     return ModelParameters(
         temperature=(
             configured_temperature if configured_temperature is not None else 0.0
@@ -222,53 +236,86 @@ def check_model(
     on a user's first question into a refusal to start (constitution IV).
 
     No output cap: a reasoning model can spend a small cap on reasoning and fail
-    for a reason unrelated to the parameters (research R1). The API's error is
-    always quoted; the fix line is a best guess from its text, so a wrong guess
-    still leaves the operator with the API's own words.
+    for a reason unrelated to the parameters (research R1).
+
+    Only an answer refuses. A rejection (any other status the API returns:
+    400, 401, 403, 404...) raises `ModelConfigError` and quotes the API's error.
+    No answer -- the API unreachable, rate limited, or failing with a 5xx, after
+    the client's own retries -- says nothing about the settings, so it is
+    logged and startup goes on. Refusing then would keep the server down through
+    a provider outage, and a restart loop would not bring it back any sooner.
     """
     try:
         llm.invoke("Reply with the single word OK.")
-    except Exception as exc:
-        error = str(exc)
-        if "reasoning_effort" in error and "Unrecognized" in error:
-            fix = (
-                "This model takes no reasoning effort; it is one of the older "
-                "models being retired. Choose a current model (the built-in default "
-                f"is {DEFAULT_LLM_MODEL})."
-            )
-        elif "reasoning_effort" in error:
-            key, default = _effort_setting(answer)
-            fix = (
-                f"Set {key} to a level this model accepts (listed above), or "
-                f"remove it to use {default}."
-            )
-        else:
-            fix = "Check OPENAI_API_KEY, LLM_BASE_URL and the model name."
-        raise SystemExit(
+    except _NO_ANSWER as exc:
+        logging.warning(
+            f"Could not check {provider}/{model} at startup "
+            f"({type(exc).__name__}: {exc}); starting anyway. This says nothing "
+            f"about {parameters.describe()}: if those are rejected, the first "
+            "question will fail with the API's reason. If it persists, check "
+            "LLM_BASE_URL and the provider's status."
+        )
+    except openai.APIError as exc:
+        raise ModelConfigError(
             f"{provider}/{model} rejected a startup request sent with "
-            f"{parameters.describe()}:\n  {error}\n{fix}"
+            f"{parameters.describe()}:\n  {exc}\n{_fix_for(exc, answer=answer)}"
         ) from None
+
+
+#: Failures that are not an answer from the API about the request. The client
+#: has already retried each of them (openai's default is two retries).
+_NO_ANSWER = (
+    openai.APIConnectionError,  # includes APITimeoutError
+    openai.RateLimitError,
+    openai.InternalServerError,
+)
+
+
+def _fix_for(exc: openai.APIError, *, answer: bool) -> str:
+    """The fix line for a rejected startup request.
+
+    Uses the error's structured `param` and `code` when the API sends them.
+    The message text is checked as well, because the "Unrecognized request
+    argument" rejection from older models is only recorded by its text
+    (research R1). Either way the API's own error is quoted above this line.
+    """
+    message = exc.message
+    if isinstance(exc, openai.BadRequestError) and (
+        exc.param == "reasoning_effort" or "reasoning_effort" in message
+    ):
+        if exc.code == "unsupported_parameter" or "Unrecognized" in message:
+            return (
+                "This model takes no reasoning effort; it is one of the older "
+                "models being retired. Choose a current model (the built-in "
+                f"default is {DEFAULT_LLM_MODEL})."
+            )
+        key, default = _effort_setting(answer)
+        return (
+            f"Set {key} to a level this model accepts (listed above), or "
+            f"remove it to use {default}."
+        )
+    return "Check OPENAI_API_KEY, LLM_BASE_URL and the model name."
 
 
 def build_llm(
     provider: str,
     model: str,
     *,
-    llm_config: "LLMConfig | None",
+    parameters: ModelParameters,
     base_url: str | None = None,
     request_timeout: float | None = None,
     check: bool,
     answer: bool = False,
 ) -> BaseChatModel:
-    """The one way to build a chat model: resolve, build, and optionally check.
+    """The one way to build a chat model: build, and optionally check.
 
-    Every place that builds a model comes through here, so the same provider and
-    settings always send the same parameters and refuse the same way. `answer`
-    builds the model for answer calls, at the answer's reasoning effort. `check`
-    sends the startup request for OpenAI (`check_model`); Ollama is never
-    checked.
+    `parameters` comes from `resolve_model_parameters`, which the caller runs
+    once and can then log or compare. It is required, so a caller cannot skip
+    the decision. `answer` says which kind of call the model is for and must
+    match what `parameters` was resolved with. It is used only for the fix line
+    when the check is refused. `check` sends the startup request for OpenAI
+    (`check_model`); Ollama is never checked.
     """
-    parameters = resolve_model_parameters(provider, llm_config, answer=answer)
     llm = get_llm(
         provider,
         model,
@@ -384,6 +431,22 @@ class AnswerEvent:
     state: Literal["answered", "nothing_found", "refused", "failed"] | None = None
 
 
+@dataclass(frozen=True)
+class ModelChoice:
+    """One chat model as startup resolved it, and checked it when that is due.
+
+    Kept on `AgentGraph` so that a per-request caller (the analysis summary)
+    builds from the same settings the chat runs on. It reads no config.yml
+    during a request, so an invalid or edited file cannot fail that request or
+    make the summary drift from the chat.
+    """
+
+    provider: str
+    model: str
+    base_url: str | None
+    parameters: ModelParameters
+
+
 class AgentGraph:
     def __init__(
         self,
@@ -398,33 +461,43 @@ class AgentGraph:
         # reasoning effort. Both are checked against the API before the ~85s of
         # BM25 below, so a model or level the API rejects stops startup in
         # seconds -- the second only when its parameters differ from the first.
-        parameters = resolve_model_parameters(llm_provider, llm_config)
-        answer_parameters = resolve_model_parameters(
-            llm_provider, llm_config, answer=True
-        )
-        llm: BaseChatModel = build_llm(
-            llm_provider,
-            llm_model,
-            llm_config=llm_config,
-            base_url=llm_base_url,
-            request_timeout=360.0,
-            check=True,
-        )
-        answer_llm: BaseChatModel = build_llm(
-            llm_provider,
-            llm_model,
-            llm_config=llm_config,
-            base_url=llm_base_url,
-            request_timeout=360.0,
-            check=answer_parameters != parameters,
-            answer=True,
-        )
+        # This is startup, so a refusal ends the process.
+        try:
+            parameters = resolve_model_parameters(llm_provider, llm_config)
+            answer_parameters = resolve_model_parameters(
+                llm_provider, llm_config, answer=True
+            )
+            llm: BaseChatModel = build_llm(
+                llm_provider,
+                llm_model,
+                parameters=parameters,
+                base_url=llm_base_url,
+                request_timeout=360.0,
+                check=True,
+            )
+            answer_llm: BaseChatModel = build_llm(
+                llm_provider,
+                llm_model,
+                parameters=answer_parameters,
+                base_url=llm_base_url,
+                request_timeout=360.0,
+                check=answer_parameters != parameters,
+                answer=True,
+            )
+        except ModelConfigError as exc:
+            raise SystemExit(str(exc)) from None
         # The name only. A model id is not a secret, but this is the line a key
-        # would end up on if anyone ever widened it.
+        # would end up on if anyone ever widened it. A check that got no answer
+        # has already logged a warning above this line.
         logging.info(
             f"Answering with {llm_provider}/{llm_model}: "
             f"{parameters.describe()}; answer: {answer_parameters.describe()}"
-            + (" (checked)" if llm_provider == "openai" else "")
+        )
+        self.answer_model = ModelChoice(
+            provider=llm_provider,
+            model=llm_model,
+            base_url=llm_base_url,
+            parameters=answer_parameters,
         )
         embedding_base_url = os.getenv("OPENAI_BASE_URL", None)
         embedding: Embeddings = get_embedding(

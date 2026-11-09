@@ -30,14 +30,13 @@ from typing import Any
 
 import nltk
 from dotenv import load_dotenv
-from langchain_classic.retrievers.self_query.base import SelfQueryRetriever
 from langchain_chroma.vectorstores import Chroma
+from langchain_classic.retrievers.self_query.base import SelfQueryRetriever
 from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.retrievers import BaseRetriever
 from nltk.tokenize import word_tokenize
-
 
 # Run from anywhere without setting PYTHONPATH, like the other bin/ scripts.
 # The Dockerfile and CI both set it (`/app/src`, `./bin:./src`), so importing
@@ -45,7 +44,12 @@ from nltk.tokenize import word_tokenize
 # usage.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from agent.graph import DEFAULT_LLM_MODEL, build_llm
+from agent.graph import (
+    DEFAULT_LLM_MODEL,
+    ModelConfigError,
+    build_llm,
+    resolve_model_parameters,
+)
 from agent.models import get_embedding
 from data_generation.metadata_csv_loader import MetaDataCSVLoader
 from retrievers.csv_chroma import (
@@ -159,11 +163,17 @@ def capture(args: argparse.Namespace) -> None:
     # whether or not self-query ran. The built-in default model with no deployment
     # config, so a baseline does not move when one deployment's config.yml
     # changes. Checked against the API before any question is asked.
-    selfquery_llm = (
-        build_llm("openai", DEFAULT_LLM_MODEL, llm_config=None, check=True)
-        if args.with_selfquery
-        else None
-    )
+    selfquery_llm: BaseChatModel | None = None
+    if args.with_selfquery:
+        try:
+            selfquery_llm = build_llm(
+                "openai",
+                DEFAULT_LLM_MODEL,
+                parameters=resolve_model_parameters("openai", None),
+                check=True,
+            )
+        except ModelConfigError as exc:
+            raise SystemExit(str(exc)) from None
 
     result: Capture = {q: {} for q in questions}
     for collection in collections:

@@ -24,7 +24,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from agent.graph import build_llm, resolve_llm_model
+from agent.graph import build_llm
+from agent.registry import get_graph
 from analysis.client import current_release, fetch_not_found, fetch_result
 from analysis.disclosure import Tier, for_tier
 from analysis.store import Stored, SummaryStore
@@ -35,7 +36,6 @@ from util.caller_token import (
     human_presence_reason,
     verify,
 )
-from util.config_yml import Config
 from util.logging import logging
 from util.rate_limit import identity_of, limiter_from_env
 
@@ -340,27 +340,22 @@ def _summary_llm() -> Any:
     a fixed-temperature model (o3, o4-mini) rejected the default 0.0 -- every
     summary failing while the chat worked (review, area 1a).
 
-    Not checked against the API: this runs per request, in a process whose
-    AgentGraph already checked the same config at startup. A refusal from
-    resolving is a `SystemExit`, which gets past `except Exception` and would
-    take the worker down, so it is re-raised as a `RuntimeError` and recorded
-    as a failed summary instead.
+    Built from the answer model the process's AgentGraph resolved and checked
+    at startup (`AgentGraph.answer_model`), so it is not checked again. The
+    second version re-read config.yml on every request: an invalid file then
+    raised `SystemExit` past the stream's `except Exception` and ended the
+    worker, and an edited one made summaries drift from the chat.
     """
-    config = Config.from_yaml()
-    llm_config = config.llm if config else None
-    provider, model, base_url = resolve_llm_model(llm_config)
-    try:
-        return build_llm(
-            provider,
-            model,
-            llm_config=llm_config,
-            base_url=base_url,
-            request_timeout=90.0,
-            check=False,
-            answer=True,
-        )
-    except SystemExit as exc:
-        raise RuntimeError(str(exc)) from None
+    choice = get_graph().answer_model
+    return build_llm(
+        choice.provider,
+        choice.model,
+        parameters=choice.parameters,
+        base_url=choice.base_url,
+        request_timeout=90.0,
+        check=False,
+        answer=True,
+    )
 
 
 def _text(chunk: Any) -> str:

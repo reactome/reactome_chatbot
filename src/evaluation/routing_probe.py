@@ -34,7 +34,12 @@ import asyncio
 import sys
 from dataclasses import dataclass, field
 
-from agent.graph import build_llm, resolve_llm_model
+from agent.graph import (
+    ModelConfigError,
+    build_llm,
+    resolve_llm_model,
+    resolve_model_parameters,
+)
 from agent.tasks.intent_classifier import (
     SourceName,
     create_intent_classifier,
@@ -146,7 +151,7 @@ async def run(probes: tuple[Probe, ...] = PROBES) -> list[Result]:
         build_llm(
             provider,
             model,
-            llm_config=llm_config,
+            parameters=resolve_model_parameters(provider, llm_config),
             base_url=base_url,
             request_timeout=120.0,
             check=True,
@@ -215,4 +220,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.parse_args()
     print(f"Asking the classifier {len(PROBES)} questions\n", file=sys.stderr)
-    raise SystemExit(report(asyncio.run(run())))
+    try:
+        results = asyncio.run(run())
+    except ModelConfigError as exc:
+        raise SystemExit(str(exc)) from None
+    raise SystemExit(report(results))

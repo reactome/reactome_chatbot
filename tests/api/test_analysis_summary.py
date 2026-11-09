@@ -86,6 +86,21 @@ def keys() -> tuple[str, str]:
     )
 
 
+class _StartupGraph:
+    """Stands in for the AgentGraph startup built: only what the summary reads."""
+
+    def __init__(self, answer_model: Any = None) -> None:
+        from agent.graph import ModelChoice
+        from agent.models import ModelParameters
+
+        self.answer_model = answer_model or ModelChoice(
+            provider="openai",
+            model="m",
+            base_url=None,
+            parameters=ModelParameters(None, "medium"),
+        )
+
+
 @pytest.fixture(autouse=True)
 def wired(monkeypatch: pytest.MonkeyPatch) -> _Counter:
     counter = _Counter()
@@ -100,9 +115,8 @@ def wired(monkeypatch: pytest.MonkeyPatch) -> _Counter:
     monkeypatch.setattr("api.analysis_summary._store", SummaryStore())
     monkeypatch.setattr("api.analysis_summary._generating", {})
     monkeypatch.setattr("api.analysis_summary.build_llm", lambda *a, **k: counter)
-    monkeypatch.setattr(
-        "api.analysis_summary.resolve_llm_model", lambda _c: ("openai", "m", None)
-    )
+    # The process's graph, built at startup; never built by a test.
+    monkeypatch.setattr("api.analysis_summary.get_graph", lambda: _StartupGraph())
 
     async def _fetch(_token: str) -> Fetched:
         return Fetched("ok", RESULT)
@@ -899,25 +913,25 @@ def test_content_blocks_are_read_and_an_empty_stream_is_a_failure(
     assert '"state": "summarised"' not in body
 
 
-def test_the_summary_builds_its_model_the_way_the_chat_does(
+def test_the_summary_builds_the_answer_model_startup_checked(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The summary used to choose its model and temperature itself, and failed
-    # on o3-class models while the chat worked (review, area 1a). It now goes
-    # through the same builder with the deployment's config. Not checked
-    # against the API: the process's AgentGraph already checked that config.
-    from agent.graph import resolve_llm_model
+    # on o3-class models while the chat worked (review, area 1a). It now builds
+    # from the graph's answer model: the same model, base URL and answer
+    # effort the chat runs on. Not checked again: startup checked it.
+    from agent.graph import ModelChoice
+    from agent.models import ModelParameters
     from api import analysis_summary as endpoint
-    from util.config_yml import Config
-    from util.config_yml.models import LLMConfig
 
-    llm_config = LLMConfig(model="gpt-6-luna", reasoning_effort="high")
-    config = type("_Config", (), {"llm": llm_config})()
+    choice = ModelChoice(
+        provider="openai",
+        model="gpt-6-luna",
+        base_url="https://llm.example.org/v1",
+        parameters=ModelParameters(None, "xhigh"),
+    )
     seen: dict[str, Any] = {}
-    monkeypatch.delenv("LLM_MODEL", raising=False)
-    # The real resolver: the autouse fixture stubs it for the endpoint tests.
-    monkeypatch.setattr(endpoint, "resolve_llm_model", resolve_llm_model)
-    monkeypatch.setattr(Config, "from_yaml", staticmethod(lambda *a, **k: config))
+    monkeypatch.setattr(endpoint, "get_graph", lambda: _StartupGraph(choice))
     monkeypatch.setattr(
         endpoint,
         "build_llm",
@@ -925,25 +939,26 @@ def test_the_summary_builds_its_model_the_way_the_chat_does(
     )
     endpoint._summary_llm()
     assert seen["args"] == ("openai", "gpt-6-luna")
-    assert seen["llm_config"] is llm_config
+    assert seen["parameters"] == choice.parameters
+    assert seen["base_url"] == choice.base_url
     assert seen["check"] is False
     # The summary is this surface's answer, so it runs at the answer's effort.
     assert seen["answer"] is True
 
 
-def test_a_refused_config_fails_the_summary_rather_than_the_worker(
+def test_the_summary_reads_no_config_during_a_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # SystemExit gets past `except Exception`, so a refusal raised while
-    # building the summary's model would end the worker. It is re-raised as a
-    # RuntimeError, which the handler records as a failed summary.
+    # It used to call Config.from_yaml() per request: an invalid config.yml
+    # raised SystemExit, which gets past the stream's `except Exception` and
+    # ended the worker.
     from api import analysis_summary as endpoint
     from util.config_yml import Config
 
-    def _refuse(*_a: Any, **_k: Any) -> None:
-        raise SystemExit("LLM_TEMPERATURE='0' is set with provider openai.")
+    def _invalid(*_a: Any, **_k: Any) -> None:
+        raise SystemExit("Invalid config config.yml")
 
-    monkeypatch.setattr(Config, "from_yaml", staticmethod(lambda *a, **k: None))
-    monkeypatch.setattr(endpoint, "build_llm", _refuse)
-    with pytest.raises(RuntimeError, match="LLM_TEMPERATURE"):
-        endpoint._summary_llm()
+    monkeypatch.setattr(Config, "from_yaml", staticmethod(_invalid))
+    monkeypatch.setenv("LLM_TEMPERATURE", "0")
+    monkeypatch.setenv("LLM_MODEL", "edited-after-startup")
+    endpoint._summary_llm()

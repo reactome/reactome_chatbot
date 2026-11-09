@@ -51,7 +51,13 @@ from ragas.metrics import (
     ResponseRelevancy,
 )
 
-from agent.graph import DEFAULT_LLM_MODEL, build_llm, resolve_embedding_model
+from agent.graph import (
+    DEFAULT_LLM_MODEL,
+    ModelConfigError,
+    build_llm,
+    resolve_embedding_model,
+    resolve_model_parameters,
+)
 from agent.models import get_embedding
 from agent.tasks.rephrase import create_rephrase_chain
 from retrievers.reactome.rag import create_reactome_rag
@@ -270,10 +276,11 @@ def build_model_under_test(model: str, *, answer: bool = False) -> BaseChatModel
     against the API here, when the CLI starts, not after a run has been paid for.
     """
     config = Config.from_yaml()
+    llm_config = config.llm if config else None
     return build_llm(
         "openai",
         model,
-        llm_config=config.llm if config else None,
+        parameters=resolve_model_parameters("openai", llm_config, answer=answer),
         request_timeout=360.0,
         check=True,
         answer=answer,
@@ -287,7 +294,12 @@ def build_judge(judge: str) -> BaseChatModel:
     a level the judge does not accept, and a judge whose parameters moved with
     one deployment's config would make two runs incomparable.
     """
-    return build_llm("openai", judge, llm_config=None, check=True)
+    return build_llm(
+        "openai",
+        judge,
+        parameters=resolve_model_parameters("openai", None),
+        check=True,
+    )
 
 
 def build_chain(
@@ -493,14 +505,17 @@ def main() -> None:
 
     # Every model checked against the API before any question is asked, so a
     # judge or model the API rejects stops the run before it costs anything.
-    judge = build_judge(args.judge_model)
-    under_test = {
-        model: (
-            build_model_under_test(model),
-            build_model_under_test(model, answer=True),
-        )
-        for model in models
-    }
+    try:
+        judge = build_judge(args.judge_model)
+        under_test = {
+            model: (
+                build_model_under_test(model),
+                build_model_under_test(model, answer=True),
+            )
+            for model in models
+        }
+    except ModelConfigError as exc:
+        raise SystemExit(str(exc)) from None
 
     for model in models:
         runs: list[dict[str, float]] = []
