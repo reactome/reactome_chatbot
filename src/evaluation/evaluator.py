@@ -12,14 +12,14 @@ It now calls `create_reactome_rag`, the same factory `bin/chat-chainlit.py`
 reaches, so a change to retrieval cannot alter the product without altering the
 measurement.
 
-  # one model over the golden questions
-  ./bin/evaluate --model gpt-4o-mini
+  # the default answering model over the golden questions
+  ./bin/evaluate
 
   # two models, same questions, same judge, side by side
-  ./bin/evaluate --model gpt-4o-mini --model gpt-5.6-luna
+  ./bin/evaluate --model gpt-6-luna --model gpt-6-sol
 
   # how much of a difference is just noise?
-  ./bin/evaluate --model gpt-4o-mini --repeat 3
+  ./bin/evaluate --model gpt-6-luna --repeat 3
 
 Requires an installed reactome bundle and OPENAI_API_KEY.
 """
@@ -51,20 +51,24 @@ from ragas.metrics import (
     ResponseRelevancy,
 )
 
-from agent.graph import resolve_embedding_model, resolve_temperature
-from agent.models import get_embedding, get_llm
+from agent.graph import DEFAULT_LLM_MODEL, build_llm, resolve_embedding_model
+from agent.models import get_embedding
 from agent.tasks.rephrase import create_rephrase_chain
 from retrievers.reactome.rag import create_reactome_rag
+from util.config_yml import Config
 from util.embedding_environment import EmbeddingEnvironment
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 DEFAULT_QUESTIONS = REPO_ROOT / "tests" / "golden" / "questions.txt"
 
-# The judge is pinned and is NOT the model under test. Scoring gpt-5.6-luna with
-# gpt-5.6-luna would ask a model to grade its own homework; and a judge that moves
+# The judge is pinned and is NOT the model under test. Scoring gpt-6-luna with
+# gpt-6-luna would ask a model to grade its own homework; and a judge that moves
 # between two runs makes the two runs incomparable, which is the failure this
 # whole file exists to avoid.
-DEFAULT_JUDGE_MODEL = "gpt-4o"
+#
+# gpt-4o until 2026-11: it rejects a reasoning effort, which every OpenAI call
+# now sends. Scores judged by gpt-4o are not comparable with later ones.
+DEFAULT_JUDGE_MODEL = "gpt-6-astra"
 
 # Used only to compare a question against an answer for answer_relevancy.
 JUDGE_EMBEDDING_MODEL = "text-embedding-3-large"
@@ -257,22 +261,49 @@ def make_transcript_writer(
     return write
 
 
-def build_chain(model: str, embeddings_dir: Path) -> tuple[Any, Any]:
-    """The chain under test and the rephrase step, built as the application does.
+def build_model_under_test(model: str, *, answer: bool = False) -> BaseChatModel:
+    """The model under test, with the deployment's `llm:` settings.
 
-    Production uses one LLM for both, so the model under test rephrases its own
-    questions -- which is part of what is being compared.
+    The name comes from --model, but the parameters come from config.yml, as the
+    chat's do, so a deployment's reasoning efforts are what get measured: called
+    twice, once with `answer=True` for the model that writes the answer. Checked
+    against the API here, when the CLI starts, not after a run has been paid for.
     """
-    llm: BaseChatModel = get_llm(
+    config = Config.from_yaml()
+    return build_llm(
         "openai",
         model,
+        llm_config=config.llm if config else None,
         request_timeout=360.0,
-        temperature=resolve_temperature(model),
+        check=True,
+        answer=answer,
     )
+
+
+def build_judge(judge: str) -> BaseChatModel:
+    """The judge, with no deployment config.
+
+    A deployment's reasoning effort is chosen for its answering model and may be
+    a level the judge does not accept, and a judge whose parameters moved with
+    one deployment's config would make two runs incomparable.
+    """
+    return build_llm("openai", judge, llm_config=None, check=True)
+
+
+def build_chain(
+    llm: BaseChatModel, answer_llm: BaseChatModel, embeddings_dir: Path
+) -> tuple[Any, Any]:
+    """The chain under test and the rephrase step, built as the application does.
+
+    Production uses one model name for both, so the model under test rephrases
+    its own questions -- which is part of what is being compared. As in
+    production, the answer is written by `answer_llm`, the same model at the
+    answer's reasoning effort, and everything else by `llm`.
+    """
     embedding = get_embedding("openai", resolve_embedding_model())
-    return create_reactome_rag(llm, embedding, embeddings_dir), create_rephrase_chain(
-        llm
-    )
+    return create_reactome_rag(
+        llm, embedding, embeddings_dir, answer_llm=answer_llm
+    ), create_rephrase_chain(llm)
 
 
 def score(
@@ -280,15 +311,13 @@ def score(
     answers: list[str],
     contexts: list[list[str]],
     references: list[str | None],
-    judge: str,
+    judge: BaseChatModel,
 ) -> tuple[dict[str, float], list[dict[str, float]]]:
     """Score answers. `questions` is what was retrieved on; `references` is
     positional, resolved by the caller from the ORIGINAL wording -- a reference
     file is written against the questions a person typed, not against whatever
     the rephrase step produced on the day."""
-    judge_llm = LangchainLLMWrapper(
-        get_llm("openai", judge, temperature=resolve_temperature(judge))
-    )
+    judge_llm = LangchainLLMWrapper(judge)
     # answer_relevancy embeds the question and the answer to compare them. This
     # is the JUDGE's embedding and has nothing to do with the vectors in the
     # bundle, so it does not go through resolve_embedding_model -- but it must
@@ -429,7 +458,7 @@ def main() -> None:
         raise SystemExit("--concurrency must be at least 1.")
 
     failed_questions: list[dict[str, Any]] = []
-    models: list[str] = args.models or ["gpt-4o-mini"]
+    models: list[str] = args.models or [DEFAULT_LLM_MODEL]
     if args.judge_model in models:
         raise SystemExit(
             f"The judge ({args.judge_model}) is also under test. A model grading "
@@ -462,11 +491,22 @@ def main() -> None:
         "models": {},
     }
 
+    # Every model checked against the API before any question is asked, so a
+    # judge or model the API rejects stops the run before it costs anything.
+    judge = build_judge(args.judge_model)
+    under_test = {
+        model: (
+            build_model_under_test(model),
+            build_model_under_test(model, answer=True),
+        )
+        for model in models
+    }
+
     for model in models:
         runs: list[dict[str, float]] = []
         seconds: list[float] = []
         transcripts: list[list[dict[str, Any]]] = []
-        chain, rephrase = build_chain(model, embeddings_dir)
+        chain, rephrase = build_chain(*under_test[model], embeddings_dir)
         for run in range(1, args.repeat + 1):
             print(f"  {model}  run {run}/{args.repeat}", file=sys.stderr)
             rephrased, answers, contexts, elapsed, failures = answer_questions(
@@ -525,7 +565,7 @@ def main() -> None:
                 answers,
                 contexts,
                 resolve_references(answered, references),
-                args.judge_model,
+                judge,
             )
             runs.append(aggregate)
             # The answers themselves, not only the scores. The version this

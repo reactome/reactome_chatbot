@@ -14,7 +14,10 @@ from agent.profiles.react_to_me import create_reactome_graph
 class Profile(NamedTuple):
     name: ProfileName
     description: str
-    graph_builder: Callable[[BaseChatModel, Embeddings], StateGraph]
+    # (llm, answer_llm, embedding): `answer_llm` is the same model at the
+    # answer's reasoning effort, for the calls whose text reaches the user as the
+    # answer; `llm` is for everything else.
+    graph_builder: Callable[[BaseChatModel, BaseChatModel, Embeddings], StateGraph]
 
 
 CHAT_PROFILES: dict[str, Profile] = {
@@ -39,10 +42,11 @@ CHAT_PROFILES: dict[str, Profile] = {
 def create_profile_graphs(
     profiles: list[ProfileName],
     llm: BaseChatModel,
+    answer_llm: BaseChatModel,
     embedding: Embeddings,
 ) -> dict[str, StateGraph]:
     return {
-        profile: CHAT_PROFILES[profile].graph_builder(llm, embedding)
+        profile: CHAT_PROFILES[profile].graph_builder(llm, answer_llm, embedding)
         for profile in map(str.lower, profiles)
     }
 

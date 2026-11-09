@@ -12,6 +12,8 @@ than an error. Both #112 and #151 made it configurable; that is the one part of
 them not taken. See specs/003-model-configuration/spec.md FR-004.
 """
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -29,17 +31,25 @@ class LLMConfig(BaseModel):
     provider: str = "openai"
 
     # None means "not configured here", which leaves LLM_MODEL and then the
-    # built-in default in charge. A default of "gpt-4o-mini" would instead make
-    # every config.yml silently pin that model, which is the opposite of
+    # built-in default in charge. A model name as the default here would instead
+    # make every config.yml silently pin that model, which is the opposite of
     # FR-002's promise that an absent section changes nothing.
     model: str | None = None
 
     base_url: str | None = None
 
-    # Almost always leave unset. The value a model requires is derived in
-    # agent.graph.resolve_temperature from a measured table, because it is a
-    # property of the model rather than a preference: the gpt-5.5/5.6 families,
-    # o3 and o4-mini accept only 1.0, while gpt-5.1/5.2/5.4 accept 0.0. Setting
-    # it here to something the model refuses now stops startup rather than
-    # failing on a user's first question (FR-006).
+    # Ollama only. Current OpenAI models do not accept temperature so with provider openai no temperature is sent.
+    # (specs/015-openai-reasoning-effort FR-005).
     temperature: float | None = None
+
+    # OpenAI only. Each defaults when unset (see agent.graph):
+    #   reasoning_effort        -- every call except the answer; default "low"
+    #   answer_reasoning_effort -- calls whose text is the answer; default "medium"
+    # startup checks available reasoning levels against the API rather than a list
+    # here (specs/015-openai-reasoning-effort research R1, R4).
+    reasoning_effort: (
+        Literal["none", "minimal", "low", "medium", "high", "xhigh"] | None
+    ) = None
+    answer_reasoning_effort: (
+        Literal["none", "minimal", "low", "medium", "high", "xhigh"] | None
+    ) = None

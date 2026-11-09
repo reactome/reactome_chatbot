@@ -99,7 +99,7 @@ def wired(monkeypatch: pytest.MonkeyPatch) -> _Counter:
     # and is the tests interfering.
     monkeypatch.setattr("api.analysis_summary._store", SummaryStore())
     monkeypatch.setattr("api.analysis_summary._generating", {})
-    monkeypatch.setattr("api.analysis_summary.get_llm", lambda *a, **k: counter)
+    monkeypatch.setattr("api.analysis_summary.build_llm", lambda *a, **k: counter)
     monkeypatch.setattr(
         "api.analysis_summary.resolve_llm_model", lambda _c: ("openai", "m", None)
     )
@@ -247,7 +247,7 @@ def test_the_users_filename_never_reaches_the_model(keys: tuple[str, str]) -> No
 
     recording = _Recording()
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr("api.analysis_summary.get_llm", lambda *a, **k: recording)
+        patch.setattr("api.analysis_summary.build_llm", lambda *a, **k: recording)
         _post(public, caller_token=_token(private))
     assert sent, "the model was never called, so this proves nothing"
     assert "smith_unpublished" not in json.dumps(sent, default=str)
@@ -351,7 +351,7 @@ def test_the_identifiers_reach_the_model_only_on_the_disclosing_tier(
         recording = _Recording()
         with pytest.MonkeyPatch.context() as patch:
             patch.setattr(
-                "api.analysis_summary.get_llm",
+                "api.analysis_summary.build_llm",
                 lambda *a, _r=recording, **k: _r,
             )
             _post(public, caller_token=_token(private), disclosure=tier)
@@ -395,7 +395,7 @@ def test_the_disclosing_tier_is_told_to_name_what_it_was_given(
         recording = _Recording()
         with pytest.MonkeyPatch.context() as patch:
             patch.setattr(
-                "api.analysis_summary.get_llm",
+                "api.analysis_summary.build_llm",
                 lambda *a, _r=recording, **k: _r,
             )
             _post(public, caller_token=_token(private), disclosure=tier)
@@ -481,7 +481,7 @@ def test_each_type_gets_its_own_reading_on_the_served_path(
     recording = _Recording()
     private, public = keys
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr("api.analysis_summary.get_llm", lambda *a, **k: recording)
+        patch.setattr("api.analysis_summary.build_llm", lambda *a, **k: recording)
         response = _post(public, caller_token=_token(private))
     assert _events(response.text)[0][1]["analysis_type"] == analysis_type
     assert sent, "the model was never called, so this proves nothing"
@@ -639,7 +639,9 @@ def test_a_stuck_model_still_ends_the_stream(
     # T034. FR-008 says a failure must be a terminal state the caller can
     # render, never a broken panel -- which means never an open connection
     # either. An analysis page must not hang because this service did.
-    monkeypatch.setattr("api.analysis_summary.get_llm", lambda *a, **k: _HangingModel())
+    monkeypatch.setattr(
+        "api.analysis_summary.build_llm", lambda *a, **k: _HangingModel()
+    )
     monkeypatch.setattr("api.analysis_summary.SUMMARY_TIMEOUT_SECONDS", 0.25)
     private, public = keys
 
@@ -660,7 +662,9 @@ def test_a_stuck_summary_is_not_stored(
     # empty -- it is worse, being a plausible fragment that ends mid-sentence.
     store = SummaryStore()
     monkeypatch.setattr("api.analysis_summary._store", store)
-    monkeypatch.setattr("api.analysis_summary.get_llm", lambda *a, **k: _HangingModel())
+    monkeypatch.setattr(
+        "api.analysis_summary.build_llm", lambda *a, **k: _HangingModel()
+    )
     monkeypatch.setattr("api.analysis_summary.SUMMARY_TIMEOUT_SECONDS", 0.25)
     private, public = keys
     _post(public, caller_token=_token(private))
@@ -688,7 +692,7 @@ def test_an_abandoned_summary_stream_is_recorded(
                 await asyncio.sleep(0.01)
                 yield type("Chunk", (), {"content": f"t{index} "})()
 
-    monkeypatch.setattr("api.analysis_summary.get_llm", lambda *a, **k: _SlowModel())
+    monkeypatch.setattr("api.analysis_summary.build_llm", lambda *a, **k: _SlowModel())
     private, public = keys
     request = SimpleNamespace(
         app=SimpleNamespace(state=SimpleNamespace(caller_token_key=public))
@@ -741,7 +745,7 @@ def test_expression_values_reach_the_model_on_the_served_path(
     recording = _Recording()
     private, public = keys
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr("api.analysis_summary.get_llm", lambda *a, **k: recording)
+        patch.setattr("api.analysis_summary.build_llm", lambda *a, **k: recording)
         _post(public, caller_token=_token(private))
 
     assert sent, "the model was never called, so this proves nothing"
@@ -854,7 +858,7 @@ def test_two_readers_asking_at_once_get_one_summary(
                 yield type("Chunk", (), {"content": piece})()
 
     model = _Different()
-    monkeypatch.setattr("api.analysis_summary.get_llm", lambda *a, **k: model)
+    monkeypatch.setattr("api.analysis_summary.build_llm", lambda *a, **k: model)
     private, public = keys
 
     async def both() -> list[str]:
@@ -878,7 +882,7 @@ def test_content_blocks_are_read_and_an_empty_stream_is_a_failure(
                 "Chunk", (), {"content": [{"type": "text", "text": "From blocks."}]}
             )()
 
-    monkeypatch.setattr("api.analysis_summary.get_llm", lambda *a, **k: _Blocks())
+    monkeypatch.setattr("api.analysis_summary.build_llm", lambda *a, **k: _Blocks())
     private, public = keys
     body = asyncio.run(_collect(private, public))
     assert "From blocks." in body
@@ -890,26 +894,56 @@ def test_content_blocks_are_read_and_an_empty_stream_is_a_failure(
             yield type("Chunk", (), {"content": [{"type": "reasoning"}]})()
 
     monkeypatch.setattr("api.analysis_summary._store", SummaryStore())
-    monkeypatch.setattr("api.analysis_summary.get_llm", lambda *a, **k: _Silent())
+    monkeypatch.setattr("api.analysis_summary.build_llm", lambda *a, **k: _Silent())
     body = asyncio.run(_collect(private, public))
     assert '"state": "summarised"' not in body
 
 
-def test_a_fixed_temperature_model_is_sent_its_temperature(
+def test_the_summary_builds_its_model_the_way_the_chat_does(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The summary built its own model with the default 0.0, which o3-class
-    # models reject; the chat sent 1.0 and worked.
-    from agent.graph import resolve_temperature
+    # The summary used to choose its model and temperature itself, and failed
+    # on o3-class models while the chat worked (review, area 1a). It now goes
+    # through the same builder with the deployment's config. Not checked
+    # against the API: the process's AgentGraph already checked that config.
+    from agent.graph import resolve_llm_model
+    from api import analysis_summary as endpoint
+    from util.config_yml import Config
+    from util.config_yml.models import LLMConfig
+
+    llm_config = LLMConfig(model="gpt-6-luna", reasoning_effort="high")
+    config = type("_Config", (), {"llm": llm_config})()
+    seen: dict[str, Any] = {}
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    # The real resolver: the autouse fixture stubs it for the endpoint tests.
+    monkeypatch.setattr(endpoint, "resolve_llm_model", resolve_llm_model)
+    monkeypatch.setattr(Config, "from_yaml", staticmethod(lambda *a, **k: config))
+    monkeypatch.setattr(
+        endpoint,
+        "build_llm",
+        lambda *a, **k: seen.update(k, args=a),
+    )
+    endpoint._summary_llm()
+    assert seen["args"] == ("openai", "gpt-6-luna")
+    assert seen["llm_config"] is llm_config
+    assert seen["check"] is False
+    # The summary is this surface's answer, so it runs at the answer's effort.
+    assert seen["answer"] is True
+
+
+def test_a_refused_config_fails_the_summary_rather_than_the_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # SystemExit gets past `except Exception`, so a refusal raised while
+    # building the summary's model would end the worker. It is re-raised as a
+    # RuntimeError, which the handler records as a failed summary.
     from api import analysis_summary as endpoint
     from util.config_yml import Config
 
-    seen: dict[str, Any] = {}
-    monkeypatch.setattr(
-        endpoint, "resolve_llm_model", lambda _c: ("openai", "o3", None)
-    )
+    def _refuse(*_a: Any, **_k: Any) -> None:
+        raise SystemExit("LLM_TEMPERATURE='0' is set with provider openai.")
+
     monkeypatch.setattr(Config, "from_yaml", staticmethod(lambda *a, **k: None))
-    monkeypatch.setattr(endpoint, "get_llm", lambda *a, **k: seen.update(k))
-    endpoint._summary_llm()
-    assert seen["temperature"] == resolve_temperature("o3")
-    assert seen["temperature"] != 0.0
+    monkeypatch.setattr(endpoint, "build_llm", _refuse)
+    with pytest.raises(RuntimeError, match="LLM_TEMPERATURE"):
+        endpoint._summary_llm()

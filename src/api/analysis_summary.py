@@ -24,8 +24,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from agent.graph import resolve_llm_model, resolve_temperature
-from agent.models import get_llm
+from agent.graph import build_llm, resolve_llm_model
 from analysis.client import current_release, fetch_not_found, fetch_result
 from analysis.disclosure import Tier, for_tier
 from analysis.store import Stored, SummaryStore
@@ -331,26 +330,37 @@ async def analysis_summary(body: SummaryRequest, request: Request) -> StreamingR
 
 
 def _summary_llm() -> Any:
-    """The chat's model, chosen the way the chat chooses it.
+    """The chat's model, chosen and parameterised the way the chat does it.
+
+    The summary is the answer on this surface, so it runs at the answer's
+    reasoning effort (`llm.answer_reasoning_effort`), as the chat's answer does.
 
     The first version passed no config and no temperature: a model or
     provider set in config.yml applied to the chat but not to summaries, and
     a fixed-temperature model (o3, o4-mini) rejected the default 0.0 -- every
     summary failing while the chat worked (review, area 1a).
+
+    Not checked against the API: this runs per request, in a process whose
+    AgentGraph already checked the same config at startup. A refusal from
+    resolving is a `SystemExit`, which gets past `except Exception` and would
+    take the worker down, so it is re-raised as a `RuntimeError` and recorded
+    as a failed summary instead.
     """
     config = Config.from_yaml()
     llm_config = config.llm if config else None
     provider, model, base_url = resolve_llm_model(llm_config)
-    temperature = resolve_temperature(
-        model, configured=llm_config.temperature if llm_config else None
-    )
-    return get_llm(
-        provider,
-        model,
-        base_url=base_url,
-        request_timeout=90.0,
-        temperature=temperature,
-    )
+    try:
+        return build_llm(
+            provider,
+            model,
+            llm_config=llm_config,
+            base_url=base_url,
+            request_timeout=90.0,
+            check=False,
+            answer=True,
+        )
+    except SystemExit as exc:
+        raise RuntimeError(str(exc)) from None
 
 
 def _text(chunk: Any) -> str:

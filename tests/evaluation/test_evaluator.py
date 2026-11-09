@@ -12,6 +12,7 @@ import pytest
 
 pytest.importorskip("ragas", reason="evaluation stack not installed")
 
+from agent.graph import DEFAULT_LLM_MODEL  # noqa: E402
 from evaluation.evaluator import (  # noqa: E402
     DEFAULT_JUDGE_MODEL,
     DEFAULT_QUESTIONS,
@@ -47,10 +48,12 @@ def test_references_are_read_as_a_question_to_answer_map(tmp_path: Path) -> None
 def test_the_default_judge_is_not_a_model_this_repo_answers_with() -> None:
     """The judge must be pinned and distinct; see the guard in main().
 
-    gpt-4o-mini is the default answering model, so the default judge must not be
-    it -- otherwise the out-of-the-box invocation grades its own homework.
+    The default --model is the default answering model, so the default judge must
+    not be it -- otherwise the out-of-the-box invocation grades its own homework.
+    Compared with the constant rather than a name, so changing the default model
+    cannot silently make the two equal.
     """
-    assert DEFAULT_JUDGE_MODEL != "gpt-4o-mini"
+    assert DEFAULT_JUDGE_MODEL != DEFAULT_LLM_MODEL
 
 
 def test_references_are_looked_up_by_the_original_wording() -> None:

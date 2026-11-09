@@ -14,15 +14,18 @@ def create_reactome_rag(
     embedding: Embeddings,
     embeddings_directory: Path,
     *,
+    answer_llm: BaseChatModel | None = None,
     streaming: bool = False,
 ) -> Runnable:
+    """`llm` expands the query; `answer_llm`, when given, writes the answer."""
     reactome_retriever = create_bm25_chroma_ensemble_retriever(
         llm,
         embedding,
         embeddings_directory,
     )
 
+    answer_llm = answer_llm or llm
     if streaming:
-        llm = llm.model_copy(update={"streaming": True})
+        answer_llm = answer_llm.model_copy(update={"streaming": True})
 
-    return create_rag_chain(llm, reactome_retriever, reactome_qa_prompt)
+    return create_rag_chain(answer_llm, reactome_retriever, reactome_qa_prompt)

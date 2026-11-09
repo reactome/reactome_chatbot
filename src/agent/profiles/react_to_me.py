@@ -56,16 +56,19 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
     def __init__(
         self,
         llm: BaseChatModel,
+        answer_llm: BaseChatModel,
         embedding: Embeddings,
     ) -> None:
         super().__init__(llm, embedding)
         # A streaming copy, the same way the RAG chains get theirs. The UI
         # displays only what the callback handler streams, so an answer
         # produced without streaming is invisible however correct it is.
-        self.live_llm = llm.model_copy(update={"streaming": True})
+        # Every round of the tool loop is an answer call: the last round's text
+        # is the answer, and the rounds before it decide what it is built from.
+        self.live_llm = answer_llm.model_copy(update={"streaming": True})
 
         self.unsafe_answer_generator: Runnable = create_unsafe_answer_generator(
-            llm, streaming=True
+            answer_llm, streaming=True
         )
 
         self.rags: dict[SourceName, Runnable] = {
@@ -73,11 +76,13 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
                 llm,
                 embedding,
                 EmbeddingEnvironment.require_dir("reactome"),
+                answer_llm=answer_llm,
                 streaming=True,
             ),
         }
         self._available_sources: frozenset[SourceName] = frozenset({"reactome"})
-        self._register_userguide_rag(llm, embedding)
+        # The user guide retriever uses no model, so its only call is the answer.
+        self._register_userguide_rag(answer_llm, embedding)
 
         # `live` is offered only where an MCP server is configured. The server
         # itself is started on the first question that needs it, not here:
@@ -333,6 +338,7 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
 
 def create_reactome_graph(
     llm: BaseChatModel,
+    answer_llm: BaseChatModel,
     embedding: Embeddings,
 ) -> StateGraph:
-    return ReactToMeGraphBuilder(llm, embedding).uncompiled_graph
+    return ReactToMeGraphBuilder(llm, answer_llm, embedding).uncompiled_graph

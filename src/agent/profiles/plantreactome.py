@@ -21,18 +21,20 @@ class PlantReactomeGraphBuilder(BaseGraphBuilder):
     def __init__(
         self,
         llm: BaseChatModel,
+        answer_llm: BaseChatModel,
         embedding: Embeddings,
     ) -> None:
         super().__init__(llm, embedding)
 
         # Create runnables (tasks & tools)
         self.unsafe_answer_generator: Runnable = create_unsafe_answer_generator(
-            llm, streaming=True
+            answer_llm, streaming=True
         )
         self.plantreactome_rag: Runnable = create_plantreactome_rag(
             llm,
             embedding,
             EmbeddingEnvironment.require_dir("plantreactome"),
+            answer_llm=answer_llm,
             streaming=True,
         )
 
@@ -104,6 +106,7 @@ class PlantReactomeGraphBuilder(BaseGraphBuilder):
 
 def create_plantreactome_graph(
     llm: BaseChatModel,
+    answer_llm: BaseChatModel,
     embedding: Embeddings,
 ) -> StateGraph:
-    return PlantReactomeGraphBuilder(llm, embedding).uncompiled_graph
+    return PlantReactomeGraphBuilder(llm, answer_llm, embedding).uncompiled_graph
