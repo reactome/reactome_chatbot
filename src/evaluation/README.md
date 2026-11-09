@@ -50,14 +50,14 @@ puts `src/` on `sys.path` itself, so it works from any directory.
 ## Usage
 
 ```bash
-# one model over the golden questions
-poetry run ./bin/evaluate --model gpt-4o-mini
+# the default answering model (gpt-6-luna) over the golden questions
+poetry run ./bin/evaluate
 
 # two models, same questions, same judge, side by side
-poetry run ./bin/evaluate --model gpt-4o-mini --model gpt-5.6-luna
+poetry run ./bin/evaluate --model gpt-6-luna --model gpt-6-sol
 
 # three runs each, so the report can show the noise floor
-poetry run ./bin/evaluate --model gpt-4o-mini --repeat 3 --out report.json
+poetry run ./bin/evaluate --model gpt-6-luna --repeat 3 --out report.json
 ```
 
 `--out` writes the full report: aggregate scores per run, seconds per question,
@@ -72,10 +72,10 @@ to discard the seventeen already paid for.
 
 ```bash
 # keep every answer as it is produced
-poetry run ./bin/evaluate --model gpt-4o-mini --transcript-log run.jsonl
+poetry run ./bin/evaluate --transcript-log run.jsonl
 
 # answer four questions at once
-poetry run ./bin/evaluate --model gpt-4o-mini --concurrency 4
+poetry run ./bin/evaluate --concurrency 4
 ```
 
 `--transcript-log` appends one JSON object per answer, flushed immediately, so
@@ -107,8 +107,22 @@ rewriting the answer.
 
 ## The judge
 
-Scoring is done by a separate model, `gpt-4o` by default, pinned with
-`--judge-model`. Two rules the tool enforces or documents:
+Scoring is done by a separate model, `gpt-6-astra` by default, pinned with
+`--judge-model`. It was `gpt-4o` until 2026-11, when every OpenAI call started
+sending a reasoning effort, which gpt-4o rejects. **Scores judged by gpt-4o are
+not comparable with later ones**; re-run the older side of a comparison rather
+than reading the two together.
+
+The judge is sent `reasoning_effort=low`, the default for calls that are not
+the chatbot's answer, and no deployment config: a deployment's levels are chosen
+for its answering model and may be ones the judge does not accept. The model
+under test is sent the deployment's two levels, as the server sends them: the
+answer's (`medium` unless configured) when it writes the answer, the other
+(`low`) for rephrasing and query expansion. The judge and every `--model` are each sent one request when the
+tool starts, so a model the API rejects stops the run before any question is
+paid for.
+
+Two rules the tool enforces or documents:
 
 - **The judge may not be a model under test.** The tool refuses. A model grading
   its own answers is not a measurement.

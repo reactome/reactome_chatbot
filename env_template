@@ -24,15 +24,15 @@ TAVILY_API_KEY=
 # bundle, which is what the stored vectors were produced with. Setting it to
 # anything else makes retrieval meaningless.
 #EMBEDDING_MODEL=
-# LLM used for answers; defaults to gpt-4o-mini.
-# gpt-5.6-luna is verified to work end to end. It answers with noticeably more
-# grounding in the retrieved Reactome records, and takes roughly twice as long
-# per question (41s vs 22s, averaged over three questions).
+# LLM used for answers; defaults to gpt-6-luna. Any current OpenAI model works
+# with no other setting. Startup sends it one request and refuses to start if the
+# API rejects its parameters -- including gpt-4o, gpt-4o-mini, gpt-4.1 and
+# gpt-4.1-mini, which take no reasoning effort.
 #LLM_MODEL=
-# Sampling temperature. Leave unset: it defaults to 0.0, except for the
-# gpt-5.5/5.6/6 families, which accept only their own default of 1 and return a
-# 400 for anything else. Set this only for a model that rule does not yet know
-# about; see resolve_temperature in src/agent/graph.py.
+# Ollama only. With an OpenAI model this stops startup: current OpenAI models
+# accept only their own default temperature, so none is sent. To change how
+# much an OpenAI model reasons, set llm.reasoning_effort and
+# llm.answer_reasoning_effort in config.yml.
 #LLM_TEMPERATURE=
 
 # Locale and timezone for the Postgres container's initdb (ICU collation).

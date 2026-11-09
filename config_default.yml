@@ -9,7 +9,14 @@ profiles:
 #
 #llm:
 #  provider: openai
-#  model: gpt-4o-mini
+#  model: gpt-6-luna
+#  # OpenAI only. Two levels: the answer the user reads (unset means medium),
+#  # and every other call -- rephrase, safety, language, intent, query
+#  # expansion, grading (unset means low). Which levels a model accepts varies,
+#  # and startup checks yours against the API. No temperature: OpenAI models
+#  # use only their own default, and setting one stops startup.
+#  reasoning_effort: low
+#  answer_reasoning_effort: medium
 #
 # Do not add an embedding model here. It comes from the bundle that built the
 # vectors; setting it to anything else makes retrieval silently meaningless.
