@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from agent.graph import AgentGraph
 from agent.profile_names import ProfileName
 from reactome_mcp.session import is_configured
+from util.config_yml import Config
 from util.embedding_environment import EmbeddingEnvironment
 
 
@@ -269,7 +270,12 @@ def _has_collection(name: str) -> bool:
 
 
 async def run(expectations: tuple[Expectation, ...], retries: int = 1) -> list[Result]:
-    graph = AgentGraph([ProfileName.React_to_Me])
+    # The deployment's model and parameters, as registry.build_graph passes them.
+    # Without this the sweep tested the built-in default whatever config.yml said.
+    config = Config.from_yaml()
+    graph = AgentGraph(
+        [ProfileName.React_to_Me], llm_config=config.llm if config else None
+    )
     results: list[Result] = []
     live = is_configured()
     try:
