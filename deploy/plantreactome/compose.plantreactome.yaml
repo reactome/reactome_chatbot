@@ -59,11 +59,55 @@ services:
       - "8002:8000"
 
   chainlit-guest:
-    # Was chainlit-no-login in docker-compose.yml. Parked, not configured: this
-    # host serves no /chat/guest surface -- the site's Apache config routes all
-    # of /chat/ to the authenticated container -- so there is nothing for it to
-    # front. --profile guest brings it back.
-    profiles: ["guest"]
+    # Unparked: /chat/guest is a live surface now. The landing page at /chat/
+    # (bin/chat-fastapi.py -> util/landing_page.py) offers a Guest Access button
+    # at `$CHAINLIT_URL/chat/guest/`, and that path is this container.
+    #
+    # The list below is `chainlit`'s list, repeated, because compose.yaml's
+    # chainlit-guest block predates this deployment and forwards none of it. Each
+    # omission is silent in its own way:
+    #   - ./src and ./bin: the published image's copy predates this branch, so
+    #     without them the guest imports util.landing_page from an image that has
+    #     no util.landing_page and dies at startup. The loud case.
+    #   - the two model pairs: --env-file feeds ${...} interpolation and never the
+    #     container's environment, so unset they send the guest's chat model to
+    #     api.openai.com carrying the copilot-dev key. It starts, reports healthy,
+    #     and 401s on a reader's first question. The quiet case.
+    #   - the brand assets: Chainlit globs fixed filenames per container, so the
+    #     mount list is not inherited.
+    #
+    # What is deliberately absent is every OAUTH_* variable, and that absence is
+    # the whole difference between this container and `chainlit`:
+    # bin/chat-chainlit.py appends a provider only when its variables are present,
+    # so with none there is no login page, cl.user_session.get("user") stays None,
+    # and that None is what arms the per-human-check message limit in
+    # handle_message. compose.yaml already supplies CHAINLIT_URI from
+    # CHAINLIT_URI_NO_LOGIN and CHAINLIT_URI_LOGIN from CHAINLIT_URI -- the link a
+    # reader who hits the guest quota is offered.
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - LLM_BASE_URL=${LLM_BASE_URL}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_API_KEY_HEADER=${LLM_API_KEY_HEADER}
+      - LLM_MODEL=${LLM_MODEL}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      # Optional, but see bin/export_nologin_usage.py below.
+      - POSTGRES_LANGGRAPH_DB=${POSTGRES_LANGGRAPH_DB}_no_login
+    volumes:
+      - ./src:/app/src
+      - ./bin:/app/bin
+      - ./chainlit.plantreactome.md:/app/chainlit.md:ro
+      - ${BRAND_DIR:-./public}/logo_light.png:/app/public/logo_light.png:ro
+      - ${BRAND_DIR:-./public}/logo_dark.png:/app/public/logo_dark.png:ro
+      - ${BRAND_DIR:-./public}/favicon.svg:/app/public/favicon.svg:ro
+      - ${BRAND_DIR:-./public}/theme.json:/app/public/theme.json:ro
+      - ${BRAND_DIR:-./public}/avatars:/app/public/avatars:ro
+    ports: !override
+      # compose.yaml publishes 8001 with the long syntax and `mode: host`, which
+      # is what the chainlit block above replaces for the same reason.
+      - "8001:8000"
 
   vault:
     profiles: ["vault"]
