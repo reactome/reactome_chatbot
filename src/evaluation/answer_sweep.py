@@ -57,9 +57,12 @@ class Expectation:
     # a plain local checkout -- these cannot pass, and reporting them as
     # regressions is how a gate teaches people to ignore it.
     needs_live: bool = False
-    # A collection that may not be in the installed bundle yet. Same reasoning
-    # as needs_live: a question that cannot pass is not a regression.
-    needs_collection: str = ""
+    # Collections that may not be in the installed bundle, any one of which
+    # answers this. Same reasoning as needs_live: a question that cannot pass
+    # is not a regression. Several, because a fact can move between bundle
+    # layouts: the variants were in disease_variants and are now in
+    # entities, and the check must keep running across the change.
+    needs_collection: tuple[str, ...] = ()
 
 
 EXPECTATIONS: tuple[Expectation, ...] = (
@@ -102,11 +105,8 @@ EXPECTATIONS: tuple[Expectation, ...] = (
         why="Preferring the web tool must not bury the plugin for someone who wants it.",
         must=("FIViz",),
     ),
-    # --- one question per collection, so routing cannot quietly skip one ----
-    # Each was chosen by removing its collection from a copy of the bundle and
-    # confirming the answer changes. A question that still answers without its
-    # collection guards nothing, and three of the first four candidates were
-    # exactly that -- see specs/009-collection-routing/spec.md.
+    # --- questions whose answers need one particular collection ---------------
+    # Each fails if its collection's content goes missing from answers.
     Expectation(
         question="What is the UniProt accession for the TP53 protein in Reactome?",
         why="Guards the `ewas` collection: it is the only one holding UniProt "
@@ -135,7 +135,7 @@ EXPECTATIONS: tuple[Expectation, ...] = (
         # numbered list of "**C1417R**" -- correct, and marked a failure. The
         # question is already anchored on the topic by `must=("Tangier",)`.
         must_match=(r"\b[A-Z]\d{2,4}[A-Z*]\b",),
-        needs_collection="disease_variants",
+        needs_collection=("disease_variants", "entities"),
     ),
     Expectation(
         question="Which diseases involve variants of the PTEN gene in Reactome?",
@@ -145,7 +145,7 @@ EXPECTATIONS: tuple[Expectation, ...] = (
         # gene name is not required adjacent to the variant.
         must=("PTEN",),
         must_match=(r"\b[A-Z]\d{2,4}[A-Z*]\b",),
-        needs_collection="disease_variants",
+        needs_collection=("disease_variants", "entities"),
     ),
     # --- facts about the database, which retrieval cannot answer ------------
     Expectation(
@@ -280,14 +280,15 @@ async def run(expectations: tuple[Expectation, ...], retries: int = 1) -> list[R
     live = is_configured()
     try:
         for index, expectation in enumerate(expectations, start=1):
-            if expectation.needs_collection and not _has_collection(
-                expectation.needs_collection
+            if expectation.needs_collection and not any(
+                _has_collection(name) for name in expectation.needs_collection
             ):
                 results.append(
                     Result(
                         expectation=expectation,
-                        skipped=f"the {expectation.needs_collection} collection "
-                        "is not in the installed bundle",
+                        skipped="none of the "
+                        f"{', '.join(expectation.needs_collection)} collections "
+                        "is in the installed bundle",
                     )
                 )
                 continue
