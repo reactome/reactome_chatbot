@@ -1,8 +1,7 @@
 import asyncio
 import csv
 import os
-from collections.abc import Coroutine, Iterable
-from contextvars import ContextVar
+from collections.abc import Coroutine
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -27,6 +26,7 @@ from data_generation.disease_variant import (
     CONTENT_COLUMNS as DISEASE_VARIANT_CONTENT_COLUMNS,
 )
 from data_generation.metadata_csv_loader import MetaDataCSVLoader
+from util.bundle_manifest import CollectionLayout, read_manifest
 from util.logging import logging
 
 logger = logging.getLogger(__name__)
@@ -83,32 +83,14 @@ def chroma_settings() -> chromadb.config.Settings:
 
 
 ALTERNATES_ENV = "QUERY_EXPANSION_ALTERNATES"
-DEFAULT_ALTERNATES = 4
+DEFAULT_ALTERNATES = 2
 
 
 def expansion_alternates() -> int:
-    """How many alternate questions to retrieve for, besides the original.
+    """How many alternate questions to generate and search, besides the original.
 
-    Measured 2026-09-20 over six tracked questions (spec 010, T020):
-
-    | alternates | expand | retrieve | total | documents kept |
-    |---|---|---|---|---|
-    | 4 (default) | 1.27s | 1.22s | 2.49s | baseline |
-    | 2 | 1.26s | 0.65s | 1.92s | 84% |
-    | 1 | 1.38s | 0.57s | 1.95s | 77% |
-    | 0 | 0.00s | 0.31s | 0.31s | 71% |
-
-    **The expansion call costs about 1.27s whatever it returns**, so trimming
-    the count saves only fan-out; the cost goes away only at zero. With zero,
-    `answer-sweep` was 13/13 and ran in 79s against about 150s.
-
-    The default is unchanged regardless. Thirteen questions establish that the
-    answers we track do not need expansion; they do not establish that recall
-    is unaffected in general, and expansion exists for the questions nobody
-    wrote a test for. This is a switch and a measurement, not a verdict.
-
-    An unparseable or negative value falls back to the default loudly, rather
-    than silently disabling a recall mechanism.
+    Set by QUERY_EXPANSION_ALTERNATES. Zero skips the expansion call; an invalid
+    or negative value falls back to the default with a warning.
     """
     raw = os.getenv(ALTERNATES_ENV, "").strip()
     if not raw:
@@ -129,10 +111,10 @@ def expansion_alternates() -> int:
 
 
 multi_query_prompt = PromptTemplate(
-    input_variables=["question"],
+    input_variables=["question", "alternates"],
     template="""You are a biomedical question expansion engine for information retrieval over the Reactome biological pathway database.
 
-Given a single user question, generate **exactly 4** alternate standalone questions. These should be:
+Given a single user question, generate **exactly {alternates}** alternate standalone questions. These should be:
 
 - Semantically related to the original question.
 - Lexically diverse to improve retrieval via vector search and RAG-fusion.
@@ -153,47 +135,27 @@ Rules:
 - If the input is ambiguous, infer a biologically meaningful interpretation.
 
 Output:
-Return only the 4 alternative questions separated by newlines.
+Return only the {alternates} alternative questions separated by newlines.
 Do not include any explanations or metadata.
 
 Original Question: {question}""",
 )
 
 
-RESULTS_PER_RETRIEVER = 10
-# The vector store is asked for more than we intend to keep, because one
-# Reactome entity can occupy several rows -- a reaction appears once per
-# pathway/input/output/catalyst combination -- and those rows have distinct
-# page_content, so nothing upstream collapses them. Without over-fetching, a
-# request for 10 returns about 5 distinct reactions. See issue #169.
-#
-# 4x, not 3x: measured over the 20 questions in tests/golden/questions.txt, 3x
-# still came up short on `complexes` for one of them (8 distinct of 10). 4x
-# clears all 20 on every collection and 6x gains nothing further.
+# Results each keyword or vector search keeps. Deeper than what reaches the
+# model, so documents many searches agree on can rise in the fusion.
+RESULTS_PER_RETRIEVER = 20
+# For old-layout bundles, including Plant Reactome's, which store one record
+# across several rows: a reaction once per pathway, a complex once per
+# component. Vector search asks for 4x and keeps the top distinct records;
+# 4x was measured, at 10 results, as the smallest that filled every
+# collection. Bundles with a manifest have one row per record and are not
+# over-fetched.
 VECTOR_OVERFETCH = 4
 
-# How many fused documents each collection contributes to the answer prompt.
-#
-# weighted_reciprocal_rank returns *every* unique document across the lists it is
-# given, not a top-N, so without this the retriever ranked ~222 documents by
-# relevance and then sent all of them -- roughly 32k tokens, a quarter of
-# gpt-4o-mini's window, on every message -- which made the ranking decorative.
-#
-# The cap is per collection rather than global on purpose: reactions, summations,
-# complexes and ewas hold different kinds of information, and one global top-N
-# would let a single collection crowd the others out. Per collection guarantees
-# each one contributes.
-#
-# This value is a starting point, not a tuned one. It matches what a single
-# retriever returns. Changing it trades recall against the model's difficulty
-# attending to the middle of a long context; the right number should come from an
-# answer-quality evaluation rather than from taste.
-#
-# It is the DEFAULT, not the budget: a caller passes its own to
-# HybridRetriever.from_subdirectory. That is what makes the evaluation above
-# possible -- sweeping this value used to mean editing the module and restarting,
-# so two budgets could not be compared within one process.
-DEFAULT_MAX_DOCUMENTS_PER_COLLECTION = RESULTS_PER_RETRIEVER
+# Fused documents each collection passes to the model. Per collection, so no
+# one collection crowds out the others. A caller can pass its own.
+DEFAULT_MAX_DOCUMENTS_PER_COLLECTION = 10
 
 
 def dedupe_by_entity(docs: list[Document], limit: int) -> list[Document]:
@@ -300,60 +262,66 @@ def list_chroma_subdirectories(directory: Path) -> list[str]:
     ]
 
 
-selected_collections: ContextVar[list[str] | None] = ContextVar(
-    "selected_collections", default=None
-)
-"""The collections the current request may search, or None for all.
+def collection_layouts(
+    embeddings_directory: Path,
+) -> dict[str, CollectionLayout | None]:
+    """The collections to load and, for a bundle with a manifest, how each was built.
 
-A ContextVar rather than the `RunnableConfig` the data model describes, because
-that route does not exist in langchain-core 0.2.14. Measured: config is not
-passed to `_get_relevant_documents` as a kwarg, and
-`var_child_runnable_config` is unset inside a retriever run. The retriever is
-built once at startup and shared, so a per-request attribute would race.
-
-ContextVars are per-task under asyncio -- each task gets a copy of the context --
-so concurrent requests cannot see each other's selection. Set it around the
-retrieval call, never globally.
-"""
-
-
-def resolve_collections(
-    selected: Iterable[str] | None, available: Iterable[str]
-) -> list[str]:
-    """Which collections to search. Every failure widens; none narrows.
-
-    The rules, from specs/009-collection-routing/data-model.md:
-
-    | selection            | result                                  |
-    |----------------------|-----------------------------------------|
-    | empty or absent      | all available                           |
-    | every name known     | just those                              |
-    | any name unknown     | all available, and a WARNING naming them|
-
-    The asymmetry is deliberate and is Principle IV. A selection this code does
-    not recognise means the classifier's prompt and the installed bundle disagree
-    about what exists -- and searching everything because we are unsure costs
-    latency, while searching a subset chosen on a misunderstanding costs the
-    answer. An empty list is therefore the safe value, which is why it is the
-    default for an omitted field, an older prompt and a parse failure alike.
+    An older bundle, such as Plant Reactome's, has no manifest: every store on
+    disk is loaded, with no layout.
     """
-    all_available = list(available)
-    chosen = list(selected or [])
-    if not chosen:
-        return all_available
-    unknown = sorted(set(chosen) - set(all_available))
-    if unknown:
+    manifest = read_manifest(embeddings_directory)
+    on_disk = list_chroma_subdirectories(embeddings_directory)
+    if manifest is None:
+        return dict.fromkeys(on_disk)
+    listed = [collection.name for collection in manifest.collections]
+    stray = sorted(set(on_disk) - set(listed))
+    if stray:
         logger.warning(
-            "Collection selection names %s, which the installed bundle does not "
-            "have (it has %s). Searching all collections rather than narrowing on "
-            "a disagreement.",
-            ", ".join(unknown),
-            ", ".join(sorted(all_available)),
+            "%s has stores its manifest does not list (%s); they are not searched.",
+            embeddings_directory,
+            ", ".join(stray),
         )
-        return all_available
-    # Preserve the bundle's order rather than the selection's, so the retrieval
-    # order does not depend on how a model happened to list them.
-    return [name for name in all_available if name in set(chosen)]
+    missing = [name for name in listed if name not in on_disk]
+    if missing:
+        raise FileNotFoundError(
+            f"{embeddings_directory} lists {', '.join(missing)} in its manifest "
+            "but has no store for them. The bundle is incomplete; rebuild it."
+        )
+    return {collection.name: collection for collection in manifest.collections}
+
+
+def load_keyword_documents(
+    csv_path: Path, collection: str, layout: CollectionLayout | None
+) -> list[Document]:
+    """A collection's documents for the keyword index, rendered as its vectors were.
+
+    Shared with `bin/retrieval_baseline`, so it measures what the chatbot searches.
+    """
+    # Both copies of a document need the same text and metadata. If the text
+    # differs, fusion never merges them; without `st_id`, one cannot be cited.
+    if layout is None:
+        loader = MetaDataCSVLoader(
+            file_path=str(csv_path),
+            metadata_columns=_csv_column_names(csv_path),
+            # Only columns the file has; none would leave every document empty.
+            content_columns=[
+                column
+                for column in EMBEDDED_CONTENT_COLUMNS.get(collection, [])
+                if column in _csv_column_names(csv_path)
+            ]
+            or None,
+        )
+    else:
+        # Exactly as the bundle was built.
+        loader = MetaDataCSVLoader(
+            file_path=str(csv_path),
+            metadata_columns=list(layout.metadata),
+            content_columns=list(layout.embedded),
+            skip_empty_fields=layout.skip_empty_fields,
+            encoding="utf-8",
+        )
+    return loader.load()
 
 
 def _csv_column_names(csv_path: Path) -> list[str]:
@@ -421,48 +389,10 @@ class HybridRetriever(BaseRetriever):
         max_documents_per_collection: int = DEFAULT_MAX_DOCUMENTS_PER_COLLECTION,
     ) -> "HybridRetriever":
         _retrievers: dict[str, RetrieverDict] = {}
-        for subdirectory in list_chroma_subdirectories(embeddings_directory):
-            # set up BM25 retriever
-            csv_file_name = subdirectory + ".csv"
-            reactome_csvs_dir: Path = embeddings_directory / "csv_files"
-            csv_path = reactome_csvs_dir / csv_file_name
-            # MetaDataCSVLoader, not CSVLoader: the plain loader gives every
-            # document metadata of only {row, source}, so the BM25 half of this
-            # ensemble returned documents with no `st_id` while the Chroma half
-            # -- built from the same CSV, by this same loader at embedding time
-            # -- had one.
-            #
-            # Two things followed. Those documents could not be cited, so for one
-            # measured question 50 of 62 retrieved documents were unattributable
-            # while their stable id sat in the text as "st_id: R-HSA-...". And
-            # `unique_documents` keys on `st_id or page_content`, so a BM25 copy
-            # and its Chroma twin deduplicated to different keys and both
-            # survived -- 11 of those 50 were exact duplicates of a citable
-            # document, taking context space and contributing twice to the RRF
-            # fusion.
-            #
-            # Every column is promoted, from the header, so this cannot drift
-            # from whatever the CSV holds.
-            #
-            # Content follows what was embedded. The disease-variant store was
-            # built from 12 of its 21 columns; indexing all 21 here meant the
-            # two retrievers never returned the same text for a variant, so RRF
-            # -- which keys on the text -- never fused them: 0 of 300 matched,
-            # and "Which ABCA1 variants are there?" filled its 10 slots with 5
-            # variants, each twice (review, area 3).
-            loader = MetaDataCSVLoader(
-                file_path=str(csv_path),
-                metadata_columns=_csv_column_names(csv_path),
-                # Only columns the file has: none at all would leave every
-                # document empty, and BM25 divides by their mean length.
-                content_columns=[
-                    column
-                    for column in EMBEDDED_CONTENT_COLUMNS.get(subdirectory, [])
-                    if column in _csv_column_names(csv_path)
-                ]
-                or None,
-            )
-            data = loader.load()
+        for subdirectory, layout in collection_layouts(embeddings_directory).items():
+            # Keyword search.
+            csv_path = embeddings_directory / "csv_files" / f"{subdirectory}.csv"
+            data = load_keyword_documents(csv_path, subdirectory, layout)
             bm25_retriever = BoundedBM25Retriever.from_documents(
                 data,
                 preprocess_func=lambda text: word_tokenize(
@@ -471,25 +401,22 @@ class HybridRetriever(BaseRetriever):
             )
             bm25_retriever.k = RESULTS_PER_RETRIEVER
 
-            # Plain semantic search: similarity against the stored vectors, with
-            # no LLM in the loop. This replaced SelfQueryRetriever, which spent
-            # one LLM call per collection per query variant -- 20 per message --
-            # translating the question into a Chroma metadata filter.
+            # Vector search, with no LLM in the loop.
             vectordb = Chroma(
                 persist_directory=str(embeddings_directory / subdirectory),
                 embedding_function=embedding,
                 client_settings=chroma_settings(),
             )
+            overfetch = VECTOR_OVERFETCH if layout is None else 1
             vector_retriever = vectordb.as_retriever(
-                search_kwargs={"k": RESULTS_PER_RETRIEVER * VECTOR_OVERFETCH}
+                search_kwargs={"k": RESULTS_PER_RETRIEVER * overfetch}
             )
 
             _retrievers[subdirectory] = {
                 "bm25": bm25_retriever,
                 "vector": vector_retriever,
             }
-        # The expansion chain, built directly. This used to be extracted from a
-        # throwaway MultiQueryRetriever constructed only to reach its .llm_chain.
+        # The query expansion chain.
         return cls(
             query_expander=multi_query_prompt | llm | LineListOutputParser(),
             include_original=include_original,
@@ -507,11 +434,13 @@ class HybridRetriever(BaseRetriever):
         is appended AFTER the generated ones: RRF breaks ties by first
         appearance, so reordering here would silently change the ranking.
         """
+        alternates = expansion_alternates()
         expanded = (
             self.query_expander.invoke(
-                {"question": query}, config={"callbacks": run_manager.get_child()}
+                {"question": query, "alternates": str(alternates)},
+                config={"callbacks": run_manager.get_child()},
             )
-            if expansion_alternates()
+            if alternates
             else None
         )
         return unique_documents(
@@ -522,11 +451,13 @@ class HybridRetriever(BaseRetriever):
         self, query: str, *, run_manager: AsyncCallbackManagerForRetrieverRun
     ) -> list[Document]:
         """Async twin of the above; must agree with it document for document."""
+        alternates = expansion_alternates()
         expanded = (
             await self.query_expander.ainvoke(
-                {"question": query}, config={"callbacks": run_manager.get_child()}
+                {"question": query, "alternates": str(alternates)},
+                config={"callbacks": run_manager.get_child()},
             )
-            if expansion_alternates()
+            if alternates
             else None
         )
         return unique_documents(
@@ -577,10 +508,7 @@ class HybridRetriever(BaseRetriever):
         self, queries: list[str], run_manager: CallbackManagerForRetrieverRun
     ) -> list[Document]:
         collection_lists: list[list[Document]] = []
-        chosen = resolve_collections(
-            selected_collections.get(), self.collection_retrievers
-        )
-        for subdirectory in chosen:
+        for subdirectory in self.collection_retrievers:
             retrievers = self.collection_retrievers[subdirectory]
             bm25_retriever = retrievers["bm25"]
             vector_retriever = retrievers["vector"]
@@ -602,11 +530,8 @@ class HybridRetriever(BaseRetriever):
                         )
                     },
                 )
-                # Separate lists, not `bm25_docs + vector_docs`. RRF scores by
-                # position, so concatenating put every vector result at rank 11+
-                # and scored the best of them 1/71 against BM25's 1/61 -- and it
-                # meant the two retrievers were never fused against each other,
-                # only across query variants. See issue #170.
+                # Separate lists, so RRF ranks keyword and vector results against
+                # each other.
                 doc_lists.append(dedupe_by_entity(bm25_docs, RESULTS_PER_RETRIEVER))
                 doc_lists.append(dedupe_by_entity(vector_docs, RESULTS_PER_RETRIEVER))
             collection_lists.append(
@@ -614,20 +539,8 @@ class HybridRetriever(BaseRetriever):
                     : self.max_documents_per_collection
                 ]
             )
-        # Fused across collections, not concatenated. This is issue #170 one
-        # level up: there, bm25 and vector results were joined end to end so the
-        # two were never scored against each other. Here the per-collection lists
-        # were joined the same way, so the output was grouped by collection
-        # rather than ranked -- ten reactions, then ten complexes, and so on.
-        #
-        # That made the citation cap arbitrary. Measured before this change: 97
-        # of 97 cited documents came from reactions.csv, including for "which
-        # diseases involve variants of the PTEN gene", where the disease_variants
-        # documents were retrieved but sat at positions 41-50 and could never be
-        # cited. The contract tells the website to treat citations as "the most
-        # relevant few", which was not true of a list ordered by iteration.
-        #
-        # The count is unchanged, so this reorders rather than re-scopes.
+        # Fused across collections by rank, so the top results, and the
+        # citations taken from them, are the most relevant overall.
         return self.weighted_reciprocal_rank(collection_lists)[
             : self.max_documents_per_collection * len(collection_lists)
         ]
@@ -638,10 +551,7 @@ class HybridRetriever(BaseRetriever):
         run_manager: AsyncCallbackManagerForRetrieverRun,
     ) -> list[Document]:
         subdirectory_results: dict[str, list[Coroutine[Any, Any, list[Document]]]] = {}
-        chosen = resolve_collections(
-            selected_collections.get(), self.collection_retrievers
-        )
-        for subdirectory in chosen:
+        for subdirectory in self.collection_retrievers:
             retrievers = self.collection_retrievers[subdirectory]
             bm25_retriever = retrievers["bm25"]
             vector_retriever = retrievers["vector"]
@@ -670,8 +580,7 @@ class HybridRetriever(BaseRetriever):
                 )
         collection_lists: list[list[Document]] = []
         for subdir_results in subdirectory_results.values():
-            # Separate lists, de-duplicated per entity, matching the synchronous
-            # path above. See issues #169 and #170.
+            # As in the synchronous path.
             doc_lists: list[list[Document]] = [
                 dedupe_by_entity(docs, RESULTS_PER_RETRIEVER)
                 for docs in await asyncio.gather(*subdir_results)
@@ -681,8 +590,7 @@ class HybridRetriever(BaseRetriever):
                     : self.max_documents_per_collection
                 ]
             )
-        # Fused across collections, matching the synchronous path. The two must
-        # agree document for document, which is what tests/retrievers pins.
+        # As in the synchronous path; the two must return the same documents.
         return self.weighted_reciprocal_rank(collection_lists)[
             : self.max_documents_per_collection * len(collection_lists)
         ]
