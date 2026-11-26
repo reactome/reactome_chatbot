@@ -15,6 +15,10 @@ MANIFEST = "manifest.json"
 #: Bumped whenever a reader would have to treat the manifest differently.
 SCHEMA_VERSION = 1
 
+#: Present while a bundle is being built. A bundle that still has it did not
+#: finish, and has no manifest, so it would otherwise be read as an old one.
+INCOMPLETE = ".incomplete"
+
 
 @dataclass(frozen=True)
 class CollectionLayout:
@@ -41,7 +45,14 @@ class BundleManifest:
 
 
 def read_manifest(bundle_dir: Path) -> BundleManifest | None:
-    """The bundle's manifest, None for an older bundle. Raises if unreadable."""
+    """The bundle's manifest, None for an older bundle.
+
+    Raises if the manifest is unreadable or the bundle did not finish building.
+    """
+    if (bundle_dir / INCOMPLETE).exists():
+        raise ValueError(
+            f"{bundle_dir} did not finish building. Rebuild it before using it."
+        )
     path = bundle_dir / MANIFEST
     if not path.is_file():
         return None

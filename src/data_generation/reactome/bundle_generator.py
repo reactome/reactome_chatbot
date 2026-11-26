@@ -12,12 +12,12 @@ order chosen so that a mistake is caught before it costs anything:
 4. Write the manifest, last.
 
 Existing CSVs are reused, so rebuilding with another embedding model does not
-query the graph again. The CSVs can also be written on their own, without
-embedding anything, so the documents can be read before any embedding is paid
-for:
+query the graph again. The CSVs can also be written on their own, into
+<bundle-dir>/csv_files, without embedding anything, so the documents can be
+read before any embedding is paid for and `make` can then reuse them:
 
     NEO4J_URI=bolt://localhost:7687 NEO4J_USERNAME=neo4j NEO4J_PASSWORD=... \\
-        PYTHONPATH=src python -m data_generation.reactome.bundle_generator <output-dir>
+        PYTHONPATH=src python -m data_generation.reactome.bundle_generator <bundle-dir>
 
 The manifest is what lets the chatbot tell this bundle from an older one and
 read it correctly: the keyword index has to render each document exactly as
@@ -50,7 +50,8 @@ from data_generation.reactome.neo4j_connector import (
     fetch_release,
     fetch_source,
 )
-from util.bundle_manifest import MANIFEST, SCHEMA_VERSION
+from util.bundle_manifest import INCOMPLETE, MANIFEST, SCHEMA_VERSION
+from util.embedding_environment import release_from_name
 
 CSV_DIR = "csv_files"
 
@@ -220,10 +221,7 @@ def read_csv_release(csv_dir: Path) -> int | None:
 
 def bundle_release(bundle_dir: Path) -> int | None:
     """The release a bundle directory is named for: `Release98` gives 98."""
-    suffix = bundle_dir.name.removeprefix("Release")
-    if suffix == bundle_dir.name or not suffix.isdigit():
-        return None
-    return int(suffix)
+    return release_from_name(bundle_dir.name)
 
 
 def check_release(bundle_dir: Path) -> int:
@@ -353,9 +351,10 @@ def build_bundle(
     for collection in COLLECTIONS:
         check_csv(bundle_dir, collection)
 
-    # A manifest describes a finished bundle. One left from an earlier build
-    # would describe stores this build is about to replace, and would still be
-    # there if this build failed halfway.
+    # Marked unfinished until the manifest is written, so a build that fails
+    # halfway is refused rather than read as an old bundle.
+    marker = bundle_dir / INCOMPLETE
+    marker.touch()
     manifest_path = bundle_dir / MANIFEST
     manifest_path.unlink(missing_ok=True)
 
@@ -373,6 +372,7 @@ def build_bundle(
         "collections": collections,
     }
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    marker.unlink()
     return manifest_path
 
 
@@ -419,18 +419,19 @@ def generate_reactome_bundle(
 def main(argv: list[str]) -> None:
     if len(argv) != 1:
         raise SystemExit(
-            "usage: python -m data_generation.reactome.bundle_generator <output-dir>"
+            "usage: python -m data_generation.reactome.bundle_generator <bundle-dir>"
         )
     connector = Neo4jConnector(
         uri=os.environ.get("NEO4J_URI", "bolt://localhost:7687"),
         user=os.environ.get("NEO4J_USERNAME"),
         password=os.environ.get("NEO4J_PASSWORD"),
     )
+    csv_dir = Path(argv[0]) / CSV_DIR
     try:
-        paths = write_collection_csvs(connector, Path(argv[0]))
+        paths = write_collection_csvs(connector, csv_dir)
     finally:
         connector.close()
-    release = read_csv_release(Path(argv[0]))
+    release = read_csv_release(csv_dir)
     print(
         f"release {release}"
         if release is not None

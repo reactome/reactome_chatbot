@@ -291,6 +291,11 @@ def collection_layouts(
     return {collection.name: collection for collection in manifest.collections}
 
 
+def vector_k(layout: CollectionLayout | None, k: int = RESULTS_PER_RETRIEVER) -> int:
+    """How many vector results to fetch: over-fetched only for old layouts."""
+    return k * (VECTOR_OVERFETCH if layout is None else 1)
+
+
 def load_keyword_documents(
     csv_path: Path, collection: str, layout: CollectionLayout | None
 ) -> list[Document]:
@@ -301,14 +306,15 @@ def load_keyword_documents(
     # Both copies of a document need the same text and metadata. If the text
     # differs, fusion never merges them; without `st_id`, one cannot be cited.
     if layout is None:
+        columns = _csv_column_names(csv_path)
         loader = MetaDataCSVLoader(
             file_path=str(csv_path),
-            metadata_columns=_csv_column_names(csv_path),
+            metadata_columns=columns,
             # Only columns the file has; none would leave every document empty.
             content_columns=[
                 column
                 for column in EMBEDDED_CONTENT_COLUMNS.get(collection, [])
-                if column in _csv_column_names(csv_path)
+                if column in columns
             ]
             or None,
         )
@@ -407,9 +413,8 @@ class HybridRetriever(BaseRetriever):
                 embedding_function=embedding,
                 client_settings=chroma_settings(),
             )
-            overfetch = VECTOR_OVERFETCH if layout is None else 1
             vector_retriever = vectordb.as_retriever(
-                search_kwargs={"k": RESULTS_PER_RETRIEVER * overfetch}
+                search_kwargs={"k": vector_k(layout)}
             )
 
             _retrievers[subdirectory] = {
@@ -444,7 +449,9 @@ class HybridRetriever(BaseRetriever):
             else None
         )
         return unique_documents(
-            self.retrieve_documents(self._queries(query, expanded), run_manager)
+            self.retrieve_documents(
+                self._queries(query, expanded, alternates), run_manager
+            )
         )
 
     async def _aget_relevant_documents(
@@ -461,33 +468,20 @@ class HybridRetriever(BaseRetriever):
             else None
         )
         return unique_documents(
-            await self.aretrieve_documents(self._queries(query, expanded), run_manager)
+            await self.aretrieve_documents(
+                self._queries(query, expanded, alternates), run_manager
+            )
         )
 
-    def _queries(self, query: str, expanded: list[str] | None) -> list[str]:
-        """The queries to retrieve for, from whatever the expander returned.
+    def _queries(
+        self, query: str, expanded: list[str] | None, wanted: int
+    ) -> list[str]:
+        """The queries to retrieve for: up to `wanted` alternates, then the original.
 
-        Shared by the sync and async paths deliberately. They are separate
-        implementations of the same retrieval and this file already carries a
-        note about them drifting -- but `test_sync_async_equivalence` drives
-        `retrieve_documents` directly, *below* this step, so a divergence here
-        would be invisible to the test written to catch exactly that.
-
-        At zero alternates the caller skips the expansion call rather than
-        making it and discarding the result: it is the larger half of the
-        cost, and discarding would keep the expense, lose the benefit, and
-        look identical in every other measurement.
-
-        **Never returns an empty list.** With `include_original=False` -- the
-        default on `from_subdirectory` -- and no alternates, the obvious
-        assembly yields no queries and retrieval silently returns nothing. A
-        retriever that finds nothing reads exactly like a question with no
-        answer, which is the worst available way for this to fail.
-
-        The original goes LAST, as it always did: RRF breaks ties by first
-        appearance, so reordering silently changes the ranking.
+        The original goes last, because RRF breaks ties by first appearance. Never
+        empty: with no alternates and `include_original` off, it retrieves for the
+        original rather than for nothing.
         """
-        wanted = expansion_alternates()
         queries = list(expanded[:wanted]) if (expanded and wanted) else []
         if not queries and not self.include_original:
             logger.warning(

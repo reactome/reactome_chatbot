@@ -53,11 +53,11 @@ from agent.graph import (
 from agent.models import get_embedding
 from retrievers.csv_chroma import (
     RESULTS_PER_RETRIEVER,
-    VECTOR_OVERFETCH,
     chroma_settings,
     collection_layouts,
     dedupe_by_entity,
     load_keyword_documents,
+    vector_k,
 )
 from retrievers.reactome.metadata_info import (
     reactome_descriptions_info,
@@ -87,6 +87,11 @@ def doc_id(doc: Document) -> str:
     """
     identity = doc.metadata.get("st_id") or doc.metadata.get("url")
     return str(identity) if identity else f"row:{doc.metadata.get('row', '?')}"
+
+
+def wants_selfquery(collection: str, layout: CollectionLayout | None) -> bool:
+    """Self-query needs field descriptions, which exist only for old-layout bundles."""
+    return layout is None and collection in reactome_field_info
 
 
 def build_retrievers(
@@ -135,17 +140,14 @@ def build_retrievers(
     # distinct entities, exactly as HybridRetriever does. Measuring a raw k here
     # would compare against a configuration the pipeline no longer uses -- stale
     # numbers that look fresh.
-    # As the retriever does: only old-layout bundles have duplicate rows.
-    overfetch = k * (VECTOR_OVERFETCH if layout is None else 1)
+    overfetch = vector_k(layout, k)
 
     retrievers: dict[str, BaseRetriever] = {
         "bm25": bm25,
         # The plain semantic retriever: similarity search with no LLM in the loop.
         "vector": vectordb.as_retriever(search_kwargs={"k": overfetch}),
     }
-    # Self-query needs field descriptions, written only for the five-collection
-    # layout; a three-collection bundle is measured without it.
-    if llm is not None and collection in reactome_field_info:
+    if llm is not None and wants_selfquery(collection, layout):
         retrievers["selfquery"] = SelfQueryRetriever.from_llm(
             llm=llm,
             vectorstore=vectordb,
@@ -154,6 +156,11 @@ def build_retrievers(
             search_kwargs={"k": overfetch},
         )
     return retrievers
+
+
+def layout_name(layouts: dict[str, CollectionLayout | None]) -> str:
+    """ "manifest" for a bundle with a manifest, otherwise "old"."""
+    return "manifest" if any(layouts.values()) else "old"
 
 
 def capture(args: argparse.Namespace) -> None:
@@ -222,6 +229,7 @@ def capture(args: argparse.Namespace) -> None:
     payload: dict[str, Any] = {
         "bundle": str(embeddings_dir),
         "k": args.k,
+        "layout": layout_name(layouts),
         "collections": collections,
         "results": result,
     }
@@ -312,16 +320,20 @@ def overlap(args: argparse.Namespace) -> None:
 def compare(args: argparse.Namespace) -> None:
     before_payload = json.loads(args.before.read_text())
     after_payload = json.loads(args.after.read_text())
-    shared = set(before_payload["collections"]) & set(after_payload["collections"])
-    if not shared:
-        # Without this, two layouts compare as "0 changed", which reads as
-        # "nothing moved" when nothing could be compared at all.
+    # Captures from before layouts were recorded are old layout.
+    layouts = (before_payload.get("layout", "old"), after_payload.get("layout", "old"))
+    if layouts[0] != layouts[1]:
         raise SystemExit(
-            "These captures share no collection: "
-            f"{', '.join(before_payload['collections'])} against "
-            f"{', '.join(after_payload['collections'])}. They come from different "
-            "bundle layouts, so there is nothing to compare collection by "
-            "collection. Compare answers with bin/answer-sweep instead."
+            f"These captures come from different bundle layouts ({layouts[0]} and "
+            f"{layouts[1]}), so their collections hold different records. Compare "
+            "answers with bin/answer-sweep instead."
+        )
+    depths = (before_payload["k"], after_payload["k"])
+    if depths[0] != depths[1]:
+        raise SystemExit(
+            f"These captures searched to different depths ({depths[0]} and "
+            f"{depths[1]}), so every list would differ. Capture again with "
+            f"--k {depths[0]}."
         )
     before: Capture = before_payload["results"]
     after: Capture = after_payload["results"]
