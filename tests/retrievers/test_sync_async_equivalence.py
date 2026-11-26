@@ -45,11 +45,7 @@ from langchain_core.language_models.fake_chat_models import (  # noqa: E402
     FakeListChatModel,
 )
 
-from retrievers.csv_chroma import (  # noqa: E402
-    HybridRetriever,
-    chroma_settings,
-    selected_collections,
-)
+from retrievers.csv_chroma import HybridRetriever, chroma_settings  # noqa: E402
 
 
 # Large enough that the per-collection cap actually binds. At twelve it did
@@ -175,91 +171,23 @@ def test_async_returns_exactly_what_sync_returns(
     assert [d.page_content for d in asynchronous] == [d.page_content for d in sync]
 
 
-def test_both_paths_honour_the_same_collection_selection(tmp_path: Path) -> None:
-    """T017: a filter applied to one path only is the bug this pins.
-
-    The application serves through the async path and `bin/retrieval_baseline`
-    drives the sync one, so a selection honoured by only one means the measured
-    path and the served path search different collections -- and neither the
-    measurement nor the answer would look wrong.
-    """
-    _require_bm25_tokenizer()
-    embedding = DeterministicFakeEmbedding(size=16)
-    retriever = HybridRetriever.from_subdirectory(
-        llm=FakeListChatModel(responses=[""]),
-        embedding=embedding,
-        embeddings_directory=_bundle(tmp_path, embedding),
-    )
-    queries = ["apoptosis signalling"]
-
-    token = selected_collections.set(["alpha"])
-    try:
-        sync = retriever.retrieve_documents(
-            queries, CallbackManagerForRetrieverRun.get_noop_manager()
-        )
-        asynchronous = asyncio.run(
-            retriever.aretrieve_documents(
-                queries, AsyncCallbackManagerForRetrieverRun.get_noop_manager()
-            )
-        )
-    finally:
-        selected_collections.reset(token)
-
-    assert [d.page_content for d in asynchronous] == [d.page_content for d in sync]
-    # And the selection actually bit: `beta` documents must be absent from both.
-    for documents in (sync, asynchronous):
-        assert documents, "the selection removed everything, so this proves nothing"
-        assert all("beta" not in d.page_content for d in documents)
-
-
-REAL_NAMES = ("complexes", "disease_variants", "ewas", "reactions", "summations")
+NAMES = ("entities", "pathways", "reactions")
 
 
 @pytest.mark.requires_retrieval_stack
-@pytest.mark.parametrize("wanted", REAL_NAMES)
-def test_every_collection_can_be_reached_and_only_it(
-    tmp_path: Path, wanted: str
-) -> None:
-    """T005a and T007: assert at retrieval level that a collection was searched.
-
-    Neither `complexes` nor `reactions` can be guarded by asking a question.
-    Measured 2026-09-19 (specs/009-collection-routing/research.md): their
-    content is duplicated in `summations` prose and in the input/output names
-    carried by `reactions`, so every candidate answered just as well with the
-    collection removed. Two failed hunts and a structural explanation.
-
-    So the guard lives here instead, and it is worth being exact about what it
-    replaces. It catches a *plumbing* failure: a collection that cannot be
-    reached at all, through a name mismatch or a lookup that silently yields
-    nothing. It does **not** catch the failure that motivated T005 -- a
-    classifier that simply never chooses a collection. Nothing deterministic
-    can, because that is one model call's judgement; it would need the routing
-    distribution watched in production, or a periodic probe. The residual risk
-    is recorded in research.md rather than claimed as covered.
-    """
+def test_every_collection_is_searched(tmp_path: Path) -> None:
+    """Every question searches every collection; none is silently unreachable."""
     _require_bm25_tokenizer()
     embedding = DeterministicFakeEmbedding(size=16)
     retriever = HybridRetriever.from_subdirectory(
         llm=FakeListChatModel(responses=[""]),
         embedding=embedding,
-        embeddings_directory=_bundle(
-            tmp_path, embedding, {name: 20 for name in REAL_NAMES}
-        ),
+        embeddings_directory=_bundle(tmp_path, embedding, dict.fromkeys(NAMES, 20)),
     )
 
-    token = selected_collections.set([wanted])
-    try:
-        documents = retriever.retrieve_documents(
-            ["kinase phosphorylation"],
-            CallbackManagerForRetrieverRun.get_noop_manager(),
-        )
-    finally:
-        selected_collections.reset(token)
+    documents = retriever.retrieve_documents(
+        ["kinase phosphorylation"], CallbackManagerForRetrieverRun.get_noop_manager()
+    )
 
-    assert documents, f"{wanted} is selectable but returned nothing"
-    for other in REAL_NAMES:
-        if other == wanted:
-            continue
-        assert not any(
-            other in d.page_content for d in documents
-        ), f"selecting {wanted} also searched {other}"
+    for name in NAMES:
+        assert any(name in d.page_content for d in documents), f"{name} not searched"

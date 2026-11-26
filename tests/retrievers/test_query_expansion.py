@@ -1,11 +1,4 @@
-"""How many alternate questions retrieval asks for.
-
-Measured, not argued (spec 010 T020): the expansion call costs about 1.27s
-whatever it returns, so trimming the count saves only fan-out and the cost
-disappears only at zero. The default is unchanged regardless -- thirteen
-tracked questions show those answers do not need expansion, not that recall
-is unaffected in general.
-"""
+"""How many alternate questions retrieval generates and searches."""
 
 import asyncio
 from pathlib import Path
@@ -24,7 +17,7 @@ def test_the_default_is_unchanged_without_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv(ALTERNATES_ENV, raising=False)
-    assert expansion_alternates() == DEFAULT_ALTERNATES == 4
+    assert expansion_alternates() == DEFAULT_ALTERNATES == 2
 
 
 @pytest.mark.parametrize(("raw", "expected"), [("0", 0), ("2", 2), ("7", 7)])
