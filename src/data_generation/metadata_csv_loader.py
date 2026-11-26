@@ -37,6 +37,7 @@ class MetaDataCSVLoader(BaseLoader):
         csv_args: dict[str, Any] | None = None,
         encoding: str | None = None,
         autodetect_encoding: bool = False,
+        skip_empty_fields: bool = False,
     ) -> None:
         """
         Args:
@@ -49,6 +50,12 @@ class MetaDataCSVLoader(BaseLoader):
               Optional. Defaults to None.
             encoding: The encoding of the CSV file. Optional. Defaults to None.
             autodetect_encoding: Whether to try to autodetect the file encoding.
+            skip_empty_fields: Leave a field out of the content when its value
+              is empty or only whitespace. Off by default, because the keyword
+              index must render a document exactly as it was embedded: turning
+              this on for a bundle built without it would make the two copies
+              of every document differ, and fusion would stop merging them.
+              Metadata is not affected.
         """
         self.file_path: str = file_path
         self.source_column: str | None = source_column
@@ -57,6 +64,7 @@ class MetaDataCSVLoader(BaseLoader):
         self.encoding: str | None = encoding
         self.csv_args: dict[str, Any] = csv_args if csv_args is not None else {}
         self.autodetect_encoding: bool = autodetect_encoding
+        self.skip_empty_fields: bool = skip_empty_fields
 
     def load(self) -> list[Document]:
         """Load data into document objects."""
@@ -105,17 +113,18 @@ class MetaDataCSVLoader(BaseLoader):
                 ) from e
 
             # Construct content from content_columns if provided, otherwise use all columns
-            if self.content_columns:
-                content = "\n".join(
-                    f"{k.strip()}: {v.strip() if v is not None else v}"
-                    for k, v in row.items()
-                    if k in self.content_columns
-                )
-            else:
-                content = "\n".join(
-                    f"{k.strip()}: {v.strip() if v is not None else v}"
-                    for k, v in row.items()
-                )
+            fields = [
+                (k, v)
+                for k, v in row.items()
+                if not self.content_columns or k in self.content_columns
+            ]
+            if self.skip_empty_fields:
+                # A record type that lacks a column another type in the same
+                # file has would otherwise carry a bare "name: " line for it.
+                fields = [(k, v) for k, v in fields if v is not None and v.strip()]
+            content = "\n".join(
+                f"{k.strip()}: {v.strip() if v is not None else v}" for k, v in fields
+            )
 
             metadata: dict[str, str] = {"source": source, "row": str(i)}
             if self.metadata_columns:
