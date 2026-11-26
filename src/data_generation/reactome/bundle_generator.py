@@ -326,7 +326,6 @@ def build_collection_store(
 def _describe(collection: Collection, record_types: Counter[str]) -> dict[str, Any]:
     return {
         "csv": f"{CSV_DIR}/{collection.name}.csv",
-        "description": collection.description,
         "documents": sum(record_types.values()),
         "embedded": list(collection.embedded),
         "metadata": list(collection.metadata),

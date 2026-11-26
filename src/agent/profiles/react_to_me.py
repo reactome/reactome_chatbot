@@ -25,7 +25,6 @@ from reactome_mcp.answer import (
     answer_from_live_services,
 )
 from reactome_mcp.session import get_mcp_tools, is_configured
-from retrievers.csv_chroma import selected_collections
 from retrievers.reactome.rag import create_reactome_rag
 from retrievers.userguide.rag import create_userguide_rag
 from util.embedding_environment import EmbeddingEnvironment
@@ -35,20 +34,8 @@ logger = logging.getLogger(__name__)
 
 class ReactToMeState(BaseState):
     active_sources: list[SourceName]
-    # NotRequired, and it matters: this subclass is total=True, so declaring
-    # it plainly would make every existing construction of the state invalid
-    # and -- worse -- would claim a guarantee the runtime does not have. A
-    # thread resumed from a checkpoint written before this field existed has
-    # no key, which is why `generate_answer` reads it with `.get`.
-    #
-    # Empty, or absent, means every collection: that is what
-    # `resolve_collections` does with it, and it is how the graph behaved
-    # before routing. Only meaningful when the active source is `reactome`.
-    collections: NotRequired[list[str]]
-    # True when a live tool call raised underneath this answer. Carried so a
-    # caller can tell "upstream broke" from "there is genuinely nothing" --
-    # which is impossible from the answer text, because the model paraphrases
-    # the failure into the same prose a correct empty result produces.
+    # True when a live tool call failed, so a caller can tell an upstream error from an empty result.
+    # The answer text alone cannot show the difference.
     live_tool_failed: NotRequired[bool]
 
 
@@ -189,7 +176,6 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
             reason_unsafe=safety_check.reason_unsafe,
             detected_language=detected_language,
             active_sources=active_sources,
-            collections=intent.collections,
         )
 
     async def _check_safety(
@@ -238,13 +224,7 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
             )
             fallback = dict(state)
             fallback["active_sources"] = ["reactome"]
-            # This fallback is retrieval over the whole bundle standing in for
-            # a live lookup; a question routed to `live` chose no collections,
-            # and narrowing to a selection nobody made would be worse than the
-            # answer it replaces.
-            fallback["collections"] = []
-            # The real config, not a fresh one: it carries the callbacks the UI
-            # streams through, and a fallback nobody can see is not a fallback.
+            # The real config, so the UI still streams the fallback answer.
             return await self.generate_answer(ReactToMeState(**fallback), config)
 
         report = LiveReport()
@@ -291,42 +271,19 @@ class ReactToMeGraphBuilder(BaseGraphBuilder):
         if source == "live":
             return await self._answer_from_live_services(state, config)
         rag = self.rags[source]
-        # Set around the whole retrieval rather than passed down:
-        # `create_retrieval_chain` gives the retriever no path for extra
-        # arguments, and LangGraph copies the context into the tasks it
-        # spawns, so a value set here reaches the retriever inside them.
-        # Reset in `finally`, because the graph reuses this task across turns.
-        #
-        # Only `reactome` has collections. `userguide` is a separate bundle
-        # with one, and leaving a stale selection set would narrow it to names
-        # it does not have -- which `resolve_collections` widens back, but
-        # silently and with a WARNING for every question.
-        # `.get`, not `[...]`: BaseState is total=False, so a state resumed
-        # from a checkpoint written before this field existed has no key at
-        # all. Missing means empty means every collection -- the behaviour
-        # from before routing, which is the right way to fail.
-        token = selected_collections.set(
-            (state.get("collections") or []) if source == "reactome" else None
+        result: dict[str, Any] = await rag.ainvoke(
+            {
+                "input": state["rephrased_input"],
+                # Kept out of `input`: the retriever searches on `input` alone.
+                "detected_language": state["detected_language"],
+                "chat_history": (
+                    recent(state["chat_history"])
+                    if state["chat_history"]
+                    else [HumanMessage(state["user_input"])]
+                ),
+            },
+            config,
         )
-        try:
-            result: dict[str, Any] = await rag.ainvoke(
-                {
-                    "input": state["rephrased_input"],
-                    # A separate variable, never concatenated into `input`:
-                    # create_retrieval_chain passes `input` alone to the
-                    # retriever, so anything folded into it reaches BM25 and
-                    # the query expander.
-                    "detected_language": state["detected_language"],
-                    "chat_history": (
-                        recent(state["chat_history"])
-                        if state["chat_history"]
-                        else [HumanMessage(state["user_input"])]
-                    ),
-                },
-                config,
-            )
-        finally:
-            selected_collections.reset(token)
         return ReactToMeState(
             chat_history=[
                 HumanMessage(state["user_input"]),

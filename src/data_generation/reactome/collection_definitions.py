@@ -50,10 +50,6 @@ class Collection:
     embedded: tuple[str, ...]
     metadata: tuple[str, ...]
     shown_to_model: tuple[str, ...]
-    #: What the router is told the collection holds and when to choose it.
-    #: Written into the manifest, so the router describes the bundle that
-    #: is installed rather than the one the code was last written for.
-    description: str = ""
 
     @property
     def columns(self) -> tuple[str, ...]:
@@ -96,13 +92,6 @@ PATHWAYS = Collection(
         "disease_pathway_ids",
     ),
     shown_to_model=("url",),
-    description=(
-        "Reactome pathways, normal and disease, one record each: the "
-        "pathway's curated summary, its parent pathways and first few "
-        "sub-events, the events before it, and its disease or normal "
-        "counterpart with the diseases involved. Choose it for what a pathway "
-        "is or does, what it contains, or where it sits in the hierarchy."
-    ),
 )
 
 REACTIONS = Collection(
@@ -144,14 +133,6 @@ REACTIONS = Collection(
         "following_event_ids",
     ),
     shown_to_model=("url",),
-    description=(
-        "Reactome reactions, normal and disease, one record each: inputs, "
-        "outputs, catalysts and regulators, compartment, the pathways it "
-        "belongs to, the events before and after it, its curated summary, "
-        "and for a disease reaction the disease, how it fails and its normal "
-        "counterpart. Choose it for what a reaction consumes, produces, needs "
-        "or is controlled by, or what happens before or after it."
-    ),
 )
 
 ENTITIES = Collection(
@@ -193,16 +174,6 @@ ENTITIES = Collection(
         "disease_entity_ids",
     ),
     shown_to_model=("url", "protein_id"),
-    description=(
-        "Molecules and diseases, one record each. Complexes and sets with "
-        "their components, members and candidates. Human proteins with their "
-        "gene names, UniProt accession and function text, and the disease "
-        "variants Reactome curates for them. Disease terms with their "
-        "synonyms and Disease Ontology definition. Choose it for a protein's "
-        "accession, gene names or function; a gene's variants and the "
-        "diseases they cause; what a complex or set is made of; or what a "
-        "disease is."
-    ),
 )
 
 COLLECTIONS: tuple[Collection, ...] = (PATHWAYS, REACTIONS, ENTITIES)
