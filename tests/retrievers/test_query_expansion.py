@@ -71,7 +71,8 @@ def _expand(
     expanded = None
     if expansion_alternates():
         expanded = asyncio.run(expander.ainvoke(None))
-    return _retriever()._queries("the question", expanded), expander.calls
+    queries = _retriever()._queries("the question", expanded, expansion_alternates())
+    return queries, expander.calls
 
 
 def test_the_original_question_is_always_asked_and_always_last(
@@ -115,7 +116,7 @@ def test_no_expansion_and_no_original_still_asks_something(
     # a question that has no answer, the worst available way to fail.
     monkeypatch.setenv(ALTERNATES_ENV, "0")
     with caplog.at_level("WARNING"):
-        queries = _retriever(include_original=False)._queries("the question", None)
+        queries = _retriever(include_original=False)._queries("the question", None, 0)
     assert queries == ["the question"]
     assert "rather than for nothing" in caplog.text
 
@@ -127,5 +128,5 @@ def test_the_sync_and_async_paths_cannot_disagree_about_queries() -> None:
     # source rather than the behaviour, because the behaviour is only equal
     # while the code is shared -- which is the thing worth pinning.
     source = Path("src/retrievers/csv_chroma.py").read_text()
-    assert source.count("self._queries(query, expanded)") == 2
+    assert source.count("self._queries(query, expanded, alternates)") == 2
     assert source.count("def _queries") == 1
