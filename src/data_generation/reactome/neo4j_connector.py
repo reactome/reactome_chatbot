@@ -725,7 +725,10 @@ def _is_web_address(value: object) -> bool:
 
 
 #: The release the connected graph holds, from its one database-info record.
-RELEASE_QUERY = "MATCH (d:DBInfo) RETURN d.version AS version"
+#: Current graphs call it `releaseNumber`; `version` is kept for older ones.
+RELEASE_QUERY = (
+    "MATCH (d:DBInfo) RETURN coalesce(d.releaseNumber, d.version) AS version"
+)
 
 
 def fetch_release(connector: Neo4jConnector) -> int | None:
