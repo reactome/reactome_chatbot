@@ -231,6 +231,27 @@ without that check a Reactome document lacking an `st_id` cited a local
 filesystem path. That was caught by running a real question, not by the unit
 tests, which used fixtures too clean to contain one.
 
+#### Proteins and disease terms are cited by `url` (built 2026-11-25, not yet live)
+
+The three-collection Reactome bundle adds records that have no stable ID: one per
+UniProt protein, linked to its UniProt page, and one per Disease Ontology term,
+linked to its ontology page. They are cited by that link and labelled with the
+record's name:
+
+```
+event: citation
+data: {"url": "https://www.uniprot.org/...", "display_name": "..."}
+```
+
+The order is fixed. A record with an `st_id` is cited by it, even though every
+such record also carries a `url`. Only a record without one is cited by its `url`,
+and userguide pages come last, by their page URL. The one-identifier rule above
+still holds, but a Reactome answer can now mix both kinds of citation, including
+links that leave reactome.org.
+
+Nothing changes until that bundle is installed: every record in the current
+bundle has a stable ID.
+
 ### What `token` text contains
 
 **Markdown without links.** Headings and lists appear; links do not. The answer

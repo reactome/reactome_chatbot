@@ -190,7 +190,7 @@ COLLECTION = (
         question="List the ABCA1 variants in Reactome.",
         why="Pathway-level prose instead of the variant.",
         must=("W590S",),
-        needs_collection="disease_variants",
+        needs_collection=("disease_variants", "entities"),
     ),
 )
 
@@ -216,6 +216,20 @@ def test_it_runs_once_the_collection_is_installed(
     (result,) = asyncio.run(run(COLLECTION))
     assert not result.skipped
     assert not result.ok
+    assert len(graph.asked) == 1
+
+
+@pytest.mark.parametrize("installed", ["disease_variants", "entities"])
+def test_it_runs_on_either_bundle_layout(
+    stub: Install, monkeypatch: pytest.MonkeyPatch, installed: str
+) -> None:
+    """The variants moved from disease_variants to entities; the check follows."""
+    graph = stub(["Defective ABCA1 causes Tangier Disease."])
+    monkeypatch.setattr(
+        "evaluation.answer_sweep._has_collection", lambda name: name == installed
+    )
+    (result,) = asyncio.run(run(COLLECTION))
+    assert not result.skipped
     assert len(graph.asked) == 1
 
 

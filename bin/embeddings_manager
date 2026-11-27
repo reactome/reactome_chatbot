@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from data_generation.alliance import generate_alliance_embeddings
 from data_generation.reactome import generate_reactome_embeddings
+from data_generation.reactome.bundle_generator import generate_reactome_bundle
 from data_generation.uniprot import generate_uniprot_embeddings
 from data_generation.userguide import generate_userguide_embeddings
 from util.embedding_environment import EM_ARCHIVE, EmbeddingEnvironment
@@ -96,7 +97,9 @@ def make(
     if hf_key:
         os.environ["HUGGINGFACEHUB_API_TOKEN"] = hf_key
     if embedding.db == "reactome":
-        generate_reactome_embeddings(str(embedding_path), hf_model=embedding.model, **kwargs)
+        # The three-collection bundle. Plant Reactome keeps the old path below,
+        # unchanged: it embeds the CSVs its own export script writes.
+        generate_reactome_bundle(str(embedding_path), hf_model=embedding.model, **kwargs)
     elif embedding.db == "plantreactome":
         generate_reactome_embeddings(str(embedding_path), hf_model=embedding.model, **kwargs)
     elif embedding.db == "uniprot":
@@ -278,9 +281,9 @@ if __name__ == "__main__":
     )
     make_parser.add_argument(
         "--disease-variant-tsv",
-        help="disease_variant_ewas_mapping.tsv from the release download "
-             "directory. Adds the disease_variants collection, which is built "
-             "from that file rather than from Neo4j.",
+        help="Retired for reactome, which now refuses it: the ewas query "
+             "carries each protein's disease variants, so the disease_variants "
+             "collection is no longer built.",
     )
 
     args = parser.parse_args()

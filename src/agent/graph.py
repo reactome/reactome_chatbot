@@ -350,19 +350,15 @@ def _is_sub_retriever(event: Mapping[str, Any]) -> bool:
 
 
 def _citation_for(document: "Document") -> "AnswerEvent | None":
-    """One source, from whichever identifier the collection actually carries.
+    """The citation for one retrieved document, or None if it has no usable link.
 
-    Reactome and disease-variant documents have `st_id`, a stable identifier the
-    caller resolves to a detail page. Userguide documents do not and never will:
-    they are documentation pages, and their identity is the page URL.
+    Checked in order:
 
-    Until 2026-09-18 that meant a userguide-routed question returned **no
-    citations at all** -- a good answer with no sources, and the fastest answers
-    at that. Rather than mint a fake `R-` id, which would resolve to nothing or
-    to the wrong entity, a userguide source is cited by `url`.
+    1. `st_id`: Reactome records. The website builds the link from it.
+    2. `url`: records without a stable ID, such as proteins and disease terms.
+    3. `source`: user guide pages, whose loader stores the page URL there.
 
-    Exactly one of `st_id` and `url` is set, so a caller that understands only
-    `st_id` keeps working by skipping what it does not recognise.
+    Exactly one of `st_id` and `url` is set.
     """
     metadata = document.metadata
     stable_id = metadata.get("st_id")
@@ -370,24 +366,26 @@ def _citation_for(document: "Document") -> "AnswerEvent | None":
         return AnswerEvent(
             kind="citation",
             st_id=str(stable_id),
-            # Disease-variant documents have no display_name; their name is
-            # the variant ("ABCA1 W590S [plasma membrane]"). Every one of
-            # their citations went out unlabelled (review, area 3).
+            # Disease-variant documents have no display_name; their name is the variant ("ABCA1 W590S [plasma membrane]").
             display_name=str(
                 metadata.get("display_name") or metadata.get("variant") or ""
             ),
         )
+    # After `st_id`: Reactome records have a `url` too, but the website expects their stable ID.
+    link = str(metadata.get("url") or "")
+    if link.startswith(("https://", "http://")):
+        return AnswerEvent(
+            kind="citation",
+            url=link,
+            display_name=str(
+                metadata.get("display_name") or metadata.get("page_title") or ""
+            ),
+        )
     source = str(metadata.get("source") or "")
-    # Only a real web URL. `source` is a generic LangChain field, and the CSV
-    # loaders set it to the file they read -- so without this guard a Reactome
-    # document without an `st_id` cited
-    # "/home/awright/git/reactome_chatbot/embeddings/openai/...", leaking a server
-    # path to the website. Caught by running a real question; the unit tests used
-    # clean fixtures and never saw it.
+    # Only a real web URL.
     if source.startswith(("https://", "http://")):
         # Deduplicated by URL rather than by chunk: the userguide bundle is 98
-        # chunks across 10 pages, so chunk-level citations would repeat the same
-        # page up to 27 times. The page title is the right label for a page URL.
+        # chunks across 10 pages. The page title is the right label for a page URL.
         return AnswerEvent(
             kind="citation",
             url=str(source),

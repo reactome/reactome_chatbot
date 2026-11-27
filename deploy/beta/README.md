@@ -84,7 +84,9 @@ Bound to loopback: Apache is the only thing that should reach it.
 
 In practice, run `~/update-beta-chat.sh --tag <sha>`: it does the following,
 keeps the previous container for `--rollback`, and refuses to switch over
-unless the answer sweep and routing probe pass. By hand:
+unless the answer sweep passes. It also runs `bin/routing-probe`, which is now a
+stub that always passes: collection routing was removed. Drop that call from the
+script, then delete the stub. By hand:
 
 ```bash
 docker run -d --name biochat_beta_guest --restart unless-stopped \

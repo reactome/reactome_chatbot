@@ -5,6 +5,14 @@ EM_ARCHIVE: Path = REPO_ROOT / "embeddings"
 EM_CURRENT: Path = EM_ARCHIVE / "current"
 
 
+def release_from_name(name: str) -> int | None:
+    """The release a bundle directory name stands for: `Release98` gives 98."""
+    suffix = name.removeprefix("Release")
+    if suffix == name or not suffix.isdigit():
+        return None
+    return int(suffix)
+
+
 class EmbeddingEnvironment:
     def __init__(self, env_path: str) -> None:
         self.embeddings: dict[str, Path] = {}
@@ -78,11 +86,7 @@ class EmbeddingEnvironment:
         path = cls._get().embeddings.get(key)
         if path is None:
             return None
-        name = path.name
-        if not name.startswith("Release"):
-            return None
-        suffix = name[len("Release") :]
-        return int(suffix) if suffix.isdigit() else None
+        return release_from_name(path.name)
 
     @classmethod
     def get_model(cls, key: str) -> str:

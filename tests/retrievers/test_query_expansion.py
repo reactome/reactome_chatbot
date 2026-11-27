@@ -1,11 +1,4 @@
-"""How many alternate questions retrieval asks for.
-
-Measured, not argued (spec 010 T020): the expansion call costs about 1.27s
-whatever it returns, so trimming the count saves only fan-out and the cost
-disappears only at zero. The default is unchanged regardless -- thirteen
-tracked questions show those answers do not need expansion, not that recall
-is unaffected in general.
-"""
+"""How many alternate questions retrieval generates and searches."""
 
 import asyncio
 from pathlib import Path
@@ -24,7 +17,7 @@ def test_the_default_is_unchanged_without_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv(ALTERNATES_ENV, raising=False)
-    assert expansion_alternates() == DEFAULT_ALTERNATES == 4
+    assert expansion_alternates() == DEFAULT_ALTERNATES == 2
 
 
 @pytest.mark.parametrize(("raw", "expected"), [("0", 0), ("2", 2), ("7", 7)])
@@ -78,7 +71,8 @@ def _expand(
     expanded = None
     if expansion_alternates():
         expanded = asyncio.run(expander.ainvoke(None))
-    return _retriever()._queries("the question", expanded), expander.calls
+    queries = _retriever()._queries("the question", expanded, expansion_alternates())
+    return queries, expander.calls
 
 
 def test_the_original_question_is_always_asked_and_always_last(
@@ -122,7 +116,7 @@ def test_no_expansion_and_no_original_still_asks_something(
     # a question that has no answer, the worst available way to fail.
     monkeypatch.setenv(ALTERNATES_ENV, "0")
     with caplog.at_level("WARNING"):
-        queries = _retriever(include_original=False)._queries("the question", None)
+        queries = _retriever(include_original=False)._queries("the question", None, 0)
     assert queries == ["the question"]
     assert "rather than for nothing" in caplog.text
 
@@ -134,5 +128,5 @@ def test_the_sync_and_async_paths_cannot_disagree_about_queries() -> None:
     # source rather than the behaviour, because the behaviour is only equal
     # while the code is shared -- which is the thing worth pinning.
     source = Path("src/retrievers/csv_chroma.py").read_text()
-    assert source.count("self._queries(query, expanded)") == 2
+    assert source.count("self._queries(query, expanded, alternates)") == 2
     assert source.count("def _queries") == 1

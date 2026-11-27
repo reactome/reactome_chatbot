@@ -51,22 +51,24 @@ from agent.graph import (
     resolve_model_parameters,
 )
 from agent.models import get_embedding
-from data_generation.metadata_csv_loader import MetaDataCSVLoader
 from retrievers.csv_chroma import (
-    VECTOR_OVERFETCH,
-    _csv_column_names,
+    RESULTS_PER_RETRIEVER,
     chroma_settings,
+    collection_layouts,
     dedupe_by_entity,
-    list_chroma_subdirectories,
+    load_keyword_documents,
+    vector_k,
 )
 from retrievers.reactome.metadata_info import (
     reactome_descriptions_info,
     reactome_field_info,
 )
+from util.bundle_manifest import CollectionLayout
 from util.embedding_environment import EmbeddingEnvironment
 
 DEFAULT_QUESTIONS = Path(__file__).parent.parent / "tests" / "golden" / "questions.txt"
-DEFAULT_K = 10
+# The chatbot's search depth, so a capture measures what it searches.
+DEFAULT_K = RESULTS_PER_RETRIEVER
 
 # {question: {collection: {retriever: [doc id, ...]}}}
 Capture = dict[str, dict[str, dict[str, list[str]]]]
@@ -78,13 +80,27 @@ def read_questions(path: Path) -> list[str]:
 
 
 def doc_id(doc: Document) -> str:
-    """Reactome stable IDs survive a bundle rebuild; row numbers do not."""
-    st_id = doc.metadata.get("st_id")
-    return str(st_id) if st_id else f"row:{doc.metadata.get('row', '?')}"
+    """Reactome stable IDs survive a bundle rebuild; row numbers do not.
+
+    Proteins and disease terms have no stable ID. Their link is their
+    identity, and it survives a rebuild too.
+    """
+    identity = doc.metadata.get("st_id") or doc.metadata.get("url")
+    return str(identity) if identity else f"row:{doc.metadata.get('row', '?')}"
+
+
+def wants_selfquery(collection: str, layout: CollectionLayout | None) -> bool:
+    """Self-query needs field descriptions, which exist only for old-layout bundles."""
+    return layout is None and collection in reactome_field_info
 
 
 def build_retrievers(
-    embeddings_dir: Path, collection: str, k: int, *, llm: BaseChatModel | None
+    embeddings_dir: Path,
+    collection: str,
+    k: int,
+    *,
+    llm: BaseChatModel | None,
+    layout: CollectionLayout | None = None,
 ) -> dict[str, BaseRetriever]:
     """`llm` is the self-query model; None leaves self-query out."""
     embedding = get_embedding("openai", "text-embedding-3-large")
@@ -99,10 +115,12 @@ def build_retrievers(
     #
     # The application had the same defect and was fixed the same way; this is the
     # second caller.
+    #
+    # Loaded by the retriever's own function since the three-collection bundle,
+    # whose keyword text is only what was embedded. Loading every column here
+    # would measure a keyword index the chatbot does not search.
     bm25 = BM25Retriever.from_documents(
-        MetaDataCSVLoader(
-            file_path=str(csv_path), metadata_columns=_csv_column_names(csv_path)
-        ).load(),
+        load_keyword_documents(csv_path, collection, layout),
         preprocess_func=lambda text: word_tokenize(text.casefold(), language="english"),
     )
     bm25.k = k
@@ -122,14 +140,14 @@ def build_retrievers(
     # distinct entities, exactly as HybridRetriever does. Measuring a raw k here
     # would compare against a configuration the pipeline no longer uses -- stale
     # numbers that look fresh.
-    overfetch = k * VECTOR_OVERFETCH
+    overfetch = vector_k(layout, k)
 
     retrievers: dict[str, BaseRetriever] = {
         "bm25": bm25,
         # The plain semantic retriever: similarity search with no LLM in the loop.
         "vector": vectordb.as_retriever(search_kwargs={"k": overfetch}),
     }
-    if llm is not None:
+    if llm is not None and wants_selfquery(collection, layout):
         retrievers["selfquery"] = SelfQueryRetriever.from_llm(
             llm=llm,
             vectorstore=vectordb,
@@ -138,6 +156,11 @@ def build_retrievers(
             search_kwargs={"k": overfetch},
         )
     return retrievers
+
+
+def layout_name(layouts: dict[str, CollectionLayout | None]) -> str:
+    """ "manifest" for a bundle with a manifest, otherwise "old"."""
+    return "manifest" if any(layouts.values()) else "old"
 
 
 def capture(args: argparse.Namespace) -> None:
@@ -149,7 +172,13 @@ def capture(args: argparse.Namespace) -> None:
             "--embeddings-dir."
         )
     questions = read_questions(args.questions)
-    collections = sorted(list_chroma_subdirectories(embeddings_dir))
+    layouts = collection_layouts(embeddings_dir)
+    # A manifest's own order; an older bundle's sorted, as before.
+    collections = (
+        list(layouts)
+        if any(layout is not None for layout in layouts.values())
+        else sorted(layouts)
+    )
     if not collections:
         raise SystemExit(f"No Chroma collections found under {embeddings_dir}")
 
@@ -179,7 +208,11 @@ def capture(args: argparse.Namespace) -> None:
     for collection in collections:
         print(f"  {collection}: building retrievers...", file=sys.stderr)
         retrievers = build_retrievers(
-            embeddings_dir, collection, args.k, llm=selfquery_llm
+            embeddings_dir,
+            collection,
+            args.k,
+            llm=selfquery_llm,
+            layout=layouts[collection],
         )
         for i, question in enumerate(questions, start=1):
             print(f"    [{i}/{len(questions)}] {question[:60]}", file=sys.stderr)
@@ -196,6 +229,7 @@ def capture(args: argparse.Namespace) -> None:
     payload: dict[str, Any] = {
         "bundle": str(embeddings_dir),
         "k": args.k,
+        "layout": layout_name(layouts),
         "collections": collections,
         "results": result,
     }
@@ -284,8 +318,25 @@ def overlap(args: argparse.Namespace) -> None:
 
 
 def compare(args: argparse.Namespace) -> None:
-    before: Capture = json.loads(args.before.read_text())["results"]
-    after: Capture = json.loads(args.after.read_text())["results"]
+    before_payload = json.loads(args.before.read_text())
+    after_payload = json.loads(args.after.read_text())
+    # Captures from before layouts were recorded are old layout.
+    layouts = (before_payload.get("layout", "old"), after_payload.get("layout", "old"))
+    if layouts[0] != layouts[1]:
+        raise SystemExit(
+            f"These captures come from different bundle layouts ({layouts[0]} and "
+            f"{layouts[1]}), so their collections hold different records. Compare "
+            "answers with bin/answer-sweep instead."
+        )
+    depths = (before_payload["k"], after_payload["k"])
+    if depths[0] != depths[1]:
+        raise SystemExit(
+            f"These captures searched to different depths ({depths[0]} and "
+            f"{depths[1]}), so every list would differ. Capture again with "
+            f"--k {depths[0]}."
+        )
+    before: Capture = before_payload["results"]
+    after: Capture = after_payload["results"]
 
     changed = 0
     total = 0

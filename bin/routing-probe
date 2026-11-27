@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
-"""Entry point for the routing probe; see src/evaluation/routing_probe.py."""
+"""Retired: collection routing was removed, so there is nothing to probe.
 
-import sys
-from pathlib import Path
+Kept because the beta deploy script (~/update-beta-chat.sh) still runs it and
+requires it to pass. Delete it once that script stops calling it.
+"""
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-
-from evaluation.routing_probe import main
-
-if __name__ == "__main__":
-    main()
+print("routing-probe: retired; collection routing was removed. Nothing to check.")
